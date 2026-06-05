@@ -2443,16 +2443,17 @@ function renderKgStatistiken() {
       ${sessions.length} Sessions · ${kgStatsModus === 'avg' ? 'Anzeige: Ø pro aktivem Kegeln' : 'Anzeige: Gesamt'}
     </div>
 
-    <!-- Ranking -->
-    <div class="section-title">🏆 ${kgStatsModus === 'avg' ? 'Meiste Strafen pro Kegeln (Ø)' : 'Meiste Strafen gesamt'}</div>
-    <div style="margin-bottom:1.5rem">
-      ${normGesamt.slice(0,5).map((m,i) => `
-        <div class="ranking-row">
-          <div class="rank-num" style="color:${i===0?'var(--danger)':i===1?'var(--warning)':'var(--text-muted)'}">${i+1}</div>
-          <div class="rank-name">${m.name}${kgStatsModus==='avg'?`<br><span style="font-size:.72rem;color:var(--text-muted)">${sessionsProSpieler[m.name]||0} Sessions dabei</span>`:''}
-          </div>
-          <div class="bar-wrap"><div class="bar" style="width:${m.normVal/maxNorm*100}%;background:${i===0?'var(--danger)':i===1?'var(--warning)':'var(--primary)'}"></div></div>
-          <div class="rank-val">${kgStatsModus==='avg' ? m.normVal.toFixed(1)+'×' : m.total+'×'}</div>
+    <!-- Nebenstatistik: Meiste Striche gesamt -->
+    <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:.5rem">
+      📊 Meiste Striche insgesamt (egal welcher)
+    </div>
+    <div style="background:var(--bg);border-radius:10px;padding:.6rem .75rem;margin-bottom:1.25rem;display:flex;flex-wrap:wrap;gap:.4rem">
+      ${normGesamt.slice(0,8).map((m,i) => `
+        <div style="display:flex;align-items:center;gap:.35rem;font-size:.82rem">
+          <span style="color:${i===0?'var(--danger)':i===1?'var(--warning)':'var(--text-muted)'};font-weight:700">${i+1}.</span>
+          <span style="font-weight:600">${m.name}</span>
+          <span class="tag ${i===0?'tag-red':i===1?'tag-yellow':'tag-blue'}" style="font-size:.7rem">${kgStatsModus==='avg' ? m.normVal.toFixed(1)+'×' : m.total+'×'}</span>
+          ${i < normGesamt.length-1 ? '<span style="color:var(--border)">·</span>' : ''}
         </div>`).join('')}
     </div>
 

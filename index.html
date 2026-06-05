@@ -159,6 +159,25 @@
   .kg-cell { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; font-weight: 700; font-size: .9rem; color: var(--text-muted); }
   .kg-cell.hat-wert { color: var(--primary); background: #eff6ff; }
   .kg-cell:active { background: #dbeafe; }
+  /* SPIELE */
+  .spiel-card { background: white; border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+  .spiel-card h3 { font-size: 1.05rem; font-weight: 800; margin-bottom: .2rem; }
+  .spiel-erklaerung { font-size: .82rem; color: var(--text-muted); margin-bottom: .875rem; line-height: 1.5; }
+  .spieler-score-row { display: flex; align-items: center; gap: .5rem; padding: .5rem 0; border-bottom: 1px solid var(--border); }
+  .spieler-score-row:last-child { border-bottom: none; }
+  .spieler-score-name { flex: 1; font-weight: 600; font-size: .9rem; }
+  .spieler-score-inputs { display: flex; gap: .3rem; }
+  .spieler-score-inputs input { width: 40px; text-align: center; padding: 6px 4px; font-size: .9rem; font-weight: 700; -moz-appearance: textfield; }
+  .spieler-score-inputs input::-webkit-outer-spin-button,
+  .spieler-score-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .spieler-hausnummer { min-width: 60px; text-align: right; font-weight: 800; font-size: 1rem; color: var(--primary); }
+  .rank-winner { color: var(--success); }
+  .rank-loser { color: var(--danger); }
+  .platz-badge { display: inline-block; width: 24px; height: 24px; border-radius: 50%; font-size: .75rem; font-weight: 800; text-align: center; line-height: 24px; }
+  .platz-1 { background: #fef3c7; color: #d97706; }
+  .platz-loser { background: #fee2e2; color: #dc2626; }
+  .platz-normal { background: var(--bg); color: var(--text-muted); }
+
   .kg-auswahl-chip { padding: 6px 12px; border-radius: 99px; border: 2px solid var(--border); background: var(--bg); color: var(--text-muted); font-size: .82rem; font-weight: 600; cursor: pointer; transition: all .15s; -webkit-tap-highlight-color: transparent; }
   .kg-auswahl-chip.aktiv { background: #dcfce7; border-color: #16a34a; color: #15803d; }
   .kg-gesamt-bar { background: var(--bg); border-top: 2px solid var(--border); padding: 8px 1rem 10px; font-size: .85rem; position: sticky; bottom: 70px; }
@@ -350,6 +369,7 @@
       <button class="nav-tab" onclick="showPage('strafen',this)">⚠️ Strafen <span id="zahlung-badge" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.65rem;padding:1px 6px;font-weight:800;margin-left:2px"></span></button>
       <button class="nav-tab" onclick="showPage('statistiken',this)">📊 Statistiken</button>
       <button class="nav-tab" onclick="showPage('kassenbuch',this)">💰 Kasse</button>
+      <button class="nav-tab" onclick="showPage('spiele',this)">🎮 Spiele</button>
       <button class="nav-tab" onclick="showPage('mitglieder',this)">👥 Mitglieder</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Abmelden</button>
@@ -363,6 +383,7 @@
     <button class="bnav-tab" onclick="showPage('kegeln',this)" data-page="kegeln"><span class="icon">🎳</span>Live</button>
     <button class="bnav-tab" onclick="showPage('strafen',this)" data-page="strafen"><span class="icon">⚠️</span>Strafen<span id="zahlung-badge-m" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.6rem;padding:0 5px;font-weight:800;margin-left:2px;line-height:1.4"></span></button>
     <button class="bnav-tab" onclick="showPage('kassenbuch',this)" data-page="kassenbuch"><span class="icon">💰</span>Kasse</button>
+    <button class="bnav-tab" onclick="showPage('spiele',this)" data-page="spiele"><span class="icon">🎮</span>Spiele</button>
     <button class="bnav-tab" onclick="showPage('mitglieder',this)" data-page="mitglieder"><span class="icon">👥</span>Mehr</button>
   </div>
 </div>
@@ -427,6 +448,11 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- SPIELE -->
+<div class="page" id="page-spiele">
+  <div id="spiele-liste"></div>
 </div>
 
 <!-- TERMINE -->
@@ -1252,6 +1278,7 @@ function showPage(name, btn) {
   });
   if (name === 'statistiken') renderStatistiken();
   if (name === 'kegeln') { renderKegelHistorie(); renderKgTerminListe(); renderKgSpielerAuswahl(); }
+  if (name === 'spiele') { renderSpieleListe(); }
   window.scrollTo(0, 0);
 }
 
@@ -1264,8 +1291,6 @@ const KG_KATEGORIEN = [
     { name: 'Klingel',              betrag: 1.00 },
     { name: 'Behinderung',          betrag: 0.50 },
     { name: 'Stina',                betrag: 0.50 },
-    { name: 'Kugel einholen',       betrag: 5.00 },
-    { name: 'Kugel n. einholen',    betrag: 0.50 },
     { name: 'Kugel z.T.',           betrag: 1.00 },
     { name: 'Kugel f. gebracht',    betrag: 1.00 },
     { name: 'Verl. Spiel',          betrag: 1.00 },
@@ -1278,6 +1303,8 @@ const KG_KATEGORIEN = [
     { name: 'Spucken',              betrag: 0.20 },
     { name: 'Schnipsen',            betrag: 0.50 },
     { name: 'Stuhl umwerfen',       betrag: 2.00 },
+    { name: 'Kugel einholen',       betrag: 5.00 },
+    { name: 'Kugel n. einholen',    betrag: 0.50 },
   ]}
 ];
 
@@ -2828,6 +2855,242 @@ function renderKassenbuch() {
     </tr>`).join('') || '<tr><td colspan="5" class="empty-state">Keine Buchungen</td></tr>';
 }
 
+
+// ========== SPIELE ==========
+
+const SPIELE_KATALOG = [
+  {
+    id: 'hohe-hausnummer',
+    name: 'Hohe Hausnummer',
+    emoji: '🏠',
+    erklaerung: `Jeder Kegler hat 3 Würfe. Ziel ist es, die möglichst hohe Hausnummer zu erkegeln.\n\nNach jedem Wurf muss man sofort entscheiden, auf welche Stelle (1., 2. oder 3. Ziffer) man die geworfene Zahl setzt.\n\nEinmal platziert, darf man nicht mehr tauschen. Nach dem 3. Wurf ergibt sich die Hausnummer.\n\n🏆 Die höchste Hausnummer gewinnt — die niedrigsten verlieren.`,
+    sortierung: 'hoch',  // höchste gewinnt → niedrigste verlieren
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'tiefe-hausnummer',
+    name: 'Tiefe Hausnummer',
+    emoji: '🏚️',
+    erklaerung: `Gleiche Regeln wie Hohe Hausnummer — jeder Kegler hat 3 Würfe und muss nach jedem Wurf sofort entscheiden, auf welche Stelle die Zahl kommt.\n\nEinmal platziert, kein Tauschen erlaubt.\n\n🏆 Die niedrigste Hausnummer gewinnt — die höchsten verlieren.`,
+    sortierung: 'tief',  // niedrigste gewinnt → höchste verlieren
+    strafKategorie: 'Verl. Spiel'
+  }
+];
+
+let aktivesSpiel = null;
+const vorauswahlVerlierer = {}; // { spielId: anzahl }
+
+function setVorauswahlVerlierer(spielId, n) {
+  vorauswahlVerlierer[spielId] = n;
+  document.querySelectorAll(`[id^="vl-${spielId}-"]`).forEach(btn => {
+    const num = parseInt(btn.id.split('-').pop());
+    btn.className = `btn btn-sm ${num === n ? 'btn-primary' : 'btn-ghost'}`;
+  });
+}
+
+function renderSpieleListe() {
+  const container = document.getElementById('spiele-liste');
+  if (!container) return;
+
+  const aktiveSpielerListe = getAktiveSpieler();
+
+  container.innerHTML = SPIELE_KATALOG.map(spiel => `
+    <div class="spiel-card">
+      <h3 style="margin-bottom:.5rem">${spiel.emoji} ${spiel.name}</h3>
+      <details style="margin-bottom:.875rem">
+        <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted);font-weight:600">📖 Spielerklärung</summary>
+        <div class="spiel-erklaerung" style="margin-top:.5rem;white-space:pre-line">${spiel.erklaerung}</div>
+      </details>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
+        <span style="font-size:.85rem;font-weight:600;color:var(--text-muted)">Verlierer:</span>
+        ${[1,2,3,4].map(n => `<button id="vl-${spiel.id}-${n}" class="btn btn-sm ${n===1?'btn-primary':'btn-ghost'}"
+          onclick="setVorauswahlVerlierer('${spiel.id}',${n})">${n}</button>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        ${aktiveSpielerListe.length > 0
+          ? `<span style="font-size:.78rem;color:var(--text-muted)">👥 ${aktiveSpielerListe.length} Spieler</span>`
+          : `<span style="font-size:.78rem;color:var(--warning)">⚠️ Alle Mitglieder</span>`}
+        <button class="btn btn-primary btn-sm" onclick="starteSpiel('${spiel.id}')">▶ Spielen</button>
+      </div>
+    </div>`).join('') +
+    `<div style="font-size:.8rem;color:var(--text-muted);text-align:center;padding:1rem">Weitere Spiele folgen…</div>`;
+}
+
+function getAktiveSpieler() {
+  // Spieler aus aktiver Kegel-Session, sonst alle
+  if (aktiveSession && aktiveSession.angemeldet?.length > 0) {
+    return state.mitglieder.filter(m => aktiveSession.angemeldet.includes(m.name));
+  }
+  return state.mitglieder;
+}
+
+function starteSpiel(spielId) {
+  const spiel = SPIELE_KATALOG.find(s => s.id === spielId);
+  if (!spiel) return;
+  const spieler = getAktiveSpieler();
+  aktivesSpiel = {
+    spielId,
+    spieler: spieler.map(m => ({ name: m.name, ziffern: [null, null, null] })),
+    anzahlVerlierer: vorauswahlVerlierer[spielId] || 1
+  };
+  renderAktivesSpiel();
+}
+
+function berechneSortierteRangliste() {
+  const spiel = SPIELE_KATALOG.find(s => s.id === aktivesSpiel.spielId);
+  const sortierung = spiel?.sortierung || 'hoch';
+  aktivesSpiel.spieler.forEach(sp => {
+    const z = sp.ziffern;
+    sp.hausnummer = z.every(x => x !== null && x !== '') ? parseInt(z.join('')) : null;
+  });
+  return aktivesSpiel.spieler.filter(s => s.hausnummer !== null)
+    .sort((a,b) => sortierung === 'hoch' ? b.hausnummer - a.hausnummer : a.hausnummer - b.hausnummer);
+}
+
+function renderAktivesSpiel() {
+  if (!aktivesSpiel) return;
+  const spiel = SPIELE_KATALOG.find(s => s.id === aktivesSpiel.spielId);
+  if (!spiel) return;
+  const container = document.getElementById('spiele-liste');
+
+  container.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+        <button class="btn btn-ghost btn-sm" onclick="aktivesSpiel=null;renderSpieleListe()">← Zurück</button>
+      </div>
+      <!-- Spieler-Eingabe (statisch) -->
+      <div style="margin-bottom:1rem">
+        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.5rem">
+          Hausnummern eingeben <span style="font-weight:400;text-transform:none;letter-spacing:0">— nach jedem Wurf Stelle wählen</span>
+        </div>
+        ${aktivesSpiel.spieler.map((sp, i) => `
+          <div class="spieler-score-row" id="score-row-${i}">
+            <div class="spieler-score-name">${sp.name}</div>
+            <div class="spieler-score-inputs">
+              <input type="number" min="0" max="9" placeholder="1." value="${sp.ziffern[0]??''}"
+                oninput="setZiffer(${i},0,this.value)">
+              <input type="number" min="0" max="9" placeholder="2." value="${sp.ziffern[1]??''}"
+                oninput="setZiffer(${i},1,this.value)">
+              <input type="number" min="0" max="9" placeholder="3." value="${sp.ziffern[2]??''}"
+                oninput="setZiffer(${i},2,this.value)">
+            </div>
+            <div class="spieler-hausnummer" id="hausnummer-${i}">
+              ${sp.hausnummer !== null ? sp.ziffern.join('') : '–'}
+            </div>
+          </div>`).join('')}
+      </div>
+      <!-- Rangliste (dynamisch) -->
+      <div id="spiel-rangliste"></div>
+      <!-- Buttons -->
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem">
+        <button class="btn btn-primary" id="spiel-confirm-btn" onclick="schliesseSpielAb()">✅ Verlierer eintragen</button>
+        <button class="btn btn-ghost" onclick="aktivesSpiel=null;renderSpieleListe()">Abbrechen</button>
+      </div>
+      <div id="spiel-status-text" style="font-size:.78rem;color:var(--text-muted);margin-top:.5rem"></div>
+    </div>`;
+
+  updateSpielRangliste();
+}
+
+function setZiffer(spielerIdx, zifferIdx, val) {
+  const v = val === '' ? null : Math.max(0, Math.min(9, parseInt(val) || 0));
+  aktivesSpiel.spieler[spielerIdx].ziffern[zifferIdx] = v;
+  aktivesSpiel.spieler[spielerIdx].hausnummer = (() => {
+    const z = aktivesSpiel.spieler[spielerIdx].ziffern;
+    return z.every(x => x !== null && x !== '') ? parseInt(z.join('')) : null;
+  })();
+  // Hausnummer-Anzeige für diesen Spieler updaten
+  const hn = document.getElementById(`hausnummer-${spielerIdx}`);
+  if (hn) hn.textContent = aktivesSpiel.spieler[spielerIdx].hausnummer !== null
+    ? aktivesSpiel.spieler[spielerIdx].ziffern.join('') : '–';
+  updateSpielRangliste();
+}
+
+function updateSpielRangliste() {
+  const rangliste = document.getElementById('spiel-rangliste');
+  const confirmBtn = document.getElementById('spiel-confirm-btn');
+  const statusText = document.getElementById('spiel-status-text');
+  if (!rangliste) return;
+
+  const mitNummer = berechneSortierteRangliste();
+  const anzV = aktivesSpiel.anzahlVerlierer;
+  const genug = mitNummer.length >= anzV + 1;
+
+  // Button: aktiv sobald genug Spieler eine Nummer haben
+  if (confirmBtn) confirmBtn.disabled = !genug;
+
+  if (statusText) {
+    if (mitNummer.length === 0) statusText.textContent = 'Noch keine Hausnummern eingegeben.';
+    else if (!genug) statusText.textContent = `Noch zu wenig Nummern für ${anzV} Verlierer (${mitNummer.length}/${anzV+1} nötig).`;
+    else if (mitNummer.length < aktivesSpiel.spieler.length) statusText.textContent = `${mitNummer.length}/${aktivesSpiel.spieler.length} Nummern eingetragen — kann trotzdem abgeschlossen werden.`;
+    else statusText.textContent = '';
+  }
+
+  if (mitNummer.length === 0) { rangliste.innerHTML = ''; return; }
+
+  rangliste.innerHTML = `
+    <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.5rem">
+      Aktueller Stand
+    </div>
+    ${mitNummer.map((sp, i) => {
+      const istVerlierer = i >= mitNummer.length - anzV;
+      const istErster = i === 0;
+      return `<div style="display:flex;align-items:center;gap:.6rem;padding:.4rem 0;border-bottom:1px solid var(--border);background:${istVerlierer?'#fff5f5':istErster?'#f0fdf4':'transparent'};border-radius:6px;padding-left:6px">
+        <span class="platz-badge ${istErster?'platz-1':istVerlierer?'platz-loser':'platz-normal'}">${i+1}</span>
+        <span style="flex:1;font-weight:700;${istVerlierer?'color:var(--danger)':istErster?'color:var(--success)':''}">${sp.name}</span>
+        <span style="font-weight:800;font-size:1.05rem;min-width:40px;text-align:right;${istVerlierer?'color:var(--danger)':istErster?'color:var(--success)':'color:var(--primary)'}">${sp.hausnummer}</span>
+        ${istErster ? '<span class="tag tag-green" style="font-size:.7rem">🏆</span>' : istVerlierer ? '<span class="tag tag-red" style="font-size:.7rem">😬</span>' : ''}
+      </div>`;
+    }).join('')}`;
+}
+
+function schliesseSpielAb() {
+  if (!aktivesSpiel) return;
+  const spiel = SPIELE_KATALOG.find(s => s.id === aktivesSpiel.spielId);
+  const mitNummer = berechneSortierteRangliste();
+  if (mitNummer.length === 0) { alert('Keine Hausnummern eingetragen!'); return; }
+
+  const anzV = Math.min(aktivesSpiel.anzahlVerlierer, mitNummer.length - 1);
+  const verlierer = mitNummer.slice(-anzV).map(s => s.name);
+
+  if (!confirm(`Folgende Spieler haben verloren:\n${verlierer.join(', ')}\n\nJetzt "Verl. Spiel" eintragen?`)) return;
+
+  // In Live-Matrix eintragen falls aktive Session
+  if (aktiveSession) {
+    verlierer.forEach(name => {
+      if (!aktiveSession.counts[name]) aktiveSession.counts[name] = {};
+      aktiveSession.counts[name]['Verl. Spiel'] = (aktiveSession.counts[name]['Verl. Spiel'] || 0) + 1;
+    });
+    saveLiveSession();
+    if (document.getElementById('page-kegeln').classList.contains('active')) {
+      renderKgMatrix();
+    }
+  } else {
+    // Ohne aktive Session: als normale Strafen speichern
+    const batch = db.batch();
+    verlierer.forEach(name => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: name, kategorie: 'Verl. Spiel',
+        notiz: `${spiel.name}`, betrag: 1.00,
+        datum: today(), bezahlt: false, createdAt: Date.now()
+      });
+    });
+    batch.commit();
+  }
+
+  // Spiel-Ergebnis in Firebase speichern
+  db.collection('spielergebnisse').add({
+    spiel: spiel.name, datum: today(),
+    ergebnis: mitNummer.map(s => ({ name: s.name, hausnummer: s.hausnummer })),
+    verlierer, createdAt: Date.now()
+  });
+
+  const hatSession = !!aktiveSession;
+  aktivesSpiel = null;
+  renderSpieleListe();
+  alert(`✅ Eingetragen! ${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel${hatSession ? ' in der Live-Session' : ' als Strafe'}.`);
+}
 
 // ========== HISTORISCHER IMPORT ==========
 const IMPORT_SESSIONS = [{"name": "Kegeln 2025-11-01", "datum": "2025-11-01", "eintraege": [{"mitglied": "Thorben Kloppe", "kategorie": "Pumpe", "anzahl": 12, "betrag": 3.6}, {"mitglied": "Thorben Kloppe", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Thorben Kloppe", "kategorie": "Verl. Spiel", "anzahl": 5, "betrag": 5.0}, {"mitglied": "Thorben Kloppe", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Thorben Kloppe", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Sebastian Eiken", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Pumpe", "anzahl": 7, "betrag": 2.1}, {"mitglied": "Sebastian Eiken", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Hannes Kötter", "kategorie": "Pumpe", "anzahl": 2, "betrag": 0.6}, {"mitglied": "Hannes Kötter", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Hannes Kötter", "kategorie": "Lustwurf", "anzahl": 1, "betrag": 2.0}, {"mitglied": "Hannes Kötter", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Hannes Kötter", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Christian Lehmann", "kategorie": "Pumpe", "anzahl": 8, "betrag": 2.4}, {"mitglied": "Christian Lehmann", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Christian Lehmann", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Christian Jansen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Jansen", "kategorie": "Pumpe", "anzahl": 6, "betrag": 1.8}, {"mitglied": "Christian Jansen", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Jansen", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Jansen", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Sebastian Jansen", "kategorie": "Pumpe", "anzahl": 3, "betrag": 0.9}, {"mitglied": "Sebastian Jansen", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Jansen", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Dimi Renje", "kategorie": "Pumpe", "anzahl": 8, "betrag": 2.4}, {"mitglied": "Dimi Renje", "kategorie": "Verl. Spiel", "anzahl": 5, "betrag": 5.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Matthias Robin", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Matthias Robin", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Matthias Robin", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Matthias Robin", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Matthias Robin", "kategorie": "Verl. Spiel", "anzahl": 5, "betrag": 5.0}, {"mitglied": "Matthias Robin", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Matthias Robin", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Michael Runde", "kategorie": "Pumpe", "anzahl": 6, "betrag": 1.8}, {"mitglied": "Michael Runde", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Michael Runde", "kategorie": "Behinderung", "anzahl": 4, "betrag": 2.0}, {"mitglied": "Michael Runde", "kategorie": "Verl. Spiel", "anzahl": 5, "betrag": 5.0}, {"mitglied": "Michael Runde", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Michael Runde", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Laurenz Held", "kategorie": "Pumpe", "anzahl": 9, "betrag": 2.7}, {"mitglied": "Laurenz Held", "kategorie": "Kugel n. einholen", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9 (geworfen)", "anzahl": 1, "betrag": 0}, {"mitglied": "Lukas Cordes", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Lukas Cordes", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lukas Cordes", "kategorie": "Verl. Spiel", "anzahl": 6, "betrag": 6.0}, {"mitglied": "Lukas Cordes", "kategorie": "Lustwurf", "anzahl": 1, "betrag": 2.0}, {"mitglied": "Lukas Cordes", "kategorie": "Alle 9", "anzahl": 10, "betrag": 10.0}], "angemeldet": ["Christian Jansen", "Christian Lehmann", "Dimi Renje", "Hannes Kötter", "Lukas Cordes", "Matthias Robin", "Michael Runde", "Sebastian Eiken", "Thorben Kloppe", "Laurenz Held", "Sebastian Jansen"], "alle9Wuerfe": {"Christian Jansen": 1, "Christian Lehmann": 1, "Dimi Renje": 1, "Hannes Kötter": 1, "Matthias Robin": 1, "Michael Runde": 1, "Sebastian Eiken": 1, "Thorben Kloppe": 1, "Laurenz Held": 1, "Sebastian Jansen": 1}, "importiert": true}, {"name": "Kegeln 2025-12-27", "datum": "2025-12-27", "eintraege": [{"mitglied": "Lucas Kossen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Lucas Kossen", "kategorie": "Pumpe", "anzahl": 12, "betrag": 3.6}, {"mitglied": "Lucas Kossen", "kategorie": "Klingel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Lucas Kossen", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Lucas Kossen", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Lucas Kossen", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Lucas Kossen", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Christian Lehmann", "kategorie": "Pumpe", "anzahl": 22, "betrag": 6.6}, {"mitglied": "Christian Lehmann", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Lehmann", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Lehmann", "kategorie": "Verl. Spiel", "anzahl": 3, "betrag": 3.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Christian Jansen", "kategorie": "Pumpe", "anzahl": 5, "betrag": 1.5}, {"mitglied": "Christian Jansen", "kategorie": "Verl. Spiel", "anzahl": 3, "betrag": 3.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Sebastian Jansen", "kategorie": "Pumpe", "anzahl": 19, "betrag": 5.7}, {"mitglied": "Sebastian Jansen", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Sebastian Jansen", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Alle 9", "anzahl": 14, "betrag": 14.0}, {"mitglied": "Jan Brunsen", "kategorie": "Pumpe", "anzahl": 13, "betrag": 3.9}, {"mitglied": "Jan Brunsen", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Jan Brunsen", "kategorie": "Behinderung", "anzahl": 5, "betrag": 2.5}, {"mitglied": "Jan Brunsen", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Jan Brunsen", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Jan Brunsen", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Michael Runde", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Michael Runde", "kategorie": "Pumpe", "anzahl": 10, "betrag": 3.0}, {"mitglied": "Michael Runde", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Michael Runde", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Michael Runde", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Michael Runde", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Michael Runde", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Laurenz Held", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Laurenz Held", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Laurenz Held", "kategorie": "Kugel n. einholen", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Lukas Cordes", "kategorie": "Stuhl umwerfen", "anzahl": 1, "betrag": 2.0}, {"mitglied": "Lukas Cordes", "kategorie": "Pumpe", "anzahl": 16, "betrag": 4.8}, {"mitglied": "Lukas Cordes", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lukas Cordes", "kategorie": "Behinderung", "anzahl": 6, "betrag": 3.0}, {"mitglied": "Lukas Cordes", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Lukas Cordes", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Lukas Cordes", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}], "angemeldet": ["Christian Jansen", "Christian Lehmann", "Jan Brunsen", "Lukas Cordes", "Michael Runde", "Laurenz Held", "Sebastian Jansen", "Lucas Kossen"], "alle9Wuerfe": {"Christian Jansen": 2, "Christian Lehmann": 2, "Jan Brunsen": 2, "Lukas Cordes": 2, "Michael Runde": 2, "Laurenz Held": 2, "Lucas Kossen": 2}, "importiert": true}, {"name": "Kegeln 2026-01-24", "datum": "2026-01-24", "eintraege": [{"mitglied": "Lucas Kossen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Lucas Kossen", "kategorie": "Pumpe", "anzahl": 15, "betrag": 4.5}, {"mitglied": "Lucas Kossen", "kategorie": "Klingel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Lucas Kossen", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Lucas Kossen", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lucas Kossen", "kategorie": "Verl. Spiel", "anzahl": 6, "betrag": 6.0}, {"mitglied": "Lucas Kossen", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lucas Kossen", "kategorie": "Alle 9", "anzahl": 65, "betrag": 65.0}, {"mitglied": "Lucas Kossen", "kategorie": "Alle 9 (geworfen)", "anzahl": 11, "betrag": 0}, {"mitglied": "Sebastian Eiken", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Sebastian Eiken", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Kugel z.T.", "anzahl": 3, "betrag": 3.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9", "anzahl": 68, "betrag": 68.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9 (geworfen)", "anzahl": 8, "betrag": 0}, {"mitglied": "Christian Lehmann", "kategorie": "Pumpe", "anzahl": 14, "betrag": 4.2}, {"mitglied": "Christian Lehmann", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Lehmann", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Lehmann", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Christian Lehmann", "kategorie": "Lustwurf", "anzahl": 2, "betrag": 4.0}, {"mitglied": "Christian Lehmann", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9", "anzahl": 65, "betrag": 65.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9 (geworfen)", "anzahl": 11, "betrag": 0}, {"mitglied": "Dimi Renje", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Dimi Renje", "kategorie": "Pumpe", "anzahl": 18, "betrag": 5.4}, {"mitglied": "Dimi Renje", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Dimi Renje", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Dimi Renje", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9", "anzahl": 65, "betrag": 65.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9 (geworfen)", "anzahl": 11, "betrag": 0}, {"mitglied": "Matthias Robin", "kategorie": "Stina", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Matthias Robin", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Matthias Robin", "kategorie": "Behinderung", "anzahl": 5, "betrag": 2.5}, {"mitglied": "Matthias Robin", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Matthias Robin", "kategorie": "Alle 9", "anzahl": 66, "betrag": 66.0}, {"mitglied": "Matthias Robin", "kategorie": "Alle 9 (geworfen)", "anzahl": 10, "betrag": 0}, {"mitglied": "Christian Wübben", "kategorie": "Pumpe", "anzahl": 15, "betrag": 4.5}, {"mitglied": "Christian Wübben", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Christian Wübben", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Alle 9", "anzahl": 69, "betrag": 69.0}, {"mitglied": "Christian Wübben", "kategorie": "Alle 9 (geworfen)", "anzahl": 7, "betrag": 0}, {"mitglied": "Laurenz Held", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Pumpe", "anzahl": 9, "betrag": 2.7}, {"mitglied": "Laurenz Held", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Laurenz Held", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9", "anzahl": 66, "betrag": 66.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9 (geworfen)", "anzahl": 10, "betrag": 0}, {"mitglied": "Lukas Cordes", "kategorie": "Pumpe", "anzahl": 8, "betrag": 2.4}, {"mitglied": "Lukas Cordes", "kategorie": "Klingel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Lukas Cordes", "kategorie": "Verl. Spiel", "anzahl": 6, "betrag": 6.0}, {"mitglied": "Lukas Cordes", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lukas Cordes", "kategorie": "Alle 9", "anzahl": 68, "betrag": 68.0}, {"mitglied": "Lukas Cordes", "kategorie": "Alle 9 (geworfen)", "anzahl": 8, "betrag": 0}], "angemeldet": ["Christian Lehmann", "Christian Wübben", "Dimi Renje", "Lukas Cordes", "Matthias Robin", "Sebastian Eiken", "Laurenz Held", "Lucas Kossen"], "alle9Wuerfe": {"Christian Lehmann": 11, "Christian Wübben": 7, "Dimi Renje": 11, "Lukas Cordes": 8, "Matthias Robin": 10, "Sebastian Eiken": 8, "Laurenz Held": 10, "Lucas Kossen": 11}, "importiert": true}, {"name": "Kegeln 2026-03-21", "datum": "2026-03-21", "eintraege": [{"mitglied": "Sebastian Eiken", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Pumpe", "anzahl": 15, "betrag": 4.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Kugel z.T.", "anzahl": 2, "betrag": 2.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9", "anzahl": 19, "betrag": 19.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Christian Jansen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Jansen", "kategorie": "Pumpe", "anzahl": 5, "betrag": 1.5}, {"mitglied": "Christian Jansen", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Christian Jansen", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9 (geworfen)", "anzahl": 3, "betrag": 0}, {"mitglied": "Sebastian Jansen", "kategorie": "Pumpe", "anzahl": 13, "betrag": 3.9}, {"mitglied": "Sebastian Jansen", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Jansen", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Verl. Spiel", "anzahl": 11, "betrag": 11.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Alle 9", "anzahl": 19, "betrag": 19.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Dimi Renje", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Dimi Renje", "kategorie": "Pumpe", "anzahl": 23, "betrag": 6.9}, {"mitglied": "Dimi Renje", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Verl. Spiel", "anzahl": 11, "betrag": 11.0}, {"mitglied": "Dimi Renje", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9 (geworfen)", "anzahl": 3, "betrag": 0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Heinrich von Lintel", "kategorie": "Pumpe", "anzahl": 12, "betrag": 3.6}, {"mitglied": "Heinrich von Lintel", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Heinrich von Lintel", "kategorie": "Kugel z.T.", "anzahl": 2, "betrag": 2.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Verl. Spiel", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Alle 9 (geworfen)", "anzahl": 3, "betrag": 0}, {"mitglied": "Jan Brunsen", "kategorie": "Schnipsen", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Jan Brunsen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Jan Brunsen", "kategorie": "Pumpe", "anzahl": 13, "betrag": 3.9}, {"mitglied": "Jan Brunsen", "kategorie": "Behinderung", "anzahl": 4, "betrag": 2.0}, {"mitglied": "Jan Brunsen", "kategorie": "Kugel z.T.", "anzahl": 3, "betrag": 3.0}, {"mitglied": "Jan Brunsen", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Jan Brunsen", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Jan Brunsen", "kategorie": "Alle 9", "anzahl": 19, "betrag": 19.0}, {"mitglied": "Jan Brunsen", "kategorie": "Alle 9 (geworfen)", "anzahl": 2, "betrag": 0}, {"mitglied": "Christian Wübben", "kategorie": "Pumpe", "anzahl": 22, "betrag": 6.6}, {"mitglied": "Christian Wübben", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Verl. Spiel", "anzahl": 10, "betrag": 10.0}, {"mitglied": "Christian Wübben", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Christian Wübben", "kategorie": "Alle 9 (geworfen)", "anzahl": 3, "betrag": 0}, {"mitglied": "Laurenz Held", "kategorie": "Pumpe", "anzahl": 15, "betrag": 4.5}, {"mitglied": "Laurenz Held", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Laurenz Held", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9 (geworfen)", "anzahl": 3, "betrag": 0}], "angemeldet": ["Christian Jansen", "Christian Wübben", "Dimi Renje", "Heinrich von Lintel", "Jan Brunsen", "Sebastian Eiken", "Laurenz Held", "Sebastian Jansen"], "alle9Wuerfe": {"Christian Jansen": 3, "Christian Wübben": 3, "Dimi Renje": 3, "Heinrich von Lintel": 3, "Jan Brunsen": 2, "Sebastian Eiken": 2, "Laurenz Held": 3, "Sebastian Jansen": 2}, "importiert": true}];

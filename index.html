@@ -2486,6 +2486,74 @@ function renderKgStatistiken() {
         </div>`;
       }).join('')}
     </div>
+
+    <!-- Detail-Auswertung pro Strafe -->
+    <div class="section-title" style="margin-top:1.5rem">📋 Detail-Auswertung pro Strafe</div>
+    <div style="margin-bottom:.5rem;font-size:.8rem;color:var(--text-muted)">Antippen zum Aufklappen</div>
+    ${KG_KATEGORIEN.flatMap(g => g.strafen).filter(s => perKat[s.name] && Object.keys(perKat[s.name]).length > 0).map(s => {
+      const spielerDaten = Object.entries(perKat[s.name] || {})
+        .sort((a,b) => b[1]-a[1]);
+      const totalGesamt = spielerDaten.reduce((sum,[,c]) => sum+c, 0);
+      const avgProSession = sessions.length > 0 ? (totalGesamt/sessions.length).toFixed(1) : '0';
+      const topSpieler = spielerDaten[0];
+      return `
+      <details style="margin-bottom:.4rem">
+        <summary style="cursor:pointer;background:var(--bg);border-radius:8px;padding:.6rem .875rem;display:flex;justify-content:space-between;align-items:center;list-style:none;font-weight:600">
+          <span>${s.name}</span>
+          <span style="display:flex;gap:.5rem;align-items:center">
+            <span class="tag tag-blue">${totalGesamt}× gesamt</span>
+            <span class="tag tag-yellow">Ø ${avgProSession}×/Abend</span>
+          </span>
+        </summary>
+        <div style="background:white;border:1px solid var(--border);border-radius:0 0 8px 8px;padding:.75rem;margin-top:-2px">
+          <!-- Kopf-Statistiken -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.75rem">
+            <div class="stat" style="padding:.6rem">
+              <div class="val" style="font-size:1.2rem">${totalGesamt}</div>
+              <div class="lbl">Gesamt alle</div>
+            </div>
+            <div class="stat" style="padding:.6rem">
+              <div class="val" style="font-size:1.2rem">${avgProSession}×</div>
+              <div class="lbl">Ø pro Kegeln</div>
+            </div>
+            <div class="stat" style="padding:.6rem">
+              <div class="val" style="font-size:1.2rem;color:var(--danger)">${topSpieler[1]}×</div>
+              <div class="lbl" style="font-size:.65rem">${topSpieler[0].split(' ')[0]} (Rekord)</div>
+            </div>
+          </div>
+          <!-- Spieler-Tabelle -->
+          <table style="width:100%;font-size:.8rem;border-collapse:collapse">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:4px 6px;font-size:.72rem;color:var(--text-muted);border-bottom:2px solid var(--border)">Spieler</th>
+                <th style="text-align:right;padding:4px 6px;font-size:.72rem;color:var(--text-muted);border-bottom:2px solid var(--border)">Gesamt</th>
+                <th style="text-align:right;padding:4px 6px;font-size:.72rem;color:var(--text-muted);border-bottom:2px solid var(--border)">Ø/Kegeln</th>
+                <th style="text-align:right;padding:4px 6px;font-size:.72rem;color:var(--text-muted);border-bottom:2px solid var(--border)">Anteil</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${spielerDaten.map(([name, cnt]) => {
+                const avg = (cnt / (sessionsProSpieler[name]||1)).toFixed(1);
+                const anteil = Math.round(cnt/totalGesamt*100);
+                return `<tr>
+                  <td style="padding:4px 6px;border-bottom:1px solid var(--border)">${name}</td>
+                  <td style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--border);font-weight:700">${cnt}×</td>
+                  <td style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--primary)">${avg}×</td>
+                  <td style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--border)">
+                    <div style="display:flex;align-items:center;justify-content:flex-end;gap:.3rem">
+                      <div style="background:var(--border);border-radius:99px;height:6px;width:50px">
+                        <div style="background:var(--primary);height:6px;border-radius:99px;width:${anteil}%"></div>
+                      </div>
+                      <span style="color:var(--text-muted);font-size:.72rem">${anteil}%</span>
+                    </div>
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </details>`;
+    }).join('')}
   `;
 }
 

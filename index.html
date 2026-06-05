@@ -553,7 +553,43 @@
 
 <!-- KASSENBUCH -->
 <div class="page" id="page-kassenbuch">
-  <div class="balance-box"><div class="lbl">Kassenstand</div><div class="amount" id="kassenstand">€ 0,00</div></div>
+
+  <!-- Soll / Ist Übersicht -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+    <div class="balance-box" style="margin-bottom:0">
+      <div class="lbl">Soll (Kassenbuch)</div>
+      <div class="amount" id="kassenstand">€ 0,00</div>
+    </div>
+    <div class="balance-box" style="margin-bottom:0;background:linear-gradient(135deg,#064e3b,#059669)">
+      <div class="lbl">Ist (tatsächlich)</div>
+      <div class="amount" id="ist-gesamt">€ 0,00</div>
+      <div style="display:flex;justify-content:center;gap:1rem;margin-top:.5rem;font-size:.8rem;opacity:.85">
+        <span>🏦 <span id="ist-konto-lbl">€ 0,00</span></span>
+        <span>💵 <span id="ist-bar-lbl">€ 0,00</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Differenz -->
+  <div id="kasse-differenz-box" class="card" style="margin-bottom:1rem;display:none"></div>
+
+  <!-- Ist-Betrag eingeben -->
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">💰 Ist-Bestand aktualisieren</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>🏦 Konto (€)</label>
+        <input type="number" id="ist-konto" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label>💵 Barkasse (€)</label>
+        <input type="number" id="ist-bar" step="0.01" placeholder="0.00">
+      </div>
+      <button class="btn btn-primary" style="align-self:flex-end" onclick="speichereIstBestand()">Speichern</button>
+    </div>
+    <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Stand vom: <span id="ist-datum">–</span></div>
+  </div>
+
   <div class="card" id="offene-strafen-kasse-box" style="display:none;background:#fee2e2;border-color:#fecaca">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
       <span style="font-weight:700;color:#b91c1c">⚠️ Offene Strafen</span>
@@ -788,6 +824,12 @@ function subscribeAll() {
     state.kegelsessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderKgStatistiken();
     renderFunFacts();
+  }, () => {}));
+
+  // Ist-Bestand
+  unsubscribers.push(db.collection('config').doc('istBestand').onSnapshot(snap => {
+    state.istBestand = snap.exists ? snap.data() : null;
+    renderIstBestand();
   }, () => {}));
 
   // Zahlungsanfragen
@@ -2641,6 +2683,70 @@ function renderMitgliedStats() {
     </tbody></table></div>`}`;
 }
 
+// ========== IST-BESTAND ==========
+function speichereIstBestand() {
+  const konto = parseFloat(document.getElementById('ist-konto').value) || 0;
+  const bar = parseFloat(document.getElementById('ist-bar').value) || 0;
+  db.collection('config').doc('istBestand').set({
+    konto, bar, updatedAt: Date.now(), datum: today()
+  });
+  document.getElementById('ist-konto').value = '';
+  document.getElementById('ist-bar').value = '';
+}
+
+function renderIstBestand() {
+  const ist = state.istBestand;
+  const einnahmen = state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
+  const ausgaben = state.kassenbuch.filter(b=>b.typ==='ausgabe').reduce((s,b)=>s+Number(b.betrag),0);
+  const soll = einnahmen - ausgaben;
+
+  if (!ist) {
+    document.getElementById('ist-gesamt').textContent = '– noch nicht eingegeben';
+    document.getElementById('ist-konto-lbl').textContent = '–';
+    document.getElementById('ist-bar-lbl').textContent = '–';
+    document.getElementById('ist-datum').textContent = '–';
+    document.getElementById('kasse-differenz-box').style.display = 'none';
+    return;
+  }
+
+  const istGesamt = (ist.konto || 0) + (ist.bar || 0);
+  const differenz = istGesamt - soll;
+
+  document.getElementById('ist-gesamt').textContent = formatEur(istGesamt);
+  document.getElementById('ist-konto-lbl').textContent = formatEur(ist.konto || 0);
+  document.getElementById('ist-bar-lbl').textContent = formatEur(ist.bar || 0);
+  document.getElementById('ist-datum').textContent = ist.datum ? formatDate(ist.datum) : '–';
+
+  // Differenz-Box
+  const diffBox = document.getElementById('kasse-differenz-box');
+  if (diffBox) {
+    diffBox.style.display = 'block';
+    const ok = Math.abs(differenz) < 0.01;
+    diffBox.style.background = ok ? '#dcfce7' : differenz > 0 ? '#dbeafe' : '#fee2e2';
+    diffBox.style.borderColor = ok ? '#bbf7d0' : differenz > 0 ? '#bfdbfe' : '#fecaca';
+    diffBox.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+        <div>
+          <div style="font-weight:700;font-size:.95rem;color:${ok?'#15803d':differenz>0?'#1d4ed8':'#b91c1c'}">
+            ${ok ? '✅ Kasse stimmt' : differenz > 0 ? '📈 Ist über Soll' : '⚠️ Ist unter Soll'}
+          </div>
+          <div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">
+            Soll: ${formatEur(soll)} · Ist: ${formatEur(istGesamt)}
+          </div>
+        </div>
+        <strong style="font-size:1.1rem;color:${ok?'#15803d':differenz>0?'#1d4ed8':'#b91c1c'}">
+          ${differenz > 0 ? '+' : ''}${formatEur(differenz)}
+        </strong>
+      </div>`;
+  }
+
+  // Felder vorausfüllen mit letzten Werten
+  const kontoEl = document.getElementById('ist-konto');
+  const barEl = document.getElementById('ist-bar');
+  if (kontoEl && !kontoEl.value) kontoEl.placeholder = formatEur(ist.konto||0).replace('€ ','');
+  if (barEl && !barEl.value) barEl.placeholder = formatEur(ist.bar||0).replace('€ ','');
+}
+
 // ========== KASSENBUCH ==========
 function addBuchung() {
   const typ = document.getElementById('k-typ').value;
@@ -2665,6 +2771,7 @@ function renderKassenbuch() {
   const einnahmen = state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
   const ausgaben = state.kassenbuch.filter(b=>b.typ==='ausgabe').reduce((s,b)=>s+Number(b.betrag),0);
   const stand = einnahmen - ausgaben;
+  renderIstBestand(); // Differenz-Box aktualisieren wenn Kassenbuch sich ändert
   const el = document.getElementById('kassenstand');
   if (el) el.textContent = formatEur(stand);
   const ueb = document.getElementById('kasse-uebersicht');

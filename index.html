@@ -1,0 +1,2635 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kegelclub App</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root {
+    --primary: #2563eb; --primary-dark: #1d4ed8; --danger: #dc2626;
+    --success: #16a34a; --warning: #d97706; --bg: #f1f5f9;
+    --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --text-muted: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 70px; }
+
+  /* TOP BAR */
+  #top-bar { background: var(--primary); color: white; padding: 0 1rem; display: flex; align-items: center; justify-content: space-between; height: 54px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  #top-bar h1 { font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: .5rem; }
+  .logout-btn { background: rgba(255,255,255,.15); border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: .85rem; }
+  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; display: inline-block; margin-left: .4rem; }
+  .sync-dot.offline { background: #f87171; }
+
+  /* BOTTOM NAV */
+  #bottom-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid var(--border); z-index: 100; box-shadow: 0 -2px 12px rgba(0,0,0,.08); }
+  .bnav-inner { display: flex; justify-content: space-around; padding: 6px 0 max(6px, env(safe-area-inset-bottom)); }
+  .bnav-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; cursor: pointer; padding: 6px 4px; color: var(--text-muted); font-size: .65rem; font-weight: 600; transition: color .15s; -webkit-tap-highlight-color: transparent; }
+  .bnav-tab .icon { font-size: 1.3rem; line-height: 1; }
+  .bnav-tab.active { color: var(--primary); }
+  .bnav-tab.active .icon { transform: scale(1.1); }
+
+  /* DESKTOP NAV TABS (hidden on mobile) */
+  .nav-tabs { display: flex; gap: .25rem; }
+  .nav-tab { background: none; border: none; color: rgba(255,255,255,.75); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: .82rem; font-weight: 500; transition: all .15s; }
+  .nav-tab:hover { background: rgba(255,255,255,.15); color: white; }
+  .nav-tab.active { background: rgba(255,255,255,.25); color: white; }
+
+  @media(max-width: 640px) {
+    .nav-tabs { display: none; }
+    #bottom-nav { display: block; }
+    body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+    .page { padding: 1rem; }
+    #top-bar h1 span.club-name { font-size: 1rem; }
+  }
+
+  .page { display: none; padding: 1.5rem; max-width: 960px; margin: 0 auto; }
+  .page.active { display: block; }
+  #page-kegeln { max-width: 100%; padding: 0; }
+
+  .card { background: var(--card); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); border: 1px solid var(--border); }
+  .card-title { font-size: 1rem; font-weight: 700; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; }
+  @media(max-width:640px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr 1fr; }
+    .grid-2.stack, #page-strafen .grid-2 { grid-template-columns: 1fr; }
+  }
+  @media(max-width:400px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+  .stat { background: var(--card); border-radius: 12px; padding: 1rem; border: 1px solid var(--border); text-align: center; }
+  .stat .val { font-size: 1.6rem; font-weight: 800; color: var(--primary); }
+  .stat .lbl { font-size: .75rem; color: var(--text-muted); margin-top: .2rem; }
+
+  .form-row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: .75rem; }
+  .form-group { display: flex; flex-direction: column; gap: .35rem; flex: 1; min-width: 130px; }
+  @media(max-width:640px) { .form-group { min-width: 100%; } }
+  label { font-size: .8rem; font-weight: 600; color: var(--text-muted); }
+  input, select, textarea { padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 1rem; font-family: inherit; background: white; color: var(--text); outline: none; transition: border .15s; -webkit-appearance: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+
+  .btn { padding: 10px 16px; border-radius: 8px; border: none; font-size: .9rem; font-weight: 600; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: .4rem; -webkit-tap-highlight-color: transparent; }
+  .btn-primary { background: var(--primary); color: white; } .btn-primary:hover { background: var(--primary-dark); }
+  .btn-danger { background: var(--danger); color: white; } .btn-danger:hover { background: #b91c1c; }
+  .btn-success { background: var(--success); color: white; }
+  .btn-sm { padding: 6px 10px; font-size: .8rem; }
+  .btn-ghost { background: none; border: 1.5px solid var(--border); color: var(--text); }
+  .btn-full { width: 100%; justify-content: center; }
+
+  /* Mobile card-style rows instead of tables */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  th { text-align: left; padding: 8px 12px; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); border-bottom: 2px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+
+  /* Straf-row cards on mobile */
+  @media(max-width:640px) {
+    .strafen-table table, .strafen-table thead { display: none; }
+    .strafen-table { display: flex; flex-direction: column; gap: .5rem; }
+    .strafe-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: .875rem; display: flex; flex-direction: column; gap: .4rem; }
+    .strafe-card-top { display: flex; justify-content: space-between; align-items: center; }
+    .strafe-card-actions { display: flex; gap: .4rem; margin-top: .25rem; }
+  }
+
+  .tag { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: .75rem; font-weight: 700; }
+  .tag-green { background: #dcfce7; color: #16a34a; } .tag-red { background: #fee2e2; color: #dc2626; }
+  .tag-blue { background: #dbeafe; color: #2563eb; } .tag-yellow { background: #fef3c7; color: #d97706; }
+
+  /* SETUP SCREEN */
+  #setup-screen { position: fixed; inset: 0; background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); display: flex; align-items: center; justify-content: center; z-index: 2000; overflow-y: auto; padding: 1rem; }
+  .setup-box { background: white; border-radius: 16px; padding: 2rem; width: 100%; max-width: 540px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .setup-box h2 { font-size: 1.3rem; margin-bottom: .25rem; }
+  .setup-box p { color: var(--text-muted); font-size: .875rem; margin-bottom: 1.25rem; }
+  .setup-step { background: var(--bg); border-radius: 10px; padding: 1rem; margin-bottom: .75rem; border-left: 3px solid var(--primary); }
+  .setup-step strong { font-size: .875rem; display: block; margin-bottom: .35rem; }
+  .setup-step p { margin: 0; font-size: .82rem; }
+  .setup-step code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: .82rem; }
+  .config-inputs { margin-top: 1rem; }
+  .config-inputs input { width: 100%; margin-bottom: .5rem; font-family: monospace; font-size: .82rem; }
+  .config-error { color: var(--danger); font-size: .85rem; margin-top: .5rem; display: none; }
+
+  /* LOGIN */
+  #login-screen { position: fixed; inset: 0; background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .login-box { background: white; border-radius: 16px; padding: 2.5rem; width: 100%; max-width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .login-box h2 { font-size: 1.4rem; margin-bottom: .25rem; }
+  .login-box p { color: var(--text-muted); font-size: .9rem; margin-bottom: 1.5rem; }
+  .login-box input { width: 100%; margin-bottom: .75rem; }
+  .login-box .btn { width: 100%; justify-content: center; padding: 10px; }
+  .login-error { color: var(--danger); font-size: .85rem; margin-top: .5rem; display: none; }
+  .login-logo { font-size: 2.5rem; text-align: center; margin-bottom: 1rem; }
+
+  /* MEMBER VIEW */
+  #member-screen { position: fixed; inset: 0; background: var(--bg); overflow-y: auto; z-index: 900; display: none; }
+  .member-header { background: var(--primary); color: white; padding: 1rem 1.5rem 0; }
+  .member-header h2 { font-size: 1.1rem; font-weight: 700; }
+  .member-tab { flex: 1; background: rgba(255,255,255,.15); border: none; color: rgba(255,255,255,.8); padding: 8px 4px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: .85rem; font-weight: 600; transition: all .15s; }
+  .member-tab.active { background: var(--bg); color: var(--primary); }
+  .member-content { max-width: 640px; margin: 0 auto; padding: 1.25rem; }
+  .termin-card { background: white; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .termin-card h3 { font-size: 1rem; font-weight: 700; }
+  .termin-card .meta { font-size: .85rem; color: var(--text-muted); margin: .35rem 0 .75rem; }
+  .member-names { font-size: .8rem; color: var(--text-muted); margin-top: .5rem; }
+  .overview-card { background: white; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid var(--border); }
+  .overview-card h3 { font-size: .85rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: .75rem; }
+  .strafe-row { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
+  .strafe-row:last-child { border-bottom: none; }
+  .kasse-row { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0; border-bottom: 1px solid var(--border); font-size: .875rem; }
+  .kasse-row:last-child { border-bottom: none; }
+
+  /* MATRIX KEGELBUCH */
+  .kg-topbar { background: linear-gradient(135deg,#1e3a5f,#2563eb); color: white; padding: .75rem 1rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; position: sticky; top: 54px; z-index: 90; }
+  .kg-tabs { display: flex; background: var(--bg); border-bottom: 2px solid var(--border); padding: 0 1rem; gap: .25rem; }
+  .kg-tab { background: none; border: none; padding: 10px 16px; font-size: .875rem; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .kg-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .kg-matrix-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .kg-matrix { border-collapse: collapse; width: 100%; min-width: 500px; font-size: .78rem; }
+  .kg-matrix th { background: var(--bg); padding: 5px 4px; text-align: center; border: 1px solid var(--border); font-size: .67rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; position: sticky; top: 0; }
+  .kg-matrix th.name-col { text-align: left; min-width: 100px; left: 0; z-index: 2; background: var(--bg); }
+  .kg-matrix th.sum-col { background: #eff6ff; color: var(--primary); position: sticky; right: 0; z-index: 2; }
+  .kg-matrix td { border: 1px solid var(--border); padding: 0; text-align: left; }
+  .kg-matrix td.name-col { padding: 4px 8px; font-weight: 600; font-size: .8rem; background: white; position: sticky; left: 0; z-index: 1; white-space: nowrap; }
+  .kg-matrix td.sum-col { font-weight: 800; color: var(--primary); background: #eff6ff; position: sticky; right: 0; z-index: 1; padding: 4px 6px; white-space: nowrap; font-size: .8rem; }
+  .kg-matrix td.sum-col.hat-wert { color: var(--danger); background: #fff0f0; }
+  .kg-matrix tr:hover td { background: #f8faff; }
+  .kg-matrix tr:hover td.name-col, .kg-matrix tr:hover td.sum-col { filter: brightness(.97); }
+  .kg-cell { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; font-weight: 700; font-size: .9rem; color: var(--text-muted); }
+  .kg-cell.hat-wert { color: var(--primary); background: #eff6ff; }
+  .kg-cell:active { background: #dbeafe; }
+  .kg-auswahl-chip { padding: 6px 12px; border-radius: 99px; border: 2px solid var(--border); background: var(--bg); color: var(--text-muted); font-size: .82rem; font-weight: 600; cursor: pointer; transition: all .15s; -webkit-tap-highlight-color: transparent; }
+  .kg-auswahl-chip.aktiv { background: #dcfce7; border-color: #16a34a; color: #15803d; }
+  .kg-gesamt-bar { background: var(--bg); border-top: 2px solid var(--border); padding: 8px 1rem; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: .9rem; position: sticky; bottom: 70px; }
+  .fun-fact { background: var(--bg); border-radius: 12px; padding: 1rem; margin-bottom: .75rem; border-left: 4px solid var(--primary); }
+  .fun-fact.red { border-left-color: var(--danger); }
+  .fun-fact.green { border-left-color: var(--success); }
+  .fun-fact.yellow { border-left-color: var(--warning); }
+  .fun-fact .ff-emoji { font-size: 1.5rem; margin-bottom: .35rem; }
+  .fun-fact .ff-fact { font-size: .95rem; font-weight: 600; margin-bottom: .25rem; }
+  .fun-fact .ff-detail { font-size: .8rem; color: var(--text-muted); }
+  .quiz-card { background: linear-gradient(135deg, #1e3a5f, #2563eb); color: white; border-radius: 12px; padding: 1.25rem; margin-bottom: .75rem; cursor: pointer; }
+  .quiz-card .q-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; opacity: .75; margin-bottom: .35rem; }
+  .quiz-card .q-text { font-size: 1rem; font-weight: 700; margin-bottom: .75rem; }
+  .quiz-card .q-answers { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+  .quiz-card .q-answer { background: rgba(255,255,255,.15); border-radius: 8px; padding: .4rem .6rem; font-size: .82rem; font-weight: 600; }
+  .quiz-card .q-answer.correct { background: rgba(74,222,128,.4); }
+  .quiz-card .q-reveal { font-size: .78rem; opacity: .7; margin-top: .5rem; text-align: center; }
+  .kg-avatar { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; color: white; margin-right: 6px; flex-shrink: 0; }
+
+  /* STRICHLISTE */
+  .spieler-chip { padding: 7px 14px; border-radius: 99px; border: 2px solid rgba(255,255,255,.3); background: rgba(255,255,255,.15); color: white; font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
+  .spieler-chip.aktiv { background: white; color: var(--primary); border-color: white; }
+  .straf-gruppe { margin-bottom: 1rem; }
+  .straf-gruppe-titel { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); margin-bottom: .6rem; }
+  .straf-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem; }
+  @media(min-width:480px) { .straf-grid { grid-template-columns: repeat(3, 1fr); } }
+  .straf-btn-wrap { display: flex; flex-direction: column; align-items: stretch; }
+  .straf-btn { background: var(--bg); border: 1.5px solid var(--border); border-radius: 10px; padding: .6rem .5rem; cursor: pointer; text-align: center; transition: all .15s; -webkit-tap-highlight-color: transparent; }
+  .straf-btn:active { transform: scale(.95); background: #dbeafe; border-color: var(--primary); }
+  .straf-btn.hat-treffer { background: #eff6ff; border-color: var(--primary); }
+  .straf-btn-name { font-size: .75rem; font-weight: 600; color: var(--text); line-height: 1.2; }
+  .straf-btn-betrag { font-size: .7rem; color: var(--text-muted); }
+  .straf-btn-count { display: flex; align-items: center; justify-content: center; gap: .35rem; margin-top: .4rem; }
+  .straf-count-minus { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border); background: white; font-size: .9rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .straf-count-val { font-weight: 800; font-size: 1rem; min-width: 20px; text-align: center; color: var(--primary); }
+  .straf-count-plus { width: 28px; height: 28px; border-radius: 50%; border: none; background: var(--primary); color: white; font-size: 1.1rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; }
+  .kg-spieler-total { background: var(--primary); color: white; border-radius: 8px; padding: .5rem .75rem; display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; font-size: .9rem; }
+  .kg-spieler-total.zero { background: var(--bg); color: var(--text-muted); }
+
+  .alert { padding: .75rem 1rem; border-radius: 8px; font-size: .875rem; margin-bottom: .75rem; }
+  .alert-success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+  .alert-danger { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+  .alert-info { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+  .balance-box { background: linear-gradient(135deg, #1e3a5f, #2563eb); color: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; text-align: center; }
+  .balance-box .amount { font-size: 2.5rem; font-weight: 800; }
+  .balance-box .lbl { opacity: .8; font-size: .9rem; }
+  td.pos { color: var(--success); font-weight: 700; } td.neg { color: var(--danger); font-weight: 700; }
+
+  .bar-wrap { background: var(--border); border-radius: 99px; height: 8px; flex: 1; }
+  .bar { background: var(--primary); height: 8px; border-radius: 99px; }
+  .ranking-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--border); }
+  .ranking-row:last-child { border-bottom: none; }
+  .rank-num { font-weight: 800; font-size: 1.1rem; color: var(--text-muted); width: 28px; }
+  .rank-name { flex: 1; font-weight: 600; }
+  .rank-val { font-weight: 700; color: var(--primary); min-width: 60px; text-align: right; }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+  .empty-state { text-align: center; padding: 2rem; color: var(--text-muted); font-size: .9rem; }
+  .section-title { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: .75rem; margin-top: 1.25rem; }
+
+  .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,.8); display: flex; align-items: center; justify-content: center; z-index: 500; flex-direction: column; gap: 1rem; }
+  .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div style="font-size:.9rem;color:var(--text-muted)">Verbinde mit Firebase…</div>
+</div>
+
+<!-- SETUP SCREEN -->
+<div id="setup-screen" style="display:none">
+  <div class="setup-box">
+    <div style="font-size:2rem;text-align:center;margin-bottom:.75rem">🔥</div>
+    <h2>Firebase einrichten</h2>
+    <p>Einmalige Einrichtung — danach läuft die App für alle synchron.</p>
+
+    <div class="setup-step">
+      <strong>Schritt 1 – Firebase-Projekt erstellen</strong>
+      <p>Geh auf <a href="https://console.firebase.google.com" target="_blank" style="color:var(--primary)">console.firebase.google.com</a> → "Projekt erstellen" → Name z.B. <code>kegelclub</code> → Google Analytics kann aus bleiben.</p>
+    </div>
+    <div class="setup-step">
+      <strong>Schritt 2 – Firestore aktivieren</strong>
+      <p>Im linken Menü: <code>Build → Firestore Database → Create database</code> → "Start in test mode" wählen → Region <code>europe-west3</code> (Frankfurt).</p>
+    </div>
+    <div class="setup-step">
+      <strong>Schritt 3 – Web-App registrieren</strong>
+      <p>Projektübersicht → Web-Symbol <code>&lt;/&gt;</code> → App-Namen eingeben → "App registrieren". Du bekommst ein <code>firebaseConfig</code>-Objekt mit mehreren Werten.</p>
+    </div>
+    <div class="setup-step">
+      <strong>Schritt 4 – Werte hier eintragen</strong>
+      <p>Trag die Werte aus deinem <code>firebaseConfig</code> unten ein:</p>
+    </div>
+
+    <div class="config-inputs">
+      <label>apiKey</label>
+      <input type="text" id="cfg-apiKey" placeholder="AIzaSy...">
+      <label>authDomain</label>
+      <input type="text" id="cfg-authDomain" placeholder="kegelclub.firebaseapp.com">
+      <label>projectId</label>
+      <input type="text" id="cfg-projectId" placeholder="kegelclub">
+      <label>storageBucket</label>
+      <input type="text" id="cfg-storageBucket" placeholder="kegelclub.appspot.com">
+      <label>messagingSenderId</label>
+      <input type="text" id="cfg-messagingSenderId" placeholder="123456789">
+      <label>appId</label>
+      <input type="text" id="cfg-appId" placeholder="1:123...">
+    </div>
+    <div class="config-error" id="cfg-error">Bitte alle Felder ausfüllen.</div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:1rem" onclick="saveConfig()">🚀 Verbinden & loslegen</button>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-screen" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">🎳</div>
+    <h2>Kegelclub</h2>
+    <p>Bitte melde dich an</p>
+    <input type="text" id="login-user" placeholder="Benutzername" />
+    <input type="password" id="login-pass" placeholder="Passwort" />
+    <button class="btn btn-primary" onclick="doLogin()">Anmelden</button>
+    <div class="login-error" id="login-error">Falscher Benutzername oder Passwort</div>
+    <hr style="margin:1rem 0;border-color:var(--border)">
+    <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem">Mitglied? Direkt zum Terminkalender:</p>
+    <button class="btn btn-ghost" style="width:100%;justify-content:center" onclick="showMemberView()">👤 Meine Übersicht & Termine</button>
+  </div>
+</div>
+
+<!-- MEMBER VIEW -->
+<div id="member-screen" style="display:none">
+  <div class="member-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;max-width:640px;margin:0 auto">
+      <h2>🎳 <span id="member-club-name">Kegelclub</span></h2>
+      <button class="btn btn-ghost btn-sm" style="color:white;border-color:rgba(255,255,255,.4)" onclick="hideMemberView()">Admin</button>
+    </div>
+    <div style="max-width:640px;margin:.75rem auto 0">
+      <select id="member-name-sel" onchange="onMemberNameChange()" style="width:100%;padding:10px 12px;border-radius:8px;border:none;font-size:1rem;font-weight:600">
+        <option value="">– Name auswählen –</option>
+      </select>
+    </div>
+    <!-- Member tabs -->
+    <div style="display:flex;max-width:640px;margin:.75rem auto 0;gap:.25rem">
+      <button class="member-tab active" onclick="showMemberTab('uebersicht',this)">👤 Übersicht</button>
+      <button class="member-tab" onclick="showMemberTab('live',this)" id="member-live-tab">🎳 Live</button>
+      <button class="member-tab" onclick="showMemberTab('termine',this)">📅 Termine</button>
+      <button class="member-tab" onclick="showMemberTab('kasse',this)">💰 Kasse</button>
+    </div>
+  </div>
+  <div class="member-content">
+    <div id="member-alert"></div>
+
+    <!-- ÜBERSICHT TAB -->
+    <div id="mtab-uebersicht" class="member-tab-content">
+      <div id="member-overview"></div>
+    </div>
+
+    <!-- LIVE TAB -->
+    <div id="mtab-live" class="member-tab-content" style="display:none">
+      <div id="member-live-content"></div>
+    </div>
+
+    <!-- TERMINE TAB -->
+    <div id="mtab-termine" class="member-tab-content" style="display:none">
+      <div id="member-termine-list"><div class="empty-state">Lade Termine…</div></div>
+    </div>
+
+    <!-- KASSE TAB -->
+    <div id="mtab-kasse" class="member-tab-content" style="display:none">
+      <div id="member-kasse"></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP TOP BAR -->
+<div id="top-bar" style="display:none">
+  <h1>🎳 <span class="club-name" id="nav-club-name">Kegelclub</span> <span class="sync-dot" id="sync-dot" title="Verbunden"></span></h1>
+  <div style="display:flex;align-items:center;gap:.5rem">
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="showPage('termine',this)">📅 Termine</button>
+      <button class="nav-tab" onclick="showPage('kegeln',this)">🎳 Live</button>
+      <button class="nav-tab" onclick="showPage('strafen',this)">⚠️ Strafen <span id="zahlung-badge" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.65rem;padding:1px 6px;font-weight:800;margin-left:2px"></span></button>
+      <button class="nav-tab" onclick="showPage('statistiken',this)">📊 Statistiken</button>
+      <button class="nav-tab" onclick="showPage('kassenbuch',this)">💰 Kasse</button>
+      <button class="nav-tab" onclick="showPage('mitglieder',this)">👥 Mitglieder</button>
+    </div>
+    <button class="logout-btn" onclick="doLogout()">Abmelden</button>
+  </div>
+</div>
+
+<!-- BOTTOM NAV (mobile) -->
+<div id="bottom-nav" style="display:none">
+  <div class="bnav-inner">
+    <button class="bnav-tab active" onclick="showPage('termine',this)" data-page="termine"><span class="icon">📅</span>Termine</button>
+    <button class="bnav-tab" onclick="showPage('kegeln',this)" data-page="kegeln"><span class="icon">🎳</span>Live</button>
+    <button class="bnav-tab" onclick="showPage('strafen',this)" data-page="strafen"><span class="icon">⚠️</span>Strafen<span id="zahlung-badge-m" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.6rem;padding:0 5px;font-weight:800;margin-left:2px;line-height:1.4"></span></button>
+    <button class="bnav-tab" onclick="showPage('kassenbuch',this)" data-page="kassenbuch"><span class="icon">💰</span>Kasse</button>
+    <button class="bnav-tab" onclick="showPage('mitglieder',this)" data-page="mitglieder"><span class="icon">👥</span>Mehr</button>
+  </div>
+</div>
+
+<!-- LIVE KEGELN -->
+<div class="page" id="page-kegeln" style="padding:0">
+
+  <!-- Start Screen -->
+  <div id="kegeln-start-screen" style="padding:1.5rem">
+    <div id="kegeln-termin-liste"></div>
+    <details style="margin-bottom:1rem">
+      <summary style="cursor:pointer;font-size:.85rem;color:var(--text-muted);font-weight:600;padding:.5rem 0">Ohne Termin starten…</summary>
+      <div class="card" style="margin-top:.5rem">
+        <div class="form-group" style="margin-bottom:.75rem">
+          <label>Session-Name (optional)</label>
+          <input type="text" id="kg-session-name" placeholder="z.B. Kegeln 04.06.2026">
+        </div>
+        <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.5rem">Wer ist dabei?</label>
+        <div id="kg-spieler-auswahl" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem"></div>
+        <button class="btn btn-ghost btn-full" onclick="startKegelSession(null)">🎳 Starten</button>
+      </div>
+    </details>
+    <div id="kegeln-historie"></div>
+  </div>
+
+  <!-- Aktive Session -->
+  <div id="kegeln-aktiv-screen" style="display:none">
+    <!-- Top bar -->
+    <div class="kg-topbar">
+      <div>
+        <div style="font-size:.72rem;opacity:.75">🎳 Live</div>
+        <div style="font-weight:700;font-size:.95rem" id="kg-aktiv-name">Kegeln</div>
+      </div>
+      <div style="display:flex;gap:.4rem;align-items:center">
+        <div style="font-size:.72rem;opacity:.75;text-align:right">Tippen +1<br>Lang −1</div>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:white;border:none;white-space:nowrap" onclick="schliesseKegelSession()">✅ Abschließen</button>
+        <button class="btn btn-sm" style="background:rgba(220,38,38,.5);color:white;border:none" onclick="brecheKegelSessionAb()">🗑</button>
+      </div>
+    </div>
+    <!-- Kategorie-Tabs -->
+    <div class="kg-tabs">
+      <button class="kg-tab active" onclick="switchKgTab('kegel',this)">Kegel</button>
+      <button class="kg-tab" onclick="switchKgTab('allgemein',this)">Allgemein</button>
+    </div>
+    <!-- Matrix -->
+    <div class="kg-matrix-wrap">
+      <table class="kg-matrix" id="kg-matrix-table"></table>
+    </div>
+    <!-- Gesamt-Leiste -->
+    <div class="kg-gesamt-bar" id="kg-gesamt-bar"></div>
+  </div>
+
+  <!-- Bestätigungsscreen -->
+  <div id="kegeln-bestaetigung-screen" style="display:none;padding:1.5rem">
+    <div class="card">
+      <div class="card-title">✅ Auswertung bestätigen</div>
+      <p style="font-size:.875rem;color:var(--text-muted);margin-bottom:1rem">Folgende Beträge werden als Strafen übernommen:</p>
+      <div id="kg-bestaetigung-liste"></div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem">
+        <button class="btn btn-primary" onclick="bestaetigeKegelSession()">💾 Strafen speichern</button>
+        <button class="btn btn-ghost" onclick="zurueckZuSession()">← Zurück</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TERMINE -->
+<div class="page active" id="page-termine">
+  <div class="card">
+    <div class="card-title">📅 Neuen Termin anlegen</div>
+    <div class="form-row">
+      <div class="form-group"><label>Datum (erster Termin)</label><input type="date" id="t-datum"></div>
+      <div class="form-group"><label>Uhrzeit</label><input type="time" id="t-zeit" value="19:00"></div>
+      <div class="form-group" style="flex:2"><label>Bezeichnung</label><input type="text" id="t-name" placeholder="z.B. Reguläres Kegeln, Turnier…"></div>
+      <div class="form-group"><label>Ort</label><input type="text" id="t-ort" placeholder="Kegelbahn…"></div>
+    </div>
+    <div class="form-row" style="align-items:center;gap:1rem">
+      <div class="form-group" style="flex:0 0 auto;flex-direction:row;align-items:center;gap:.5rem;min-width:0">
+        <input type="checkbox" id="t-wiederholen" style="width:auto;margin:0" onchange="toggleWiederholung()">
+        <label for="t-wiederholen" style="font-size:.875rem;cursor:pointer;font-weight:600;color:var(--text);white-space:nowrap">Regelmäßig wiederholen</label>
+      </div>
+      <div id="wiederholung-optionen" style="display:none;flex:1;display:none">
+        <div class="form-row" style="margin:0">
+          <div class="form-group">
+            <label>Alle … Wochen</label>
+            <input type="number" id="t-wochen" value="4" min="1" max="52" style="max-width:100px">
+          </div>
+          <div class="form-group">
+            <label>Vorausplanen (Anzahl Termine)</label>
+            <input type="number" id="t-voraus" value="6" min="2" max="52" style="max-width:100px">
+          </div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="addTermin()">➕ Termin anlegen</button>
+  </div>
+  <div id="termine-list"></div>
+</div>
+
+<!-- STRAFEN -->
+<div class="page" id="page-strafen">
+  <div id="zahlungsanfragen-box" style="display:none;margin-bottom:1rem"></div>
+  <div class="grid-3" id="strafen-summary-boxes" style="margin-bottom:1rem"></div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:.75rem">
+    <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="alleStrafenBezahlt()">✓ Alle offenen Strafen als bezahlt markieren</button>
+  </div>
+  <div class="grid-2">
+    <div>
+      <div class="card">
+        <div class="card-title">⚠️ Strafe eintragen</div>
+        <div class="form-group" style="margin-bottom:.75rem"><label>Mitglied</label><select id="s-mitglied"></select></div>
+        <div class="form-group" style="margin-bottom:.75rem"><label>Strafkategorie</label><select id="s-kategorie" onchange="updateStrafBetrag()"><option value="">– auswählen –</option></select></div>
+        <div class="form-row">
+          <div class="form-group"><label>Betrag (€)</label><input type="number" id="s-betrag" step="0.50" placeholder="0.00"></div>
+          <div class="form-group"><label>Datum</label><input type="date" id="s-datum"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:.75rem"><label>Notiz (optional)</label><input type="text" id="s-notiz" placeholder="Begründung…"></div>
+        <div class="form-row" style="align-items:center;gap:.5rem">
+          <input type="checkbox" id="s-bezahlt" style="width:auto;margin:0">
+          <label for="s-bezahlt" style="font-size:.875rem;cursor:pointer;font-weight:600;color:var(--text)">Bereits bezahlt</label>
+        </div>
+        <button class="btn btn-primary" style="margin-top:.75rem" onclick="addStrafe()">➕ Strafe eintragen</button>
+      </div>
+      <div class="card">
+        <div class="card-title">⚙️ Strafkategorien verwalten</div>
+        <div id="straf-kat-list"></div>
+        <hr class="divider">
+        <div class="form-row">
+          <div class="form-group" style="flex:2"><label>Neue Kategorie</label><input type="text" id="sk-name" placeholder="z.B. Zu spät, Handy…"></div>
+          <div class="form-group"><label>Standardbetrag (€)</label><input type="number" id="sk-betrag" step="0.50" placeholder="1.00"></div>
+          <button class="btn btn-primary btn-sm" style="align-self:flex-end" onclick="addStrafKat()">➕</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">📋 Alle Strafen <span id="offene-strafen-badge" class="tag tag-red"></span></div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem;align-items:center">
+          <select id="strafen-filter-person" onchange="renderStrafen()" style="flex:1;min-width:140px;padding:6px 10px;font-size:.85rem">
+            <option value="">👤 Alle Mitglieder</option>
+          </select>
+          <select id="strafen-filter-status" onchange="renderStrafen()" style="flex:1;min-width:120px;padding:6px 10px;font-size:.85rem">
+            <option value="">📋 Alle Status</option>
+            <option value="offen">Nur offene</option>
+            <option value="bezahlt">Nur bezahlte</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="zeigeMultiStrafenPopup()">➕ Sammel-Strafe</button>
+        </div>
+        <div class="strafen-table" id="strafen-container">
+          <table>
+            <thead><tr><th>Mitglied</th><th>Kategorie</th><th>Betrag</th><th>Status</th><th></th></tr></thead>
+            <tbody id="strafen-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- STATISTIKEN -->
+<div class="page" id="page-statistiken">
+  <div class="grid-3" id="stats-boxes"></div>
+  <div class="grid-2">
+    <div class="card"><div class="card-title">🏆 Strafranking</div><div id="straf-ranking"></div></div>
+    <div class="card"><div class="card-title">📅 Anwesenheitsranking</div><div id="anwesenheit-ranking"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">👤 Mitglied-Auswertung</div>
+    <div class="form-group" style="max-width:250px;margin-bottom:1rem"><label>Mitglied auswählen</label><select id="stats-mitglied-sel" onchange="renderMitgliedStats()"></select></div>
+    <div id="mitglied-stats-detail"></div>
+  </div>
+
+  <!-- Kegelbuch-Statistiken -->
+  <div class="card">
+    <div class="card-title">🎳 Kegelbuch-Statistiken</div>
+    <div id="kg-stats-container"><div class="empty-state">Noch keine Kegel-Sessions abgeschlossen.</div></div>
+  </div>
+
+  <!-- Fun Facts & Quiz -->
+  <div class="card">
+    <div class="card-title">🎉 Fun Facts & Quiz</div>
+    <div id="fun-facts-container"><div class="empty-state">Noch keine Daten für Fun Facts.</div></div>
+  </div>
+</div>
+
+<!-- KASSENBUCH -->
+<div class="page" id="page-kassenbuch">
+  <div class="balance-box"><div class="lbl">Kassenstand</div><div class="amount" id="kassenstand">€ 0,00</div></div>
+  <div class="card" id="offene-strafen-kasse-box" style="display:none;background:#fee2e2;border-color:#fecaca">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+      <span style="font-weight:700;color:#b91c1c">⚠️ Offene Strafen</span>
+      <span id="offene-strafen-kasse-detail" style="color:#b91c1c;font-size:.9rem"></span>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">➕ Buchung eintragen</div>
+      <div class="form-group" style="margin-bottom:.75rem"><label>Typ</label><select id="k-typ"><option value="einnahme">Einnahme</option><option value="ausgabe">Ausgabe</option></select></div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2"><label>Beschreibung</label><input type="text" id="k-beschr" placeholder="z.B. Strafen Oktober, Hallenmiete…"></div>
+        <div class="form-group"><label>Betrag (€)</label><input type="number" id="k-betrag" step="0.01" placeholder="0.00"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:.75rem"><label>Datum</label><input type="date" id="k-datum"></div>
+      <div class="form-group" style="margin-bottom:.75rem"><label>Kategorie</label><select id="k-kat"><option>Strafen</option><option>Miete</option><option>Ausflug</option><option>Ausstattung</option><option>Sonstiges</option></select></div>
+      <button class="btn btn-primary" onclick="addBuchung()">Buchen</button>
+    </div>
+    <div class="card"><div class="card-title">📊 Übersicht</div><div id="kasse-uebersicht"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📒 Buchungen</div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="filterKasse('alle')">Alle</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterKasse('einnahme')">Einnahmen</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterKasse('ausgabe')">Ausgaben</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Datum</th><th>Beschreibung</th><th>Kategorie</th><th>Betrag</th><th></th></tr></thead>
+        <tbody id="kasse-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MITGLIEDER -->
+<div class="page" id="page-mitglieder">
+  <div class="card" style="display:none" id="mobile-logout-card">
+    <button class="btn btn-ghost btn-full" onclick="doLogout()">🚪 Abmelden</button>
+  </div>
+  <div class="grid-2 stack">
+    <div class="card">
+      <div class="card-title">➕ Mitglied hinzufügen</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2"><label>Name</label><input type="text" id="m-name" placeholder="Vor- und Nachname"></div>
+      </div>
+      <button class="btn btn-primary" onclick="addMitglied()">➕ Mitglied hinzufügen</button>
+    </div>
+    <div class="card">
+      <div class="card-title">⚙️ Einstellungen</div>
+      <div class="form-group" style="margin-bottom:.75rem"><label>Clubname</label><input type="text" id="cfg-clubname" placeholder="Kegelclub…"></div>
+      <div class="form-group" style="margin-bottom:.75rem"><label>Admin-Passwort ändern</label><input type="password" id="new-pw" placeholder="Neues Passwort"></div>
+      <button class="btn btn-ghost btn-sm" onclick="saveSettings()">Speichern</button>
+      <hr class="divider">
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="resetConfig()">🔧 Firebase neu konfigurieren</button>
+      <hr class="divider">
+      <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">📥 Historische Daten</div>
+      <button class="btn btn-ghost btn-sm" onclick="zeigeImportVorschau()">📥 Alte Sessions importieren (2025/26)</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">👥 Mitgliederliste (<span id="m-count">0</span>)</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Strafen offen</th><th></th></tr></thead>
+        <tbody id="mitglieder-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== CONFIG ==========
+let fbConfig = null;
+let db = null;
+let state = {
+  adminPw: 'admin123',
+  clubName: 'Kegelclub',
+  mitglieder: [],
+  termine: [],
+  strafen: [],
+  strafKategorien: [
+    { id: uid(), name: 'Verspätung pro 15 Min', betrag: 2.00 },
+    { id: uid(), name: 'Handy spielen', betrag: 5.00 },
+    { id: uid(), name: 'Pumpenkegel vergessen', betrag: 5.00 },
+    { id: uid(), name: 'Kegelshirt vergessen', betrag: 5.00 }
+  ],
+  kassenbuch: []
+};
+let kasseFilter = 'alle';
+let unsubscribers = [];
+
+function uid() { return Math.random().toString(36).substr(2,9) + Date.now().toString(36); }
+function today() { return new Date().toISOString().split('T')[0]; }
+function formatDate(d) { if (!d) return ''; const [y,m,day] = d.split('-'); return `${day}.${m}.${y}`; }
+function formatEur(n) { return '€ ' + Number(n).toFixed(2).replace('.', ','); }
+
+// ========== FIREBASE SETUP ==========
+const HARDCODED_CONFIG = {
+  apiKey: "AIzaSyDOBw8lI7f07YP5S0qnlMR9UrFWoDJXSNA",
+  authDomain: "kegelapp-d6bee.firebaseapp.com",
+  projectId: "kegelapp-d6bee",
+  storageBucket: "kegelapp-d6bee.firebasestorage.app",
+  messagingSenderId: "962203632894",
+  appId: "1:962203632894:web:6289dbd1c35067f12e51af",
+  measurementId: "G-VD5JG2B74E"
+};
+
+function loadConfig() {
+  fbConfig = HARDCODED_CONFIG;
+  return true;
+}
+
+function saveConfig() {
+  const fields = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'];
+  const cfg = {};
+  for (const f of fields) {
+    const val = document.getElementById('cfg-' + f).value.trim();
+    if (!val) { document.getElementById('cfg-error').style.display = 'block'; return; }
+    cfg[f] = val;
+  }
+  document.getElementById('cfg-error').style.display = 'none';
+  localStorage.setItem('kegelclub_fb_config', JSON.stringify(cfg));
+  fbConfig = cfg;
+  document.getElementById('setup-screen').style.display = 'none';
+  initFirebase();
+}
+
+function resetConfig() {
+  if (!confirm('Firebase-Konfiguration löschen und neu einrichten?')) return;
+  localStorage.removeItem('kegelclub_fb_config');
+  location.reload();
+}
+
+function initFirebase() {
+  document.getElementById('loading-overlay').style.display = 'flex';
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(fbConfig);
+    }
+    db = firebase.firestore();
+    subscribeAll();
+  } catch(e) {
+    document.getElementById('loading-overlay').style.display = 'none';
+    alert('Firebase-Fehler: ' + e.message + '\n\nBitte Konfiguration prüfen.');
+    resetConfig();
+  }
+}
+
+// ========== FIRESTORE SUBSCRIPTIONS ==========
+function subscribeAll() {
+  let loaded = { settings: false, mitglieder: false, termine: false, strafen: false, kassenbuch: false };
+  let initialLoadDone = false;
+  function checkAllLoaded() {
+    if (!initialLoadDone && Object.values(loaded).every(Boolean)) {
+      initialLoadDone = true;
+      document.getElementById('loading-overlay').style.display = 'none';
+      document.getElementById('login-screen').style.display = 'flex';
+      document.getElementById('sync-dot').classList.remove('offline');
+    }
+  }
+
+  // Settings
+  unsubscribers.push(db.collection('config').doc('settings').onSnapshot(snap => {
+    if (snap.exists) {
+      const d = snap.data();
+      state.adminPw = d.adminPw || 'admin123';
+      state.clubName = d.clubName || 'Kegelclub';
+      document.getElementById('nav-club-name').textContent = state.clubName;
+    } else {
+      db.collection('config').doc('settings').set({ adminPw: 'admin123', clubName: 'Kegelclub' });
+    }
+    loaded.settings = true; checkAllLoaded();
+    renderMitglieder();
+  }, () => { loaded.settings = true; checkAllLoaded(); }));
+
+  // Mitglieder
+  unsubscribers.push(db.collection('mitglieder').orderBy('name').onSnapshot(snap => {
+    state.mitglieder = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loaded.mitglieder = true; checkAllLoaded();
+    renderMitglieder(); updateSelects(); renderStrafen(); renderStatistiken();
+    // Member view
+    const sel = document.getElementById('member-name-sel');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">– Name auswählen –</option>' +
+      state.mitglieder.map(m => `<option value="${m.name}" ${m.name===current?'selected':''}>${m.name}</option>`).join('');
+    renderMemberTermine();
+  }, () => { loaded.mitglieder = true; checkAllLoaded(); }));
+
+  // Termine
+  unsubscribers.push(db.collection('termine').orderBy('datum').onSnapshot(snap => {
+    state.termine = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loaded.termine = true; checkAllLoaded();
+    renderMemberTermine();
+    renderMemberOverview();
+    renderKgTerminListe();
+    // Only update admin views if logged in
+    if (document.getElementById('top-bar').style.display !== 'none') {
+      renderTermine(); renderStatistiken();
+    }
+    autoExtendSerien();
+  }, () => { loaded.termine = true; checkAllLoaded(); }));
+
+  // Strafen
+  unsubscribers.push(db.collection('strafen').orderBy('datum','desc').onSnapshot(snap => {
+    state.strafen = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loaded.strafen = true; checkAllLoaded();
+    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview();
+
+    // Kategorien
+    const katSnap = snap.docs.filter(d => false); // handled separately
+  }, () => { loaded.strafen = true; checkAllLoaded(); }));
+
+  // Strafkategorien
+  unsubscribers.push(db.collection('strafkategorien').orderBy('name').onSnapshot(snap => {
+    if (snap.empty) {
+      // Seed defaults
+      const batch = db.batch();
+      state.strafKategorien.forEach(k => {
+        batch.set(db.collection('strafkategorien').doc(k.id), { name: k.name, betrag: k.betrag });
+      });
+      batch.commit();
+    } else {
+      state.strafKategorien = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+    renderStrafKategorien(); updateStrafKatSelect();
+  }, () => {}));
+
+  // Kegelsessions
+  unsubscribers.push(db.collection('kegelsessions').orderBy('createdAt','desc').onSnapshot(snap => {
+    state.kegelsessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderKgStatistiken();
+    renderFunFacts();
+  }, () => {}));
+
+  // Zahlungsanfragen
+  unsubscribers.push(db.collection('zahlungsanfragen').where('status','==','offen').onSnapshot(snap => {
+    state.zahlungsanfragen = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderZahlungsanfragen();
+    updateZahlungsBadge();
+  }, () => {}));
+
+  // Live Session
+  unsubscribers.push(db.collection('live').doc('session').onSnapshot(snap => {
+    state.liveSession = snap.exists ? snap.data() : null;
+    renderMemberLive();
+  }, () => {}));
+
+  // Kassenbuch
+  unsubscribers.push(db.collection('kassenbuch').orderBy('datum','desc').onSnapshot(snap => {
+    state.kassenbuch = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loaded.kassenbuch = true; checkAllLoaded();
+    renderKassenbuch(); renderMemberKasse();
+  }, () => { loaded.kassenbuch = true; checkAllLoaded(); }));
+}
+
+// ========== LOGIN ==========
+function isMobile() { return window.innerWidth <= 640; }
+
+function doLogin() {
+  const user = document.getElementById('login-user').value.trim().toLowerCase();
+  const pass = document.getElementById('login-pass').value;
+  if ((user === 'admin' || user === 'kegelclub') && pass === state.adminPw) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('top-bar').style.display = 'flex';
+    if (isMobile()) {
+      document.getElementById('bottom-nav').style.display = 'block';
+      document.getElementById('mobile-logout-card').style.display = 'block';
+    }
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-termine').classList.add('active');
+    document.querySelectorAll('input[type=date]').forEach(el => { if (!el.value) el.value = today(); });
+    renderAll();
+  } else {
+    document.getElementById('login-error').style.display = 'block';
+  }
+}
+document.getElementById('login-pass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+function doLogout() {
+  document.getElementById('top-bar').style.display = 'none';
+  document.getElementById('bottom-nav').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+}
+
+function saveSettings() {
+  const clubName = document.getElementById('cfg-clubname').value.trim();
+  const pw = document.getElementById('new-pw').value;
+  const update = {};
+  if (clubName) update.clubName = clubName;
+  if (pw) { if (pw.length < 4) { alert('Mindestens 4 Zeichen'); return; } update.adminPw = pw; }
+  if (Object.keys(update).length) {
+    db.collection('config').doc('settings').set(update, { merge: true });
+    document.getElementById('new-pw').value = '';
+    alert('Gespeichert!');
+  }
+}
+
+// ========== MEMBER VIEW ==========
+function showMemberView() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('member-screen').style.display = 'block';
+  document.getElementById('member-club-name').textContent = state.clubName || 'Kegelclub';
+  refreshMemberNameSel();
+  renderMemberAll();
+}
+
+function hideMemberView() {
+  document.getElementById('member-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+function refreshMemberNameSel() {
+  const sel = document.getElementById('member-name-sel');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">– Name auswählen –</option>' +
+    state.mitglieder.map(m => `<option value="${m.name}" ${m.name===current?'selected':''}>${m.name}</option>`).join('');
+}
+
+function onMemberNameChange() {
+  renderMemberAll();
+}
+
+function showMemberTab(tab, btn) {
+  document.querySelectorAll('.member-tab-content').forEach(el => el.style.display = 'none');
+  document.getElementById('mtab-' + tab).style.display = 'block';
+  document.querySelectorAll('.member-tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+function renderMemberAll() {
+  renderMemberOverview();
+  renderMemberTermine();
+  renderMemberKasse();
+}
+
+function renderMemberOverview() {
+  const name = document.getElementById('member-name-sel').value;
+  const container = document.getElementById('member-overview');
+  if (!container) return;
+
+  if (!name) {
+    container.innerHTML = '<div class="empty-state">Wähle deinen Namen um deine Übersicht zu sehen.</div>';
+    return;
+  }
+
+  const mStrafen = state.strafen.filter(s => s.mitglied === name);
+  const offeneStrafen = mStrafen.filter(s => !s.bezahlt);
+  const offenBetrag = offeneStrafen.reduce((sum,s) => sum + Number(s.betrag), 0);
+  const pastTermine = state.termine.filter(t => t.datum < today());
+  const alleAbendeOv = [
+    ...pastTermine.map(t => ({ anwesend: t.anmeldungen||[] })),
+    ...(state.kegelsessions||[]).map(s => ({ anwesend: s.angemeldet||[] }))
+  ];
+  const anwesend = alleAbendeOv.filter(a => a.anwesend.includes(name)).length;
+  const naechster = state.termine.filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum))[0];
+  const istAngemeldet = naechster ? (naechster.anmeldungen||[]).includes(name) : null;
+
+  container.innerHTML = `
+    <!-- Nächster Termin -->
+    <div class="overview-card">
+      <h3>📅 Nächster Termin</h3>
+      ${naechster ? `
+        <div style="font-weight:700;font-size:1rem">${naechster.name}</div>
+        <div style="color:var(--text-muted);font-size:.875rem;margin:.25rem 0">${formatDate(naechster.datum)} um ${naechster.zeit} Uhr${naechster.ort?' · 📍'+naechster.ort:''}</div>
+        <div style="margin-top:.5rem">
+          ${istAngemeldet
+            ? '<span class="tag tag-green">✓ Du bist angemeldet</span>'
+            : (naechster.abmeldungen||[]).includes(name)
+              ? '<span class="tag tag-red">✗ Du bist abgemeldet</span>'
+              : '<span class="tag tag-yellow">? Noch nicht geantwortet</span>'}
+        </div>
+      ` : '<div class="empty-state" style="padding:1rem 0">Keine Termine geplant</div>'}
+    </div>
+
+    <!-- Offene Strafen -->
+    <div class="overview-card" style="${offeneStrafen.length > 0 ? 'border-color:#fecaca' : ''}">
+      <h3>⚠️ Offene Strafen</h3>
+      ${offeneStrafen.length === 0
+        ? '<div style="color:var(--success);font-weight:600">✅ Keine offenen Strafen!</div>'
+        : (() => {
+            const hatOffeneAnfrage = (state.zahlungsanfragen||[]).some(z => z.mitglied === name && z.status === 'offen');
+            return `
+              ${offeneStrafen.map(s => `
+                <div class="strafe-row">
+                  <span>${s.kategorie}${s.notiz?' <span style="color:var(--text-muted);font-size:.8rem">(${s.notiz})</span>':''}<br>
+                  <span style="font-size:.78rem;color:var(--text-muted)">${formatDate(s.datum)}</span></span>
+                  <strong style="color:var(--danger)">${formatEur(s.betrag)}</strong>
+                </div>`).join('')}
+              <div style="display:flex;justify-content:space-between;padding-top:.75rem;font-weight:700;margin-bottom:.75rem">
+                <span>Gesamt offen</span>
+                <span style="color:var(--danger)">${formatEur(offenBetrag)}</span>
+              </div>
+              ${hatOffeneAnfrage
+                ? `<div style="background:#fef3c7;border-radius:8px;padding:.6rem .875rem;font-size:.85rem;color:#92400e;font-weight:600">⏳ Zahlungsanfrage gesendet — warte auf Admin-Bestätigung</div>`
+                : `<button class="btn btn-success btn-full" onclick="sendeZahlungsanfrage('${name}')">💸 Ich habe bezahlt</button>`
+              }`;
+          })()}
+    </div>
+
+    <!-- Statistik -->
+    <div class="overview-card">
+      <h3>📊 Deine Statistik</h3>
+      <div class="strafe-row"><span>Termine gespielt</span><strong>${anwesend} / ${pastTermine.length}</strong></div>
+      <div class="strafe-row"><span>Strafen insgesamt</span><strong>${mStrafen.length}</strong></div>
+      <div class="strafe-row"><span>Bereits bezahlt</span><strong style="color:var(--success)">${formatEur(mStrafen.filter(s=>s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0))}</strong></div>
+    </div>
+  `;
+}
+
+function renderMemberLive() {
+  const container = document.getElementById('member-live-content');
+  const tab = document.getElementById('member-live-tab');
+  if (!container) return;
+
+  const live = state.liveSession;
+  if (!live || !live.aktiv) {
+    if (tab) tab.style.opacity = '.5';
+    container.innerHTML = '<div class="empty-state card">Gerade keine aktive Kegel-Session.</div>';
+    return;
+  }
+
+  if (tab) tab.style.opacity = '1';
+
+  // Totals berechnen
+  const spielerTotals = state.mitglieder.map(m => {
+    const counts = live.counts?.[m.name] || {};
+    let total = 0;
+    const details = [];
+    KG_KATEGORIEN.forEach(g => g.strafen.forEach(s => {
+      const n = counts[s.name] || 0;
+      if (n > 0) { total += n * s.betrag; details.push(`${s.name} ×${n}`); }
+    }));
+    return { name: m.name, total, details };
+  }).sort((a,b) => b.total - a.total);
+
+  const gesamtBetrag = spielerTotals.reduce((s,m) => s + m.total, 0);
+  const maxTotal = spielerTotals[0]?.total || 1;
+
+  container.innerHTML = `
+    <div class="card" style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:white;margin-bottom:1rem">
+      <div style="font-size:.8rem;opacity:.8;margin-bottom:.25rem">🎳 Aktive Session</div>
+      <div style="font-weight:700;font-size:1.1rem">${live.name}</div>
+      <div style="font-size:.85rem;opacity:.8;margin-top:.25rem">Gesamt: ${formatEur(gesamtBetrag)}</div>
+    </div>
+    <div class="card">
+      <div class="card-title">📊 Aktueller Stand</div>
+      ${spielerTotals.map((s,i) => `
+        <div class="ranking-row">
+          <div class="rank-num" style="color:${i===0&&s.total>0?'var(--danger)':'var(--text-muted)'}">${i+1}</div>
+          <div class="rank-name">
+            ${s.name}
+            ${s.details.length ? `<br><span style="font-size:.72rem;color:var(--text-muted)">${s.details.join(' · ')}</span>` : ''}
+          </div>
+          <div class="bar-wrap"><div class="bar" style="width:${s.total/maxTotal*100}%"></div></div>
+          <div class="rank-val" style="color:${s.total>0?'var(--danger)':'var(--text-muted)'}">${formatEur(s.total)}</div>
+        </div>`).join('')}
+    </div>
+  `;
+}
+
+// ========== ZAHLUNGSANFRAGEN ==========
+function sendeZahlungsanfrage(mitglied) {
+  if (!mitglied) return;
+  const offene = state.strafen.filter(s => s.mitglied === mitglied && !s.bezahlt);
+  if (!offene.length) { showMemberAlert('Keine offenen Strafen!', 'success'); return; }
+  const betrag = offene.reduce((s,x) => s+Number(x.betrag), 0);
+  db.collection('zahlungsanfragen').add({
+    mitglied,
+    betrag,
+    strafIds: offene.map(s => s.id),
+    status: 'offen',
+    createdAt: Date.now()
+  });
+  showMemberAlert('✅ Anfrage gesendet — der Admin wird benachrichtigt!', 'success');
+  renderMemberOverview();
+}
+
+function bestaetigeZahlung(anfragenId) {
+  const anfrage = (state.zahlungsanfragen||[]).find(z => z.id === anfragenId);
+  if (!anfrage) return;
+  if (!confirm(`Zahlung von ${anfrage.mitglied} (${formatEur(anfrage.betrag)}) bestätigen?`)) return;
+  const batch = db.batch();
+  (anfrage.strafIds||[]).forEach(sid => {
+    batch.update(db.collection('strafen').doc(sid), { bezahlt: true });
+    // Kassenbuch-Eintrag
+    const strafe = state.strafen.find(s => s.id === sid);
+    if (strafe) {
+      const ref = db.collection('kassenbuch').doc();
+      batch.set(ref, {
+        typ: 'einnahme', beschr: `Strafe: ${strafe.mitglied} – ${strafe.kategorie}`,
+        betrag: strafe.betrag, datum: today(), kat: 'Strafen',
+        strafId: sid, createdAt: Date.now()
+      });
+    }
+  });
+  batch.update(db.collection('zahlungsanfragen').doc(anfragenId), { status: 'bestaetigt' });
+  batch.commit();
+}
+
+function ablehnenZahlung(anfragenId) {
+  if (!confirm('Anfrage ablehnen?')) return;
+  db.collection('zahlungsanfragen').doc(anfragenId).update({ status: 'abgelehnt' });
+}
+
+function updateZahlungsBadge() {
+  const count = (state.zahlungsanfragen||[]).length;
+  ['zahlung-badge','zahlung-badge-m'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = count > 0 ? 'inline' : 'none';
+    el.textContent = count;
+  });
+}
+
+function renderZahlungsanfragen() {
+  const box = document.getElementById('zahlungsanfragen-box');
+  if (!box) return;
+  const anfragen = state.zahlungsanfragen || [];
+  if (!anfragen.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div class="card" style="border-color:#f97316;background:#fff7ed">
+      <div class="card-title" style="color:#c2410c">💸 Zahlungsanfragen (${anfragen.length})</div>
+      ${anfragen.map(z => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid #fed7aa;gap:.5rem;flex-wrap:wrap">
+          <div>
+            <strong>${z.mitglied}</strong> möchte <strong style="color:#c2410c">${formatEur(z.betrag)}</strong> bezahlen
+            <div style="font-size:.75rem;color:var(--text-muted)">${new Date(z.createdAt).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+          </div>
+          <div style="display:flex;gap:.4rem">
+            <button class="btn btn-success btn-sm" onclick="bestaetigeZahlung('${z.id}')">✓ Bestätigen</button>
+            <button class="btn btn-ghost btn-sm" onclick="ablehnenZahlung('${z.id}')">✗</button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+  // Auch Übersicht aktualisieren
+  renderMemberOverview();
+}
+
+function renderMemberKasse() {
+  const container = document.getElementById('member-kasse');
+  if (!container) return;
+  const einnahmen = state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
+  const ausgaben = state.kassenbuch.filter(b=>b.typ==='ausgabe').reduce((s,b)=>s+Number(b.betrag),0);
+  const stand = einnahmen - ausgaben;
+  const letzten = [...state.kassenbuch].sort((a,b)=>b.datum.localeCompare(a.datum)).slice(0,10);
+
+  container.innerHTML = `
+    <div class="balance-box" style="margin-bottom:1rem">
+      <div class="lbl">Kassenstand</div>
+      <div class="amount">${formatEur(stand)}</div>
+    </div>
+    <div class="overview-card">
+      <h3>📋 Letzte Buchungen</h3>
+      ${letzten.length === 0 ? '<div class="empty-state" style="padding:1rem 0">Keine Buchungen</div>' :
+        letzten.map(b => {
+          const beschrKurz = b.beschr.replace(/^Strafe: [^–]+ – /, '').replace(/^Strafe: /, '');
+          const istStrafe = b.beschr.startsWith('Strafe:');
+          const name = istStrafe ? b.beschr.replace(/^Strafe: /, '').split(' – ')[0] : null;
+          return `
+          <div class="kasse-row">
+            <div style="flex:1;min-width:0;margin-right:.75rem">
+              ${istStrafe ? `<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Strafe · ${name}</div>` : ''}
+              <div style="font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${istStrafe ? beschrKurz : b.beschr}</div>
+              <div style="font-size:.75rem;color:var(--text-muted)">${formatDate(b.datum)}</div>
+            </div>
+            <strong style="color:${b.typ==='einnahme'?'var(--success)':'var(--danger)'};white-space:nowrap;font-size:.95rem">
+              ${b.typ==='einnahme'?'+':'-'}${formatEur(b.betrag)}
+            </strong>
+          </div>`;
+        }).join('')}
+    </div>
+  `;
+}
+
+function renderMemberTermine() {
+  const name = document.getElementById('member-name-sel').value;
+  const container = document.getElementById('member-termine-list');
+  const upcoming = state.termine.filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum));
+  if (upcoming.length === 0) { container.innerHTML = '<div class="empty-state">Keine bevorstehenden Termine.</div>'; return; }
+
+  container.innerHTML = upcoming.map(t => {
+    const angemeldet = (t.anmeldungen || []).includes(name);
+    const abgemeldet = (t.abmeldungen || []).includes(name);
+    const liste = (t.anmeldungen || []).join(', ') || 'Noch niemand';
+    let statusTag = '', actionBtns = '';
+    if (!name) {
+      actionBtns = '<span style="font-size:.8rem;color:var(--text-muted)">Name auswählen zum An-/Abmelden</span>';
+    } else if (angemeldet) {
+      statusTag = '<span class="tag tag-green">✓ Angemeldet</span>';
+      actionBtns = `<button class="btn btn-ghost btn-sm" onclick="memberAbmelden('${t.id}')">Abmelden</button>`;
+    } else if (abgemeldet) {
+      statusTag = '<span class="tag tag-red">✗ Abgemeldet</span>';
+      actionBtns = `<button class="btn btn-success btn-sm" onclick="memberAnmelden('${t.id}')">Wieder anmelden</button>`;
+    } else {
+      statusTag = '<span class="tag tag-yellow">? Noch offen</span>';
+      actionBtns = `<button class="btn btn-primary btn-sm" onclick="memberAnmelden('${t.id}')">✓ Anmelden</button>
+                    <button class="btn btn-ghost btn-sm" onclick="memberAbmelden('${t.id}')">✗ Abmelden</button>`;
+    }
+    return `<div class="termin-card">
+      <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:.5rem">
+        <h3>${t.name}</h3>${statusTag}
+      </div>
+      <div class="meta">📅 ${formatDate(t.datum)} um ${t.zeit} Uhr${t.ort?' · 📍'+t.ort:''}</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">${actionBtns}</div>
+      <div class="member-names">✅ Angemeldet (${(t.anmeldungen||[]).length}): ${liste}</div>
+    </div>`;
+  }).join('');
+}
+
+function memberAnmelden(id) {
+  const name = document.getElementById('member-name-sel').value;
+  if (!name) { showMemberAlert('Bitte zuerst deinen Namen auswählen.','danger'); return; }
+  const t = state.termine.find(x => x.id === id);
+  if (!t) return;
+  const anm = [...new Set([...(t.anmeldungen||[]), name])];
+  const abm = (t.abmeldungen||[]).filter(x => x !== name);
+  db.collection('termine').doc(id).update({ anmeldungen: anm, abmeldungen: abm });
+  showMemberAlert(`✅ ${name} wurde angemeldet!`, 'success');
+}
+
+function memberAbmelden(id) {
+  const name = document.getElementById('member-name-sel').value;
+  if (!name) { showMemberAlert('Bitte zuerst deinen Namen auswählen.','danger'); return; }
+  const t = state.termine.find(x => x.id === id);
+  if (!t) return;
+  const abm = [...new Set([...(t.abmeldungen||[]), name])];
+  const anm = (t.anmeldungen||[]).filter(x => x !== name);
+  db.collection('termine').doc(id).update({ abmeldungen: abm, anmeldungen: anm });
+  showMemberAlert(`❌ ${name} wurde abgemeldet.`, 'success');
+}
+
+function showMemberAlert(msg, type) {
+  const el = document.getElementById('member-alert');
+  el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+  setTimeout(() => el.innerHTML = '', 3000);
+}
+
+// ========== NAVIGATION ==========
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.nav-tab, .bnav-tab').forEach(t => t.classList.remove('active'));
+  // Activate matching tabs in both navs
+  document.querySelectorAll(`.nav-tab, .bnav-tab`).forEach(t => {
+    if (t.dataset.page === name || t.getAttribute('onclick')?.includes(`'${name}'`)) t.classList.add('active');
+  });
+  if (name === 'statistiken') renderStatistiken();
+  if (name === 'kegeln') { renderKegelHistorie(); renderKgTerminListe(); renderKgSpielerAuswahl(); }
+  window.scrollTo(0, 0);
+}
+
+// ========== LIVE KEGELN ==========
+
+const KG_KATEGORIEN = [
+  { id: 'kegel', label: 'Kegel', strafen: [
+    { name: 'Pumpe',                betrag: 0.30 },
+    { name: 'Alle 9',               betrag: 1.00, invertiert: true },
+    { name: 'Klingel',              betrag: 1.00 },
+    { name: 'Behinderung',          betrag: 0.50 },
+    { name: 'Stina',                betrag: 0.50 },
+    { name: 'Kugel einholen',       betrag: 5.00 },
+    { name: 'Kugel n. einholen',    betrag: 0.50 },
+    { name: 'Kugel z.T.',           betrag: 1.00 },
+    { name: 'Kugel f. gebracht',    betrag: 1.00 },
+    { name: 'Verl. Spiel',          betrag: 1.00 },
+    { name: 'Lustwurf',             betrag: 2.00 },
+    { name: 'Schnapszahl',          betrag: 2.00 },
+    { name: 'Straße',               betrag: 1.00 },
+  ]},
+  { id: 'allgemein', label: 'Allgemein', strafen: [
+    { name: 'Glas umwerfen',        betrag: 1.00 },
+    { name: 'Spucken',              betrag: 0.20 },
+    { name: 'Schnipsen',            betrag: 0.50 },
+    { name: 'Stuhl umwerfen',       betrag: 2.00 },
+  ]}
+];
+
+const AVATAR_COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#10b981','#6366f1','#84cc16','#0ea5e9','#d946ef','#64748b'];
+function avatarColor(name) { let h=0; for(let c of name) h=(h*31+c.charCodeAt(0))%AVATAR_COLORS.length; return AVATAR_COLORS[Math.abs(h)]; }
+
+let aktiveSession = null;
+let aktiverKgTab = 'kegel';
+
+function saveLiveSession() {
+  if (!aktiveSession) return;
+  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, updatedAt: Date.now() });
+}
+function clearLiveSession() { db.collection('live').doc('session').set({ aktiv: false }); }
+
+function renderKgSpielerAuswahl() {
+  const container = document.getElementById('kg-spieler-auswahl');
+  if (!container) return;
+  // Alle Chips initialisieren (alle aktiv = dabei)
+  if (container.children.length === 0) {
+    container.innerHTML = state.mitglieder.map(m => `
+      <button class="kg-auswahl-chip aktiv" data-name="${m.name}" onclick="toggleKgAuswahl(this)">
+        ✓ ${m.name}
+      </button>`).join('');
+  }
+}
+
+function toggleKgAuswahl(chip) {
+  chip.classList.toggle('aktiv');
+  chip.textContent = (chip.classList.contains('aktiv') ? '✓ ' : '✗ ') + chip.dataset.name;
+}
+
+function renderKgTerminListe() {
+  const container = document.getElementById('kegeln-termin-liste');
+  if (!container) return;
+  const upcoming = state.termine
+    .filter(t => t.datum >= today())
+    .sort((a,b) => a.datum.localeCompare(b.datum))
+    .slice(0, 6);
+
+  if (upcoming.length === 0) {
+    container.innerHTML = '<div class="empty-state card" style="margin-bottom:1rem">Keine bevorstehenden Termine.</div>';
+    return;
+  }
+
+  container.innerHTML = '<div class="section-title" style="margin-bottom:.75rem">Termin auswählen</div>' +
+    upcoming.map(t => {
+      const anm = t.anmeldungen || [];
+      const offen = state.mitglieder.filter(m => !anm.includes(m.name) && !(t.abmeldungen||[]).includes(m.name));
+      return `<div class="card" style="margin-bottom:.75rem;cursor:pointer;border-color:var(--primary)" onclick="startKegelSession('${t.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:.5rem">
+          <div>
+            <div style="font-weight:700">${t.name}</div>
+            <div style="font-size:.85rem;color:var(--text-muted);margin:.2rem 0">📅 ${formatDate(t.datum)} ${t.zeit?'um '+t.zeit+' Uhr':''} ${t.ort?'· 📍'+t.ort:''}</div>
+            <div style="font-size:.8rem;margin-top:.4rem">
+              <span class="tag tag-green" style="margin-right:.3rem">✅ ${anm.length} angemeldet</span>
+              ${offen.length > 0 ? `<span class="tag tag-yellow">❓ ${offen.length} offen</span>` : ''}
+            </div>
+            ${anm.length > 0 ? `<div style="font-size:.75rem;color:var(--text-muted);margin-top:.4rem">${anm.join(', ')}</div>` : ''}
+          </div>
+          <button class="btn btn-primary btn-sm" style="white-space:nowrap;flex-shrink:0">🎳 Starten</button>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+function startKegelSession(terminId) {
+  let spieler, name, angemeldet = [];
+  if (terminId) {
+    const termin = state.termine.find(t => t.id === terminId);
+    if (!termin) return;
+    name = termin.name + ' · ' + formatDate(termin.datum);
+    angemeldet = termin.anmeldungen || [];
+    // Alle Mitglieder: Angemeldete zuerst, dann Rest — sortiert
+    spieler = [
+      ...state.mitglieder.filter(m => angemeldet.includes(m.name)),
+      ...state.mitglieder.filter(m => !angemeldet.includes(m.name))
+    ];
+  } else {
+    name = document.getElementById('kg-session-name').value.trim() || 'Kegeln ' + formatDate(today());
+    // Nur ausgewählte Spieler (grüne Chips)
+    const ausgewaehlt = [...document.querySelectorAll('.kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
+    spieler = ausgewaehlt.length > 0
+      ? state.mitglieder.filter(m => ausgewaehlt.includes(m.name))
+      : state.mitglieder;
+    angemeldet = spieler.map(m => m.name); // alle ausgewählten gelten als angemeldet
+    document.getElementById('kg-session-name').value = '';
+  }
+
+  const counts = {};
+  spieler.forEach(m => { counts[m.name] = {}; });
+  aktiveSession = { id: uid(), name, counts, spieler: spieler.map(m => m.name), angemeldet };
+  aktiverKgTab = 'kegel';
+  document.getElementById('kegeln-start-screen').style.display = 'none';
+  document.getElementById('kegeln-aktiv-screen').style.display = 'block';
+  document.getElementById('kegeln-bestaetigung-screen').style.display = 'none';
+  document.getElementById('kg-aktiv-name').textContent = name;
+  saveLiveSession();
+  renderKgMatrix();
+}
+
+function switchKgTab(tabId, btn) {
+  aktiverKgTab = tabId;
+  document.querySelectorAll('.kg-tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderKgMatrix();
+}
+
+function kgSpielerTotal(spieler) {
+  const counts = aktiveSession?.counts[spieler] || {};
+  let total = 0;
+  KG_KATEGORIEN.forEach(g => g.strafen.forEach(s => { total += (counts[s.name]||0) * s.betrag; }));
+  return Math.round(total * 100) / 100;
+}
+
+function renderKgMatrix() {
+  if (!aktiveSession) return;
+  const gruppe = KG_KATEGORIEN.find(g => g.id === aktiverKgTab);
+  const strafen = gruppe.strafen;
+  // Reihenfolge aus aktiveSession.spieler beibehalten (angemeldet zuerst)
+  const spielerRaw = aktiveSession.spieler || state.mitglieder.map(m=>m.name);
+  const spieler = spielerRaw.map(name => state.mitglieder.find(m => m.name === name)).filter(Boolean);
+  const gesamtTotal = spieler.reduce((s,m) => s + kgSpielerTotal(m.name), 0);
+
+  // Header
+  let thead = '<thead><tr><th class="name-col">NAME</th>';
+  strafen.forEach(s => {
+    thead += `<th style="min-width:52px${s.invertiert?';background:#fef3c7':''}">`
+      + `<div>${s.name}${s.invertiert?' <span title="Alle anderen bekommen die Strafe" style="font-size:.65rem">🔄</span>':''}</div>`
+      + `<div style="color:var(--primary);font-weight:800">${formatEur(s.betrag)}</div></th>`;
+  });
+  thead += '<th class="sum-col">SUMME</th></tr></thead>';
+
+  // Body
+  let tbody = '<tbody>';
+  const angemeldet = aktiveSession.angemeldet || [];
+  spieler.forEach(m => {
+    const counts = aktiveSession.counts[m.name] || {};
+    const total = kgSpielerTotal(m.name);
+    const initials = m.name.slice(0,1).toUpperCase();
+    const col = avatarColor(m.name);
+    const nichtAngemeldet = angemeldet.length > 0 && !angemeldet.includes(m.name);
+    const rowStyle = nichtAngemeldet ? 'opacity:.35' : '';
+    tbody += `<tr style="${rowStyle}">
+      <td class="name-col">
+        <span class="kg-avatar" style="background:${nichtAngemeldet ? '#94a3b8' : col}">${initials}</span>${m.name}
+      </td>`;
+    strafen.forEach(s => {
+      const n = counts[s.name] || 0;
+      tbody += `<td>
+        <div class="kg-cell ${n>0?'hat-wert':''}"
+          onclick="kgMatrixTap('${m.name}','${s.name}')"
+          oncontextmenu="event.preventDefault();kgMatrixLongPress('${m.name}','${s.name}')"
+          data-spieler="${m.name}" data-strafe="${s.name}">
+          ${n > 0 ? n : '·'}
+        </div>
+      </td>`;
+    });
+    tbody += `<td class="sum-col ${total>0?'hat-wert':''}">${total > 0 ? formatEur(total) : '—'}</td></tr>`;
+  });
+  // Gesamt-Zeile
+  tbody += `<tr style="font-weight:700;background:var(--bg)"><td class="name-col" style="font-weight:700;background:var(--bg)">GESAMT</td>`;
+  strafen.forEach(s => {
+    const colTotal = spieler.reduce((sum,m) => sum + (aktiveSession.counts[m.name]?.[s.name]||0), 0);
+    tbody += `<td style="text-align:center;padding:8px 4px;font-weight:700;color:${colTotal>0?'var(--primary)':'var(--text-muted)'};">${colTotal > 0 ? colTotal : '·'}</td>`;
+  });
+  tbody += `<td class="sum-col" style="background:#eff6ff;font-weight:800;color:var(--primary)">${formatEur(gesamtTotal)}</td></tr>`;
+  tbody += '</tbody>';
+
+  document.getElementById('kg-matrix-table').innerHTML = thead + tbody;
+
+  // Gesamt-Bar
+  document.getElementById('kg-gesamt-bar').innerHTML =
+    `<span style="color:var(--text-muted)">Gesamtstrafen</span><strong>${formatEur(gesamtTotal)}</strong>`;
+
+  // Long-press support für mobile
+  setupLongPress();
+}
+
+function kgMatrixTap(spieler, strafName) {
+  // Invertierte Strafen: Werfer auswählen → alle anderen bekommen +1
+  const strafDef = KG_KATEGORIEN.flatMap(g => g.strafen).find(s => s.name === strafName);
+  if (strafDef?.invertiert) {
+    zeigeAlleNeunPopup(strafName);
+    return;
+  }
+  if (!aktiveSession.counts[spieler]) aktiveSession.counts[spieler] = {};
+  aktiveSession.counts[spieler][strafName] = (aktiveSession.counts[spieler][strafName]||0) + 1;
+  saveLiveSession();
+  renderKgMatrix();
+}
+
+function zeigeAlleNeunPopup(strafName) {
+  const spieler = aktiveSession.spieler
+    ? state.mitglieder.filter(m => aktiveSession.spieler.includes(m.name))
+    : state.mitglieder;
+  const angemeldet = aktiveSession.angemeldet || [];
+  const aktive = angemeldet.length > 0 ? spieler.filter(m => angemeldet.includes(m.name)) : spieler;
+
+  const popup = document.createElement('div');
+  popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:flex-end;justify-content:center';
+  popup.innerHTML = `
+    <div style="background:white;border-radius:16px 16px 0 0;padding:1.5rem;width:100%;max-width:480px" onclick="event.stopPropagation()">
+      <div style="font-weight:700;font-size:1rem;margin-bottom:.25rem">🎳 Alle 9!</div>
+      <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:1rem">Wer hat geworfen? Alle anderen bekommen +1.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
+        ${aktive.map(m => `
+          <button onclick="alleNeunWerfer('${m.name}','${strafName}',this.closest('[style*=fixed]'))"
+            style="padding:10px 18px;border-radius:8px;border:2px solid var(--border);background:white;font-weight:600;font-size:.9rem;cursor:pointer;-webkit-tap-highlight-color:transparent">
+            ${m.name}
+          </button>`).join('')}
+      </div>
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn btn-ghost btn-full">Abbrechen</button>
+    </div>`;
+  popup.addEventListener('click', () => popup.remove());
+  document.body.appendChild(popup);
+}
+
+function alleNeunWerfer(werfer, strafName, popup) {
+  const spieler = aktiveSession.spieler
+    ? state.mitglieder.filter(m => aktiveSession.spieler.includes(m.name))
+    : state.mitglieder;
+  const angemeldet = aktiveSession.angemeldet || [];
+  const aktive = angemeldet.length > 0 ? spieler.filter(m => angemeldet.includes(m.name)) : spieler;
+
+  // Alle ANDEREN aktiven Spieler bekommen +1
+  aktive.filter(m => m.name !== werfer).forEach(m => {
+    if (!aktiveSession.counts[m.name]) aktiveSession.counts[m.name] = {};
+    aktiveSession.counts[m.name][strafName] = (aktiveSession.counts[m.name][strafName]||0) + 1;
+  });
+
+  // Werfer-Tracking für Statistik (in eigener Kategorie)
+  const werferKat = strafName + ' (geworfen)';
+  if (!aktiveSession.counts[werfer]) aktiveSession.counts[werfer] = {};
+  aktiveSession.counts[werfer][werferKat] = (aktiveSession.counts[werfer][werferKat]||0) + 1;
+
+  if (popup) popup.remove();
+  saveLiveSession();
+  renderKgMatrix();
+}
+
+function kgMatrixLongPress(spieler, strafName) {
+  if (!aktiveSession.counts[spieler]) return;
+  const c = aktiveSession.counts[spieler][strafName]||0;
+  if (c > 0) { aktiveSession.counts[spieler][strafName] = c - 1; saveLiveSession(); renderKgMatrix(); }
+}
+
+let lpTimer = null;
+function setupLongPress() {
+  document.querySelectorAll('.kg-cell').forEach(cell => {
+    cell.addEventListener('touchstart', e => {
+      const spieler = cell.dataset.spieler, strafe = cell.dataset.strafe;
+      lpTimer = setTimeout(() => { e.preventDefault(); kgMatrixLongPress(spieler, strafe); }, 500);
+    }, { passive: true });
+    cell.addEventListener('touchend', () => { clearTimeout(lpTimer); });
+    cell.addEventListener('touchmove', () => { clearTimeout(lpTimer); });
+  });
+}
+
+function kgBerechneAuswertung() {
+  // Aktive = angemeldet, Abwesende = alle anderen Mitglieder
+  const angemeldet = aktiveSession.angemeldet || [];
+  const aktive = angemeldet.length > 0
+    ? state.mitglieder.filter(m => angemeldet.includes(m.name))
+    : state.mitglieder.filter(m => (aktiveSession.counts[m.name] && kgSpielerTotal(m.name) > 0));
+  const abwesende = state.mitglieder.filter(m => !aktive.find(a => a.name === m.name));
+
+  // Kegelbuch-Strafen der Aktiven
+  const aktiveStrafen = aktive.map(m => {
+    const total = kgSpielerTotal(m.name);
+    const counts = aktiveSession.counts[m.name] || {};
+    const details = KG_KATEGORIEN.flatMap(g => g.strafen)
+      .filter(s => (counts[s.name]||0) > 0)
+      .map(s => `${s.name} ×${counts[s.name]}`).join(', ');
+    return { name: m.name, kegelbuch: total, details, abwesend: false };
+  });
+
+  // Durchschnitt
+  const gesamtAktiv = aktiveStrafen.reduce((s,m) => s + m.kegelbuch, 0);
+  const durchschnitt = aktive.length > 0 ? Math.round(gesamtAktiv / aktive.length * 100) / 100 : 0;
+
+  // Abwesende bekommen Durchschnitt
+  const abwesendeStrafen = abwesende.map(m => ({
+    name: m.name, kegelbuch: durchschnitt, details: `Ø aus ${aktive.length} Keglern`, abwesend: true
+  }));
+
+  const alle = [...aktiveStrafen, ...abwesendeStrafen];
+  return { alle, durchschnitt, aktive, abwesende };
+}
+
+function schliesseKegelSession() {
+  if (!aktiveSession) return;
+  const hatEintraege = state.mitglieder.some(m => kgSpielerTotal(m.name) > 0);
+  if (!hatEintraege) { alert('Noch keine Einträge vorhanden!'); return; }
+
+  const { alle, durchschnitt, abwesende } = kgBerechneAuswertung();
+  const KEGELBAHN = 3.00;
+
+  document.getElementById('kg-bestaetigung-liste').innerHTML = `
+    <div style="margin-bottom:1rem">
+      ${alle.sort((a,b) => a.abwesend - b.abwesend || b.kegelbuch - a.kegelbuch).map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:start;padding:.6rem 0;border-bottom:1px solid var(--border);${s.abwesend?'opacity:.5':''}">
+          <div>
+            <div style="font-weight:600">${s.name} ${s.abwesend ? '<span class="tag tag-yellow" style="font-size:.7rem">abwesend</span>' : ''}</div>
+            <div style="font-size:.75rem;color:var(--text-muted)">${s.details}</div>
+          </div>
+          <div style="text-align:right;white-space:nowrap">
+            <div style="font-weight:700;color:var(--danger)">${formatEur(s.kegelbuch)}</div>
+            <div style="font-size:.72rem;color:var(--text-muted)">+ ${formatEur(KEGELBAHN)} Bahn</div>
+            <div style="font-weight:800;color:var(--primary);font-size:.95rem">= ${formatEur(s.kegelbuch + KEGELBAHN)}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:.75rem;font-size:.875rem">
+      <div style="display:flex;justify-content:space-between;margin-bottom:.3rem">
+        <span>Ø Kegelbuch-Strafe (aktive)</span><strong>${formatEur(durchschnitt)}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:.3rem">
+        <span>Kegelbahn-Gebühr (alle)</span><strong>${formatEur(KEGELBAHN)}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--border);padding-top:.3rem;margin-top:.3rem">
+        <span>Gesamt aller Strafen</span>
+        <strong style="color:var(--primary)">${formatEur(alle.reduce((s,m) => s + m.kegelbuch + KEGELBAHN, 0))}</strong>
+      </div>
+    </div>`;
+
+  document.getElementById('kegeln-aktiv-screen').style.display = 'none';
+  document.getElementById('kegeln-bestaetigung-screen').style.display = 'block';
+}
+
+function zurueckZuSession() {
+  document.getElementById('kegeln-bestaetigung-screen').style.display = 'none';
+  document.getElementById('kegeln-aktiv-screen').style.display = 'block';
+}
+
+function bestaetigeKegelSession() {
+  if (!aktiveSession) return;
+  const { alle } = kgBerechneAuswertung();
+  const KEGELBAHN = 3.00;
+  const batch = db.batch();
+
+  // Einträge für Historie
+  const eintraegeFlach = [];
+  state.mitglieder.forEach(m => {
+    const counts = aktiveSession.counts[m.name]||{};
+    KG_KATEGORIEN.forEach(g => g.strafen.forEach(s => {
+      const n = counts[s.name]||0;
+      if (n > 0) eintraegeFlach.push({ mitglied: m.name, kategorie: s.name, betrag: s.betrag*n, anzahl: n });
+    }));
+  });
+
+  // Strafen speichern
+  alle.forEach(s => {
+    const gesamtBetrag = Math.round((s.kegelbuch + KEGELBAHN) * 100) / 100;
+    const notiz = s.abwesend
+      ? `${aktiveSession.name}: Abwesenheit (Ø ${formatEur(s.kegelbuch)}) + Kegelbahn`
+      : `${aktiveSession.name}: ${s.details} + Kegelbahn`;
+    batch.set(db.collection('strafen').doc(), {
+      mitglied: s.name, kategorie: 'Kegelbuch',
+      notiz, betrag: gesamtBetrag,
+      datum: today(), bezahlt: false, createdAt: Date.now()
+    });
+  });
+
+  db.collection('kegelsessions').add({
+    name: aktiveSession.name, datum: today(),
+    eintraege: eintraegeFlach,
+    angemeldet: aktiveSession.angemeldet || [],
+    spieler: aktiveSession.spieler || [],
+    createdAt: Date.now()
+  });
+
+  batch.commit().then(() => {
+    aktiveSession = null; clearLiveSession();
+    document.getElementById('kegeln-bestaetigung-screen').style.display = 'none';
+    document.getElementById('kegeln-start-screen').style.display = 'block';
+    renderKegelHistorie();
+    alert('✅ Strafen wurden übernommen!');
+  });
+}
+
+function brecheKegelSessionAb() {
+  if (!confirm('Session wirklich verwerfen?')) return;
+  aktiveSession = null; clearLiveSession();
+  document.getElementById('kegeln-aktiv-screen').style.display = 'none';
+  document.getElementById('kegeln-start-screen').style.display = 'block';
+  // Spieler-Auswahl zurücksetzen
+  const c = document.getElementById('kg-spieler-auswahl');
+  if (c) c.innerHTML = '';
+  renderKgSpielerAuswahl();
+}
+
+function renderKegelHistorie() {
+  if (!db) return;
+  db.collection('kegelsessions').orderBy('createdAt','desc').limit(8).get().then(snap => {
+    const container = document.getElementById('kegeln-historie');
+    if (!container) return;
+    if (snap.empty) { container.innerHTML = ''; return; }
+    container.innerHTML = '<div class="section-title" style="padding:0 0 .5rem">Letzte Sessions</div>' +
+      snap.docs.map(d => {
+        const s = d.data();
+        const total = (s.eintraege||[]).reduce((sum,e) => sum + Number(e.betrag), 0);
+        const aktiveAnzahl = (s.angemeldet||[]).length || '?';
+        return `<div class="card" style="opacity:.85">
+          <div style="display:flex;justify-content:space-between;align-items:start;gap:.5rem">
+            <div style="flex:1;cursor:pointer" onclick="zeigeSessionDetail('${d.id}')">
+              <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.25rem">
+                <strong>🎳 ${s.name}</strong>
+                <span class="tag tag-blue">${formatDate(s.datum)}</span>
+              </div>
+              <div style="font-size:.875rem;color:var(--text-muted)">
+                ${aktiveAnzahl} Kegler · Kegelbuch gesamt: <strong style="color:var(--text)">${formatEur(total)}</strong>
+              </div>
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="loescheSession('${d.id}','${s.name}')">🗑</button>
+          </div>
+        </div>`;
+      }).join('');
+  });
+}
+
+function loescheSession(sessionId, name) {
+  if (!confirm(`Session "${name}" wirklich löschen? Die bereits gespeicherten Strafen bleiben erhalten.`)) return;
+  db.collection('kegelsessions').doc(sessionId).delete();
+}
+
+function zeigeSessionDetail(sessionId) {
+  db.collection('kegelsessions').doc(sessionId).get().then(doc => {
+    if (!doc.exists) return;
+    const s = doc.data();
+    const eintraege = s.eintraege || [];
+    // Gruppiere nach Mitglied
+    const perSpieler = {};
+    eintraege.forEach(e => {
+      if (!perSpieler[e.mitglied]) perSpieler[e.mitglied] = { total: 0, details: [] };
+      perSpieler[e.mitglied].total += Number(e.betrag);
+      perSpieler[e.mitglied].details.push(`${e.kategorie} ×${e.anzahl}`);
+    });
+    const gesamtKegelbuch = Object.values(perSpieler).reduce((s,m) => s + m.total, 0);
+    const aktiveAnzahl = (s.angemeldet||[]).length || Object.keys(perSpieler).length;
+    const durchschnitt = aktiveAnzahl > 0 ? Math.round(gesamtKegelbuch / aktiveAnzahl * 100) / 100 : 0;
+
+    const html = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="this.remove()">
+      <div style="background:white;border-radius:16px 16px 0 0;padding:1.5rem;width:100%;max-width:640px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 style="font-size:1rem;font-weight:700">🎳 ${s.name}</h3>
+          <button onclick="this.closest('[onclick]').remove()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--text-muted)">✕</button>
+        </div>
+        <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">📅 ${formatDate(s.datum)}</div>
+        <div class="section-title">Kegelbuch-Strafen</div>
+        ${Object.entries(perSpieler).sort((a,b) => b[1].total - a[1].total).map(([name, data]) => `
+          <div style="display:flex;justify-content:space-between;align-items:start;padding:.5rem 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600">${name}</div>
+              <div style="font-size:.75rem;color:var(--text-muted)">${data.details.join(', ')}</div>
+            </div>
+            <strong style="color:var(--danger)">${formatEur(data.total)}</strong>
+          </div>`).join('')}
+        <div style="background:var(--bg);border-radius:8px;padding:.75rem;margin-top:1rem;font-size:.875rem">
+          <div style="display:flex;justify-content:space-between;margin-bottom:.25rem">
+            <span>Ø Kegelbuch (aktive)</span><strong>${formatEur(durchschnitt)}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span>Kegelbahn-Gebühr</span><strong>€ 3,00</strong>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+  });
+}
+
+// ========== TERMINE ==========
+function toggleWiederholung() {
+  const checked = document.getElementById('t-wiederholen').checked;
+  const opts = document.getElementById('wiederholung-optionen');
+  opts.style.display = checked ? 'block' : 'none';
+}
+
+function addTermin() {
+  const datum = document.getElementById('t-datum').value;
+  const zeit = document.getElementById('t-zeit').value;
+  const name = document.getElementById('t-name').value.trim();
+  const ort = document.getElementById('t-ort').value.trim();
+  const wiederholen = document.getElementById('t-wiederholen').checked;
+  if (!datum || !name) { alert('Datum und Bezeichnung sind Pflicht!'); return; }
+
+  if (wiederholen) {
+    const wochen = parseInt(document.getElementById('t-wochen').value) || 4;
+    const voraus = parseInt(document.getElementById('t-voraus').value) || 6;
+    const serieId = uid();
+    const batch = db.batch();
+    let d = new Date(datum + 'T12:00:00');
+    for (let i = 0; i < voraus; i++) {
+      const datumStr = d.toISOString().split('T')[0];
+      const ref = db.collection('termine').doc();
+      batch.set(ref, { datum: datumStr, zeit, name, ort, anmeldungen: [], abmeldungen: [], serieId, serieWochen: wochen, createdAt: Date.now() + i });
+      d.setDate(d.getDate() + wochen * 7);
+    }
+    batch.commit().then(() => {
+      // Store series config so we can auto-extend
+      db.collection('serien').doc(serieId).set({ name, zeit, ort, wochen, aktiv: true });
+    });
+  } else {
+    db.collection('termine').add({ datum, zeit, name, ort, anmeldungen: [], abmeldungen: [], createdAt: Date.now() });
+  }
+
+  document.getElementById('t-datum').value = '';
+  document.getElementById('t-name').value = '';
+  document.getElementById('t-ort').value = '';
+  document.getElementById('t-wiederholen').checked = false;
+  document.getElementById('wiederholung-optionen').style.display = 'none';
+}
+
+// Auto-extend: wenn der letzte Termin einer Serie < 4 Wochen entfernt ist, neuen anhängen
+function autoExtendSerien() {
+  if (!db) return;
+  const heute = today();
+  // Alle aktiven Serien
+  db.collection('serien').where('aktiv','==',true).get().then(snap => {
+    snap.forEach(serieDoc => {
+      const serie = serieDoc.data();
+      const serieId = serieDoc.id;
+      // Letzten Termin dieser Serie finden
+      const serieTermine = state.termine
+        .filter(t => t.serieId === serieId && t.datum >= heute)
+        .sort((a,b) => b.datum.localeCompare(a.datum));
+      if (!serieTermine.length) return;
+      const letzter = serieTermine[0];
+      // Abstand heute → letzter Termin in Tagen
+      const diff = (new Date(letzter.datum) - new Date(heute)) / 86400000;
+      if (diff < 28) {
+        // Neuen Termin anhängen
+        const d = new Date(letzter.datum + 'T12:00:00');
+        d.setDate(d.getDate() + serie.wochen * 7);
+        const newDatum = d.toISOString().split('T')[0];
+        // Prüfen ob dieser Termin schon existiert
+        const exists = state.termine.some(t => t.serieId === serieId && t.datum === newDatum);
+        if (!exists) {
+          db.collection('termine').add({
+            datum: newDatum, zeit: serie.zeit, name: serie.name, ort: serie.ort,
+            anmeldungen: [], abmeldungen: [], serieId, serieWochen: serie.wochen,
+            createdAt: Date.now()
+          });
+        }
+      }
+    });
+  });
+}
+
+function deleteTermin(id) {
+  if (!confirm('Termin wirklich löschen?')) return;
+  db.collection('termine').doc(id).delete();
+}
+
+function toggleAnmeldung(terminId, mitgliedName) {
+  const t = state.termine.find(x => x.id === terminId);
+  if (!t) return;
+  let anm = [...(t.anmeldungen||[])], abm = [...(t.abmeldungen||[])];
+  if (anm.includes(mitgliedName)) {
+    anm = anm.filter(x => x !== mitgliedName);
+    if (!abm.includes(mitgliedName)) abm.push(mitgliedName);
+  } else {
+    abm = abm.filter(x => x !== mitgliedName);
+    if (!anm.includes(mitgliedName)) anm.push(mitgliedName);
+  }
+  db.collection('termine').doc(terminId).update({ anmeldungen: anm, abmeldungen: abm });
+}
+
+function renderTermine() {
+  const container = document.getElementById('termine-list');
+  if (!state.termine.length) { container.innerHTML = '<div class="empty-state card">Noch keine Termine angelegt.</div>'; return; }
+  const now = today();
+  const upcoming = state.termine.filter(t => t.datum >= now).sort((a,b) => a.datum.localeCompare(b.datum));
+  const past = [...state.termine.filter(t => t.datum < now)].sort((a,b) => b.datum.localeCompare(a.datum));
+  let html = '';
+  if (upcoming.length) { html += '<div class="section-title">Bevorstehende Termine</div>' + upcoming.map(t => renderTerminCard(t,false)).join(''); }
+  if (past.length) { html += '<div class="section-title">Vergangene Termine</div>' + past.map(t => renderTerminCard(t,true)).join(''); }
+  container.innerHTML = html;
+}
+
+function renderTerminCard(t, isPast) {
+  const anm = t.anmeldungen||[], abm = t.abmeldungen||[];
+  const offen = state.mitglieder.filter(m => !anm.includes(m.name) && !abm.includes(m.name));
+  const memberRows = state.mitglieder.map(m => {
+    const isAnm = anm.includes(m.name), isAbm = abm.includes(m.name);
+    const tag = isAnm ? '<span class="tag tag-green">An</span>' : isAbm ? '<span class="tag tag-red">Ab</span>' : '<span class="tag tag-yellow">?</span>';
+    return `<tr><td>${m.name}</td><td>${tag}</td><td><button class="btn btn-ghost btn-sm" onclick="toggleAnmeldung('${t.id}','${m.name}')">${isAnm?'Abmelden':'Anmelden'}</button></td></tr>`;
+  }).join('');
+  return `<div class="card" style="${isPast?'opacity:.75':''}">
+    <div class="card-title">
+      <span>${isPast?'⏮':'📅'} ${t.name} · ${formatDate(t.datum)}${t.zeit?' um '+t.zeit+' Uhr':''}${t.ort?' · 📍'+t.ort:''}${t.serieId?` <span class="tag tag-blue" style="font-size:.7rem">🔁 alle ${t.serieWochen} Wo.</span>`:''}</span>
+      <button class="btn btn-danger btn-sm" onclick="deleteTermin('${t.id}')">🗑</button>
+    </div>
+    <div style="display:flex;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <span class="tag tag-green">✅ ${anm.length} angemeldet</span>
+      <span class="tag tag-red">❌ ${abm.length} abgemeldet</span>
+      <span class="tag tag-yellow">❓ ${offen.length} offen</span>
+    </div>
+    <details><summary style="cursor:pointer;font-size:.85rem;color:var(--text-muted);font-weight:600">Mitglieder verwalten</summary>
+    <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>Mitglied</th><th>Status</th><th></th></tr></thead><tbody>${memberRows}</tbody></table></div>
+    </details>
+  </div>`;
+}
+
+// ========== MITGLIEDER ==========
+function addMitglied() {
+  const name = document.getElementById('m-name').value.trim();
+  if (!name) { alert('Name eingeben!'); return; }
+  if (state.mitglieder.find(m => m.name === name)) { alert('Mitglied existiert bereits!'); return; }
+  db.collection('mitglieder').add({ name, createdAt: Date.now() });
+  document.getElementById('m-name').value = '';
+}
+
+function deleteMitglied(id, name) {
+  if (!confirm(`${name} wirklich löschen?`)) return;
+  db.collection('mitglieder').doc(id).delete();
+}
+
+function renameMitglied(id, altName) {
+  const neuerName = prompt(`Neuer Name für "${altName}":`, altName);
+  if (!neuerName || neuerName.trim() === altName) return;
+  const n = neuerName.trim();
+  if (state.mitglieder.find(m => m.name === n)) { alert('Name existiert bereits!'); return; }
+  db.collection('mitglieder').doc(id).update({ name: n });
+  // Strafen + Termine aktualisieren
+  state.strafen.filter(s => s.mitglied === altName).forEach(s => db.collection('strafen').doc(s.id).update({ mitglied: n }));
+  state.kassenbuch.filter(b => b.beschr?.includes(altName)).forEach(b => db.collection('kassenbuch').doc(b.id).update({ beschr: b.beschr.replace(altName, n) }));
+}
+
+function renderMitglieder() {
+  document.getElementById('m-count').textContent = state.mitglieder.length;
+  const tbody = document.getElementById('mitglieder-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = state.mitglieder.map(m => {
+    const offenBetrag = state.strafen.filter(s => s.mitglied === m.name && !s.bezahlt).reduce((sum,s) => sum+Number(s.betrag), 0);
+    return `<tr>
+      <td><strong>${m.name}</strong></td>
+      <td>${offenBetrag > 0 ? `<span class="tag tag-red">${formatEur(offenBetrag)}</span>` : '<span class="tag tag-green">Keine</span>'}</td>
+      <td style="display:flex;gap:.3rem">
+        <button class="btn btn-ghost btn-sm" onclick="renameMitglied('${m.id}','${m.name}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteMitglied('${m.id}','${m.name}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+  const cfgName = document.getElementById('cfg-clubname');
+  if (cfgName && !cfgName.value) cfgName.placeholder = state.clubName;
+}
+
+function updateSelects() {
+  const opts = state.mitglieder.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+  ['s-mitglied','stats-mitglied-sel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const cur = el.value; el.innerHTML = opts; if (cur) el.value = cur; }
+  });
+}
+
+// ========== STRAFEN ==========
+function addStrafKat() {
+  const name = document.getElementById('sk-name').value.trim();
+  const betrag = parseFloat(document.getElementById('sk-betrag').value) || 1;
+  if (!name) { alert('Name eingeben!'); return; }
+  db.collection('strafkategorien').add({ name, betrag });
+  document.getElementById('sk-name').value = '';
+  document.getElementById('sk-betrag').value = '';
+}
+
+function deleteStrafKat(id) {
+  if (!confirm('Kategorie löschen?')) return;
+  db.collection('strafkategorien').doc(id).delete();
+}
+
+function renderStrafKategorien() {
+  document.getElementById('straf-kat-list').innerHTML = state.strafKategorien.map(k => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:.875rem"><strong>${k.name}</strong> – ${formatEur(k.betrag)}</span>
+      <button class="btn btn-danger btn-sm" onclick="deleteStrafKat('${k.id}')">🗑</button>
+    </div>`).join('');
+}
+
+function updateStrafKatSelect() {
+  const sel = document.getElementById('s-kategorie');
+  sel.innerHTML = '<option value="">– auswählen –</option>' +
+    state.strafKategorien.map(k => `<option value="${k.name}" data-betrag="${k.betrag}">${k.name} (${formatEur(k.betrag)})</option>`).join('');
+}
+
+function updateStrafBetrag() {
+  const sel = document.getElementById('s-kategorie');
+  const opt = sel.selectedOptions[0];
+  if (opt?.dataset.betrag) document.getElementById('s-betrag').value = opt.dataset.betrag;
+}
+
+function addStrafe() {
+  const mitglied = document.getElementById('s-mitglied').value;
+  const kategorie = document.getElementById('s-kategorie').value;
+  const betrag = parseFloat(document.getElementById('s-betrag').value);
+  const datum = document.getElementById('s-datum').value || today();
+  const notiz = document.getElementById('s-notiz').value.trim();
+  const bezahlt = document.getElementById('s-bezahlt').checked;
+  if (!mitglied || !kategorie || isNaN(betrag)) { alert('Mitglied, Kategorie und Betrag ausfüllen!'); return; }
+  db.collection('strafen').add({ mitglied, kategorie, betrag, datum, notiz, bezahlt, createdAt: Date.now() }).then(ref => {
+    if (bezahlt) {
+      db.collection('kassenbuch').add({
+        typ: 'einnahme',
+        beschr: `Strafe: ${mitglied} – ${kategorie}${notiz ? ' ('+notiz+')' : ''}`,
+        betrag, datum, kat: 'Strafen', strafId: ref.id, createdAt: Date.now()
+      });
+    }
+  });
+  document.getElementById('s-notiz').value = '';
+  document.getElementById('s-bezahlt').checked = false;
+}
+
+function zeigeMultiStrafenPopup() {
+  const popup = document.createElement('div');
+  popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:flex-end;justify-content:center';
+  popup.innerHTML = `
+    <div style="background:white;border-radius:16px 16px 0 0;padding:1.5rem;width:100%;max-width:540px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">
+      <div style="font-weight:700;font-size:1rem;margin-bottom:1rem">➕ Sammel-Strafe</div>
+
+      <div class="form-group" style="margin-bottom:.75rem">
+        <label>Kategorie</label>
+        <select id="ms-kategorie" onchange="updateMsBetrag()">
+          <option value="">– auswählen –</option>
+          ${state.strafKategorien.map(k => `<option value="${k.name}" data-betrag="${k.betrag}">${k.name} (${formatEur(k.betrag)})</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:.75rem">
+        <label>Betrag (€)</label>
+        <input type="number" id="ms-betrag" step="0.50" placeholder="0.00">
+      </div>
+      <div class="form-group" style="margin-bottom:.75rem">
+        <label>Notiz (optional)</label>
+        <input type="text" id="ms-notiz" placeholder="Begründung…">
+      </div>
+      <div class="form-group" style="margin-bottom:.75rem">
+        <label>Mitglieder auswählen</label>
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.25rem">
+          <button class="btn btn-ghost btn-sm" onclick="msAlleToggle(true)">Alle</button>
+          <button class="btn btn-ghost btn-sm" onclick="msAlleToggle(false)">Keiner</button>
+        </div>
+        <div id="ms-chips" style="display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.5rem">
+          ${state.mitglieder.map(m => `
+            <button class="kg-auswahl-chip aktiv" data-name="${m.name}" onclick="this.classList.toggle('aktiv');this.textContent=(this.classList.contains('aktiv')?'✓ ':'✗ ')+'${m.name}'">
+              ✓ ${m.name}
+            </button>`).join('')}
+        </div>
+      </div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem">
+        <button class="btn btn-primary" onclick="speichereMultiStrafe(this.closest('[style*=fixed]'))">➕ Eintragen</button>
+        <button class="btn btn-ghost" onclick="this.closest('[style*=fixed]').remove()">Abbrechen</button>
+      </div>
+    </div>`;
+  popup.addEventListener('click', () => popup.remove());
+  document.body.appendChild(popup);
+}
+
+function updateMsBetrag() {
+  const sel = document.getElementById('ms-kategorie');
+  const opt = sel?.selectedOptions[0];
+  if (opt?.dataset.betrag) document.getElementById('ms-betrag').value = opt.dataset.betrag;
+}
+
+function msAlleToggle(aktiv) {
+  document.querySelectorAll('#ms-chips .kg-auswahl-chip').forEach(c => {
+    c.classList.toggle('aktiv', aktiv);
+    c.textContent = (aktiv ? '✓ ' : '✗ ') + c.dataset.name;
+  });
+}
+
+function speichereMultiStrafe(popup) {
+  const kategorie = document.getElementById('ms-kategorie').value;
+  const betrag = parseFloat(document.getElementById('ms-betrag').value);
+  const notiz = document.getElementById('ms-notiz').value.trim();
+  const ausgewaehlt = [...document.querySelectorAll('#ms-chips .kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
+  if (!kategorie || isNaN(betrag) || betrag <= 0) { alert('Kategorie und Betrag ausfüllen!'); return; }
+  if (!ausgewaehlt.length) { alert('Mindestens eine Person auswählen!'); return; }
+  const batch = db.batch();
+  ausgewaehlt.forEach(mitglied => {
+    batch.set(db.collection('strafen').doc(), {
+      mitglied, kategorie, betrag, notiz, datum: today(), bezahlt: false, createdAt: Date.now()
+    });
+  });
+  batch.commit().then(() => {
+    popup.remove();
+    alert(`✅ Strafe an ${ausgewaehlt.length} Personen eingetragen.`);
+  });
+}
+
+function alleStrafenBezahlt() {
+  const offene = state.strafen.filter(s => !s.bezahlt);
+  if (!offene.length) { alert('Keine offenen Strafen vorhanden.'); return; }
+  if (!confirm(`Alle ${offene.length} offenen Strafen (${formatEur(offene.reduce((s,x)=>s+Number(x.betrag),0))}) als bezahlt markieren?`)) return;
+  const batch = db.batch();
+  offene.forEach(s => batch.update(db.collection('strafen').doc(s.id), { bezahlt: true }));
+  batch.commit();
+}
+
+function bezahltToggle(id, current) {
+  const strafe = state.strafen.find(s => s.id === id);
+  if (!strafe) return;
+  const neuBezahlt = !current;
+  db.collection('strafen').doc(id).update({ bezahlt: neuBezahlt });
+
+  if (neuBezahlt) {
+    // Automatisch als Einnahme ins Kassenbuch
+    db.collection('kassenbuch').add({
+      typ: 'einnahme',
+      beschr: `Strafe: ${strafe.mitglied} – ${strafe.kategorie}${strafe.notiz ? ' ('+strafe.notiz+')' : ''}`,
+      betrag: strafe.betrag,
+      datum: today(),
+      kat: 'Strafen',
+      strafId: id, // Referenz zur Strafe
+      createdAt: Date.now()
+    });
+  } else {
+    // Rückgängig: zugehörige Kassenbuchung wieder löschen
+    db.collection('kassenbuch').where('strafId', '==', id).get().then(snap => {
+      snap.forEach(doc => doc.ref.delete());
+    });
+  }
+}
+
+function deleteStrafe(id) {
+  if (!confirm('Strafe löschen?')) return;
+  db.collection('strafen').doc(id).delete();
+}
+
+function renderStrafen() {
+  const offene = state.strafen.filter(s => !s.bezahlt);
+  const offenBetrag = offene.reduce((sum,s) => sum + Number(s.betrag), 0);
+
+  // Badge im Titel
+  const badge = document.getElementById('offene-strafen-badge');
+  if (badge) badge.textContent = offene.length ? offene.length + ' offen' : '';
+
+  // Summary-Boxen oben auf der Strafen-Seite
+  const summaryBoxes = document.getElementById('strafen-summary-boxes');
+  if (summaryBoxes) {
+    const gesamt = state.strafen.reduce((sum,s) => sum + Number(s.betrag), 0);
+    const bezahltBetrag = state.strafen.filter(s=>s.bezahlt).reduce((sum,s) => sum + Number(s.betrag), 0);
+    summaryBoxes.innerHTML = `
+      <div class="stat"><div class="val" style="color:var(--danger)">${offene.length}</div><div class="lbl">Offen</div></div>
+      <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offenBetrag)}</div><div class="lbl">Offener Betrag</div></div>
+      <div class="stat"><div class="val" style="color:var(--success)">${formatEur(bezahltBetrag)}</div><div class="lbl">Bereits bezahlt</div></div>
+    `;
+  }
+
+  // Hinweisbox unter Kassenstand
+  const kasseBox = document.getElementById('offene-strafen-kasse-box');
+  const kasseDetail = document.getElementById('offene-strafen-kasse-detail');
+  if (kasseBox && kasseDetail) {
+    if (offene.length > 0) {
+      kasseBox.style.display = 'block';
+      kasseDetail.textContent = `${offene.length} Strafe${offene.length > 1 ? 'n' : ''} · ${formatEur(offenBetrag)} ausstehend`;
+    } else {
+      kasseBox.style.display = 'none';
+    }
+  }
+
+  // Personen-Filter aktuell halten
+  const personSel = document.getElementById('strafen-filter-person');
+  if (personSel) {
+    const cur = personSel.value;
+    personSel.innerHTML = '<option value="">👤 Alle Mitglieder</option>' +
+      state.mitglieder.map(m => `<option value="${m.name}" ${m.name===cur?'selected':''}>${m.name}</option>`).join('');
+  }
+
+  // Filter anwenden
+  const filterPerson = personSel?.value || '';
+  const filterStatus = document.getElementById('strafen-filter-status')?.value || '';
+  let gefiltert = [...state.strafen];
+  if (filterPerson) gefiltert = gefiltert.filter(s => s.mitglied === filterPerson);
+  if (filterStatus === 'offen') gefiltert = gefiltert.filter(s => !s.bezahlt);
+  if (filterStatus === 'bezahlt') gefiltert = gefiltert.filter(s => s.bezahlt);
+
+  // Table rows (desktop)
+  const tbody = document.getElementById('strafen-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = gefiltert.map(s => `
+    <tr>
+      <td><strong>${s.mitglied}</strong></td>
+      <td>${s.kategorie}${s.notiz?`<br><span style="font-size:.75rem;color:var(--text-muted)">${s.notiz}</span>`:''}</td>
+      <td>${formatEur(s.betrag)}</td>
+      <td><span class="tag ${s.bezahlt?'tag-green':'tag-red'}">${s.bezahlt?'Bezahlt':'Offen'}</span></td>
+      <td style="display:flex;gap:.3rem">
+        <button class="btn btn-ghost btn-sm" onclick="bezahltToggle('${s.id}',${s.bezahlt})">${s.bezahlt?'↩':'✓'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteStrafe('${s.id}')">🗑</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="5" class="empty-state">Keine Strafen gefunden.</td></tr>';
+
+  // Mobile cards (injected after table, shown via CSS)
+  const container = document.getElementById('strafen-container');
+  // Remove old mobile cards
+  container.querySelectorAll('.strafe-card').forEach(c => c.remove());
+  if (isMobile()) {
+    gefiltert.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'strafe-card';
+      div.innerHTML = `
+        <div class="strafe-card-top">
+          <strong>${s.mitglied}</strong>
+          <span class="tag ${s.bezahlt?'tag-green':'tag-red'}">${s.bezahlt?'Bezahlt':'Offen'}</span>
+        </div>
+        <div style="font-size:.875rem;color:var(--text-muted)">${s.kategorie}${s.notiz?' · '+s.notiz:''}</div>
+        <div style="font-size:.875rem">${formatEur(s.betrag)} · ${formatDate(s.datum)}</div>
+        <div class="strafe-card-actions">
+          <button class="btn btn-ghost btn-sm" onclick="bezahltToggle('${s.id}',${s.bezahlt})">${s.bezahlt?'↩ Offen':'✓ Bezahlt'}</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteStrafe('${s.id}')">🗑</button>
+        </div>`;
+      container.appendChild(div);
+    });
+    if (!state.strafen.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Keine Strafen eingetragen.';
+      container.appendChild(empty);
+    }
+  }
+}
+
+function renderFunFacts() {
+  const container = document.getElementById('fun-facts-container');
+  if (!container) return;
+  const sessions = state.kegelsessions || [];
+  const alle = sessions.flatMap(s => s.eintraege || []);
+  if (!alle.length || sessions.length < 2) {
+    container.innerHTML = '<div class="empty-state">Noch zu wenig Daten — nach ein paar Sessions erscheinen hier Fun Facts.</div>';
+    return;
+  }
+
+  const perSpielerKat = {};
+  const perKat = {};
+  alle.forEach(e => {
+    if (!perSpielerKat[e.mitglied]) perSpielerKat[e.mitglied] = {};
+    perSpielerKat[e.mitglied][e.kategorie] = (perSpielerKat[e.mitglied][e.kategorie]||0) + (e.anzahl||1);
+    if (!perKat[e.kategorie]) perKat[e.kategorie] = {};
+    perKat[e.kategorie][e.mitglied] = (perKat[e.kategorie][e.mitglied]||0) + (e.anzahl||1);
+  });
+
+  const gesamtAnzahl = Object.entries(perSpielerKat).map(([n,k])=>({name:n,total:Object.values(k).reduce((s,v)=>s+v,0)})).sort((a,b)=>b.total-a.total);
+  const sauberste = [...gesamtAnzahl].sort((a,b)=>a.total-b.total);
+  const pumpenKing = Object.entries(perKat['Pumpe']||{}).sort((a,b)=>b[1]-a[1])[0];
+  const alle9King = Object.entries(perKat['Alle 9']||{}).sort((a,b)=>b[1]-a[1])[0];
+  const lustKing = Object.entries(perKat['Lustwurf']||{}).sort((a,b)=>b[1]-a[1])[0];
+  const strasseKing = Object.entries(perKat['Straße']||{}).sort((a,b)=>b[1]-a[1])[0];
+  const schnappKing = Object.entries(perKat['Schnapszahl']||{}).sort((a,b)=>b[1]-a[1])[0];
+
+  // Session-Rekorde
+  const sessionTotals = sessions.map(s => {
+    const t = (s.eintraege||[]).reduce((sum,e)=>sum+(e.anzahl||1),0);
+    return { name: s.name, datum: s.datum, total: t };
+  }).sort((a,b)=>b.total-a.total);
+
+  // Verspätungs-Minuten
+  const versp = perKat['Verspätung/15Min'] || perKat['Verspätung pro 15 Min'] || {};
+  const verspKing = Object.entries(versp).sort((a,b)=>b[1]-a[1])[0];
+  const verspMins = verspKing ? verspKing[1] * 15 : 0;
+
+  const facts = [];
+
+  // Fun Facts
+  if (gesamtAnzahl[0]) facts.push({ emoji:'🏆', color:'red', fact:`${gesamtAnzahl[0].name} ist der ungekrönte Strafen-König`, detail:`Mit ${gesamtAnzahl[0].total} Strichen über alle Sessions führt er/sie die Gesamtwertung an. Die Konkurrenz liegt bei ${gesamtAnzahl[1]?.total||0} Strichen.` });
+  if (sauberste[0]) facts.push({ emoji:'😇', color:'green', fact:`${sauberste[0].name} ist der sauberste Kegler im Club`, detail:`Nur ${sauberste[0].total} Striche insgesamt — ein Vorbild für alle. ${sauberste[1] ? `${sauberste[1].name} folgt mit ${sauberste[1].total} Strichen.` : ''}` });
+  if (pumpenKing) facts.push({ emoji:'🎳', color:'', fact:`${pumpenKing[0]} ist der Pumpen-Weltmeister`, detail:`${pumpenKing[1]}× die Kugel in die Rinne — macht ${formatEur(pumpenKing[1]*0.30)} allein für Pumpen.` });
+  if (alle9King) facts.push({ emoji:'9️⃣', color:'yellow', fact:`${alle9King[0]} sorgt am häufigsten für kollektive Freude`, detail:`${alle9King[1]}× hat ${alle9King[0]} die Alle-9 geworfen und damit alle anderen zur Kasse gebeten.` });
+  if (lustKing) facts.push({ emoji:'😂', color:'yellow', fact:`${lustKing[0]} kann es einfach nicht lassen`, detail:`${lustKing[1]}× Lustwurf — das ist kein Fehler, das ist Methode.` });
+  if (strasseKing) facts.push({ emoji:'🛣️', color:'', fact:`${strasseKing[0]} kennt nur eine Richtung: die Straße`, detail:`${strasseKing[1]}× in die Straße — entweder Pech oder Talent.` });
+  if (schnappKing) facts.push({ emoji:'🔢', color:'', fact:`${schnappKing[0]} hat ein Faible für Schnapszahlen`, detail:`${schnappKing[1]}× hat ${schnappKing[0]} eine Schnapszahl getroffen. Zufall? Wohl kaum.` });
+  if (verspKing && verspMins >= 15) facts.push({ emoji:'⏰', color:'red', fact:`${verspKing[0]} hat insgesamt ${verspMins} Minuten Verspätung angesammelt`, detail:`Das sind ${Math.floor(verspMins/60)} Stunden und ${verspMins%60} Minuten. Für dieses Geld könnte man ${Math.floor(verspKing[1]*2/10)} Runden ausgeben.` });
+  if (sessionTotals[0]) facts.push({ emoji:'💀', color:'red', fact:`Der schlimmste Abend war "${sessionTotals[0].name}"`, detail:`${sessionTotals[0].total} Striche an einem einzigen Abend — ${formatDate(sessionTotals[0].datum)}. Ein Tag der in die Geschichte eingeht.` });
+  if (sessions.length >= 3) {
+    const avg = Math.round(alle.reduce((s,e)=>s+(e.anzahl||1),0) / sessions.length);
+    facts.push({ emoji:'📊', color:'', fact:`Im Schnitt gibt es ${avg} Striche pro Kegel-Abend`, detail:`Über ${sessions.length} Sessions ausgewertet. Tendenz: ${sessionTotals[0].total > avg*1.5 ? 'es wird schlimmer 📈' : 'stabil 📊'}.` });
+  }
+
+  // Quiz-Fragen generieren
+  const spielerNamen = state.mitglieder.map(m=>m.name);
+  function randomOthers(correct, pool, count=3) {
+    const others = pool.filter(n=>n!==correct);
+    const shuffled = others.sort(()=>Math.random()-.5).slice(0,count);
+    return [...shuffled, correct].sort(()=>Math.random()-.5);
+  }
+
+  const quizFragen = [];
+  if (pumpenKing && spielerNamen.length >= 4) {
+    const answers = randomOthers(pumpenKing[0], spielerNamen);
+    quizFragen.push({ frage: 'Wer hat die meisten Pumpen geworfen?', antworten: answers, richtig: pumpenKing[0], hint: `${pumpenKing[1]}×` });
+  }
+  if (gesamtAnzahl[0] && spielerNamen.length >= 4) {
+    const answers = randomOthers(gesamtAnzahl[0].name, spielerNamen);
+    quizFragen.push({ frage: 'Wer hat die meisten Strafen insgesamt gesammelt?', antworten: answers, richtig: gesamtAnzahl[0].name, hint: `${gesamtAnzahl[0].total} Striche` });
+  }
+  if (sauberste[0] && spielerNamen.length >= 4) {
+    const answers = randomOthers(sauberste[0].name, spielerNamen);
+    quizFragen.push({ frage: 'Wer ist der sauberste Kegler des Clubs?', antworten: answers, richtig: sauberste[0].name, hint: `Nur ${sauberste[0].total} Striche` });
+  }
+  if (sessionTotals[0] && sessions.length >= 3) {
+    const sessionNamen = sessions.map(s=>s.name);
+    const answers = randomOthers(sessionTotals[0].name, sessionNamen);
+    quizFragen.push({ frage: 'Welcher Abend hatte die meisten Strafen?', antworten: answers, richtig: sessionTotals[0].name, hint: `${sessionTotals[0].total} Striche` });
+  }
+  if (lustKing && spielerNamen.length >= 4) {
+    const answers = randomOthers(lustKing[0], spielerNamen);
+    quizFragen.push({ frage: 'Wer hat am meisten Lustwürfe verursacht?', antworten: answers, richtig: lustKing[0], hint: `${lustKing[1]}×` });
+  }
+
+  container.innerHTML = `
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:1.25rem">Basierend auf ${sessions.length} Sessions · Tippe auf Quiz-Fragen um die Antwort aufzudecken</p>
+
+    <div class="section-title">💡 Fun Facts</div>
+    ${facts.map(f => `
+      <div class="fun-fact ${f.color}">
+        <div class="ff-emoji">${f.emoji}</div>
+        <div class="ff-fact">${f.fact}</div>
+        <div class="ff-detail">${f.detail}</div>
+      </div>`).join('')}
+
+    ${quizFragen.length ? `
+    <div class="section-title" style="margin-top:1.5rem">🎯 Quiz-Fragen fürs Jahresende</div>
+    <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:.75rem">Antippen = Antwort aufdecken</p>
+    ${quizFragen.map((q,i) => `
+      <div class="quiz-card" onclick="toggleQuizAntwort(this)">
+        <div class="q-label">Frage ${i+1}</div>
+        <div class="q-text">${q.frage}</div>
+        <div class="q-answers">
+          ${q.antworten.map(a => `<div class="q-answer" data-richtig="${a===q.richtig}">${a}</div>`).join('')}
+        </div>
+        <div class="q-reveal">👆 Antippen für Antwort · Lösung: ${q.hint}</div>
+      </div>`).join('')}` : ''}
+  `;
+}
+
+function toggleQuizAntwort(card) {
+  card.querySelectorAll('.q-answer').forEach(a => {
+    if (a.dataset.richtig === 'true') a.classList.toggle('correct');
+  });
+}
+
+function renderKgStatistiken() {
+  const container = document.getElementById('kg-stats-container');
+  if (!container) return;
+  const sessions = state.kegelsessions || [];
+  if (!sessions.length) { container.innerHTML = '<div class="empty-state">Noch keine Kegel-Sessions abgeschlossen.</div>'; return; }
+
+  // Alle Einträge flach sammeln
+  const alle = sessions.flatMap(s => s.eintraege || []);
+  if (!alle.length) { container.innerHTML = '<div class="empty-state">Keine Kegel-Daten vorhanden.</div>'; return; }
+
+  // Gesamtanzahl pro Spieler+Kategorie
+  const perSpielerKat = {}; // { 'Jansen': { 'Pumpe': 7, ... } }
+  const perKat = {};         // { 'Pumpe': { 'Jansen': 7, ... } }
+  alle.forEach(e => {
+    if (!perSpielerKat[e.mitglied]) perSpielerKat[e.mitglied] = {};
+    perSpielerKat[e.mitglied][e.kategorie] = (perSpielerKat[e.mitglied][e.kategorie] || 0) + (e.anzahl || 1);
+    if (!perKat[e.kategorie]) perKat[e.kategorie] = {};
+    perKat[e.kategorie][e.mitglied] = (perKat[e.kategorie][e.mitglied] || 0) + (e.anzahl || 1);
+  });
+
+  // Top-Rekorde (wer hat am meisten von jeder Strafe)
+  const alleStrafenListe = KG_KATEGORIEN.flatMap(g => g.strafen);
+  const rekorde = alleStrafenListe
+    .map(s => {
+      const daten = perKat[s.name] || {};
+      const sorted = Object.entries(daten).sort((a,b) => b[1]-a[1]);
+      if (!sorted.length) return null;
+      return { name: s.name, betrag: s.betrag, spitzenreiter: sorted[0][0], anzahl: sorted[0][1], alle: sorted };
+    })
+    .filter(Boolean)
+    .sort((a,b) => b.anzahl - a.anzahl);
+
+  // Gesamtranking nach Anzahl Striche
+  const gesamtAnzahl = Object.entries(perSpielerKat).map(([name, kats]) => ({
+    name, total: Object.values(kats).reduce((s,n) => s+n, 0)
+  })).sort((a,b) => b.total - a.total);
+  const maxGesamt = gesamtAnzahl[0]?.total || 1;
+
+  // Lieblings-Fehler je Spieler
+  const lieblingsStraf = Object.entries(perSpielerKat).map(([name, kats]) => {
+    const top = Object.entries(kats).sort((a,b) => b[1]-a[1])[0];
+    return { name, straf: top[0], anzahl: top[1] };
+  }).sort((a,b) => b.anzahl - a.anzahl);
+
+  // Session-Rekorde: meiste X in einer einzelnen Session
+  const alleStrafen = KG_KATEGORIEN.flatMap(g => g.strafen);
+  const sessionRekorde = alleStrafen.map(s => {
+    let best = null;
+    sessions.forEach(sess => {
+      (sess.eintraege||[]).filter(e => e.kategorie === s.name).forEach(e => {
+        const n = e.anzahl || 1;
+        if (!best || n > best.anzahl) best = { name: e.mitglied, anzahl: n, session: sess.name, datum: sess.datum };
+      });
+    });
+    return best ? { strafe: s.name, ...best } : null;
+  }).filter(Boolean).sort((a,b) => b.anzahl - a.anzahl);
+
+  // Schlimmste Session pro Spieler (höchste Gesamtstrafe in einer Session)
+  const schliммsteSession = {};
+  sessions.forEach(sess => {
+    const perSpieler = {};
+    (sess.eintraege||[]).forEach(e => {
+      perSpieler[e.mitglied] = (perSpieler[e.mitglied]||0) + (e.anzahl||1);
+    });
+    Object.entries(perSpieler).forEach(([name, count]) => {
+      if (!schliммsteSession[name] || count > schliммsteSession[name].anzahl) {
+        schliммsteSession[name] = { anzahl: count, session: sess.name, datum: sess.datum };
+      }
+    });
+  });
+
+  // Sauberster Spieler: wer hat am wenigsten Strafen gesamt
+  const saubersteRanking = Object.entries(perSpielerKat)
+    .map(([name, kats]) => ({ name, total: Object.values(kats).reduce((s,n)=>s+n,0) }))
+    .sort((a,b) => a.total - b.total);
+
+  // Durchschnitt pro Session
+  const schnittProSession = Object.entries(perSpielerKat).map(([name, kats]) => {
+    const total = Object.values(kats).reduce((s,n)=>s+n,0);
+    const sessCount = sessions.filter(s => (s.eintraege||[]).some(e => e.mitglied === name)).length;
+    return { name, schnitt: sessCount > 0 ? (total/sessCount).toFixed(1) : 0, sessCount };
+  }).sort((a,b) => b.schnitt - a.schnitt);
+
+  container.innerHTML = `
+    <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">${sessions.length} Sessions · ${alle.length} Einträge gesamt</div>
+
+    <!-- Gesamt-Strich-Ranking -->
+    <div class="section-title">🏆 Meiste Strafen gesamt</div>
+    <div style="margin-bottom:1.5rem">
+      ${gesamtAnzahl.slice(0,5).map((m,i) => `
+        <div class="ranking-row">
+          <div class="rank-num" style="color:${i===0?'var(--danger)':i===1?'var(--warning)':'var(--text-muted)'}">${i+1}</div>
+          <div class="rank-name">${m.name}</div>
+          <div class="bar-wrap"><div class="bar" style="width:${m.total/maxGesamt*100}%;background:${i===0?'var(--danger)':i===1?'var(--warning)':'var(--primary)'}"></div></div>
+          <div class="rank-val">${m.total}×</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- Schnitt pro Session -->
+    <div class="section-title">📈 Durchschnitt pro Kegeln</div>
+    <div style="margin-bottom:1.5rem">
+      ${schnittProSession.slice(0,5).map((m,i) => `
+        <div class="ranking-row">
+          <div class="rank-num" style="color:${i===0?'var(--danger)':'var(--text-muted)'}">${i+1}</div>
+          <div class="rank-name">${m.name}<br><span style="font-size:.72rem;color:var(--text-muted)">${m.sessCount} Sessions</span></div>
+          <div class="bar-wrap"><div class="bar" style="width:${m.schnitt/schnittProSession[0].schnitt*100}%;background:${i===0?'var(--danger)':'var(--primary)'}"></div></div>
+          <div class="rank-val">${m.schnitt}×</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- Sauberster Spieler -->
+    <div class="section-title">😇 Sauberste Kegler</div>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem">
+      ${saubersteRanking.slice(0,3).map((m,i) => `
+        <div style="background:${i===0?'#dcfce7':'var(--bg)'};border-radius:10px;padding:.6rem .9rem;font-size:.85rem;border:1px solid ${i===0?'#bbf7d0':'var(--border)'}">
+          ${i===0?'🏅':'  '} <strong>${m.name}</strong> <span style="color:var(--text-muted)">${m.total}×</span>
+        </div>`).join('')}
+    </div>
+
+    <!-- Lieblings-Fehler -->
+    <div class="section-title">😅 Lieblingsfehler</div>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem">
+      ${lieblingsStraf.map(m => `
+        <div style="background:var(--bg);border-radius:10px;padding:.5rem .75rem;font-size:.85rem">
+          <strong>${m.name}</strong> → ${m.straf} <span class="tag tag-red" style="margin-left:.2rem">${m.anzahl}×</span>
+        </div>`).join('')}
+    </div>
+
+    <!-- Session-Rekorde -->
+    <div class="section-title">⚡ Rekord in einem Kegeln</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:.5rem;margin-bottom:1.5rem">
+      ${sessionRekorde.slice(0,8).map(r => `
+        <div style="background:var(--bg);border-radius:10px;padding:.75rem;border:1px solid var(--border)">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:.2rem">${r.strafe}</div>
+          <div style="font-weight:800;font-size:1.3rem;color:var(--danger)">${r.anzahl}×</div>
+          <div style="font-size:.82rem;font-weight:600">${r.name}</div>
+          <div style="font-size:.72rem;color:var(--text-muted)">${formatDate(r.datum)}</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- Schlimmste Session -->
+    <div class="section-title">💀 Schlimmste Session (Striche)</div>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem">
+      ${Object.entries(schliммsteSession).sort((a,b)=>b[1].anzahl-a[1].anzahl).slice(0,5).map(([name,d],i) => `
+        <div style="background:${i===0?'#fee2e2':'var(--bg)'};border-radius:10px;padding:.6rem .9rem;border:1px solid ${i===0?'#fecaca':'var(--border)'};font-size:.85rem">
+          ${i===0?'💀':''} <strong>${name}</strong> <span style="color:var(--danger);font-weight:700">${d.anzahl}×</span><br>
+          <span style="font-size:.75rem;color:var(--text-muted)">${d.session} · ${formatDate(d.datum)}</span>
+        </div>`).join('')}
+    </div>
+
+    <!-- Rekorde pro Kategorie gesamt -->
+    <div class="section-title">🎯 Allzeit-Rekorde pro Strafe</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.5rem">
+      ${rekorde.map(r => `
+        <div style="background:var(--bg);border-radius:10px;padding:.75rem;border:1px solid var(--border)">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:.3rem">${r.name}</div>
+          <div style="font-weight:800;font-size:1.1rem;color:var(--danger)">${r.anzahl}×</div>
+          <div style="font-size:.8rem;font-weight:600">${r.spitzenreiter}</div>
+          ${r.alle.length > 1 ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.2rem">${r.alle.slice(1,3).map(([n,c])=>`${n}: ${c}×`).join(' · ')}</div>` : ''}
+        </div>`).join('')}
+    </div>
+  `;
+}
+
+// ========== STATISTIKEN ==========
+function renderStatistiken() {
+  const gesamtStrafen = state.strafen.reduce((s,x) => s+Number(x.betrag), 0);
+  const offeneStrafen = state.strafen.filter(s => !s.bezahlt).reduce((s,x) => s+Number(x.betrag), 0);
+  document.getElementById('stats-boxes').innerHTML = `
+    <div class="stat"><div class="val">${state.mitglieder.length}</div><div class="lbl">Mitglieder</div></div>
+    <div class="stat"><div class="val">${formatEur(gesamtStrafen)}</div><div class="lbl">Strafen gesamt</div></div>
+    <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offeneStrafen)}</div><div class="lbl">Strafen offen</div></div>
+    <div class="stat"><div class="val">${state.termine.length}</div><div class="lbl">Termine gesamt</div></div>
+    <div class="stat"><div class="val">${state.termine.filter(t=>t.datum<today()).length}</div><div class="lbl">Termine gespielt</div></div>
+    <div class="stat"><div class="val">${state.kassenbuch.length}</div><div class="lbl">Kassenbuchungen</div></div>
+  `;
+
+  const strafSummen = state.mitglieder.map(m => ({
+    name: m.name,
+    total: state.strafen.filter(s=>s.mitglied===m.name).reduce((sum,s)=>sum+Number(s.betrag),0),
+    count: state.strafen.filter(s=>s.mitglied===m.name).length
+  })).sort((a,b)=>b.total-a.total);
+  const maxStr = strafSummen[0]?.total || 1;
+  document.getElementById('straf-ranking').innerHTML = strafSummen.map((m,i) => `
+    <div class="ranking-row">
+      <div class="rank-num">${i+1}</div>
+      <div class="rank-name">${m.name}<br><span style="font-size:.75rem;color:var(--text-muted)">${m.count} Strafen</span></div>
+      <div class="bar-wrap"><div class="bar" style="width:${m.total/maxStr*100}%;background:${i===0?'var(--danger)':i===1?'var(--warning)':'var(--primary)'}"></div></div>
+      <div class="rank-val">${formatEur(m.total)}</div>
+    </div>`).join('') || '<div class="empty-state">Keine Daten</div>';
+
+  // Anwesenheit: Termine + Kegel-Sessions kombinieren
+  const pastTermine = state.termine.filter(t=>t.datum<today());
+  const kegelSessions = (state.kegelsessions||[]);
+  // Alle "Abende" = vergangene Termine + Sessions (ohne Duplikate per Datum)
+  const alleAbende = [
+    ...pastTermine.map(t => ({ datum: t.datum, anwesend: t.anmeldungen||[] })),
+    ...kegelSessions.map(s => ({ datum: s.datum, anwesend: s.angemeldet||[] }))
+  ];
+  const anwSummen = state.mitglieder.map(m => ({
+    name: m.name,
+    count: alleAbende.filter(a => a.anwesend.includes(m.name)).length,
+    total: alleAbende.length
+  })).sort((a,b)=>b.count-a.count);
+  const maxAnw = anwSummen[0]?.count || 1;
+  document.getElementById('anwesenheit-ranking').innerHTML = anwSummen.map((m,i) => `
+    <div class="ranking-row">
+      <div class="rank-num">${i+1}</div>
+      <div class="rank-name">${m.name}<br><span style="font-size:.75rem;color:var(--text-muted)">${m.total>0?Math.round(m.count/m.total*100):0}% Anwesenheit</span></div>
+      <div class="bar-wrap"><div class="bar" style="width:${m.total>0?m.count/m.total*100:0}%"></div></div>
+      <div class="rank-val">${m.count}/${m.total}</div>
+    </div>`).join('') || '<div class="empty-state">Noch keine gespielten Termine</div>';
+
+  renderMitgliedStats();
+  renderKgStatistiken();
+  renderFunFacts();
+}
+
+function renderMitgliedStats() {
+  const name = document.getElementById('stats-mitglied-sel')?.value;
+  if (!name) return;
+  const mStrafen = state.strafen.filter(s=>s.mitglied===name);
+  const pastTermine = state.termine.filter(t=>t.datum<today());
+  const alleAbendeM = [
+    ...pastTermine.map(t => ({ anwesend: t.anmeldungen||[] })),
+    ...(state.kegelsessions||[]).map(s => ({ anwesend: s.angemeldet||[] }))
+  ];
+  const anwesend = alleAbendeM.filter(a => a.anwesend.includes(name)).length;
+  const offen = mStrafen.filter(s=>!s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0);
+  const bezahlt = mStrafen.filter(s=>s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0);
+  document.getElementById('mitglied-stats-detail').innerHTML = `
+    <div class="grid-3" style="margin-bottom:1rem">
+      <div class="stat"><div class="val">${anwesend}</div><div class="lbl">Termine dabei</div></div>
+      <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offen)}</div><div class="lbl">Strafen offen</div></div>
+      <div class="stat"><div class="val" style="color:var(--success)">${formatEur(bezahlt)}</div><div class="lbl">Strafen bezahlt</div></div>
+    </div>
+    <div class="section-title">Strafen-Detail</div>
+    ${mStrafen.length===0?'<div class="empty-state">Keine Strafen</div>':
+    `<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Kategorie</th><th>Betrag</th><th>Status</th></tr></thead><tbody>
+      ${mStrafen.map(s=>`<tr>
+        <td>${formatDate(s.datum)}</td>
+        <td>${s.kategorie}${s.notiz?` <span style="color:var(--text-muted);font-size:.75rem">(${s.notiz})</span>`:''}</td>
+        <td>${formatEur(s.betrag)}</td>
+        <td><span class="tag ${s.bezahlt?'tag-green':'tag-red'}">${s.bezahlt?'Bezahlt':'Offen'}</span></td>
+      </tr>`).join('')}
+    </tbody></table></div>`}`;
+}
+
+// ========== KASSENBUCH ==========
+function addBuchung() {
+  const typ = document.getElementById('k-typ').value;
+  const beschr = document.getElementById('k-beschr').value.trim();
+  const betrag = parseFloat(document.getElementById('k-betrag').value);
+  const datum = document.getElementById('k-datum').value || today();
+  const kat = document.getElementById('k-kat').value;
+  if (!beschr || isNaN(betrag)) { alert('Beschreibung und Betrag eingeben!'); return; }
+  db.collection('kassenbuch').add({ typ, beschr, betrag, datum, kat, createdAt: Date.now() });
+  document.getElementById('k-beschr').value = '';
+  document.getElementById('k-betrag').value = '';
+}
+
+function deleteBuchung(id) {
+  if (!confirm('Buchung löschen?')) return;
+  db.collection('kassenbuch').doc(id).delete();
+}
+
+function filterKasse(f) { kasseFilter = f; renderKassenbuch(); }
+
+function renderKassenbuch() {
+  const einnahmen = state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
+  const ausgaben = state.kassenbuch.filter(b=>b.typ==='ausgabe').reduce((s,b)=>s+Number(b.betrag),0);
+  const stand = einnahmen - ausgaben;
+  const el = document.getElementById('kassenstand');
+  if (el) el.textContent = formatEur(stand);
+  const ueb = document.getElementById('kasse-uebersicht');
+  if (ueb) ueb.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:.5rem">
+      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)"><span>💰 Einnahmen</span><strong style="color:var(--success)">${formatEur(einnahmen)}</strong></div>
+      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)"><span>📤 Ausgaben</span><strong style="color:var(--danger)">${formatEur(ausgaben)}</strong></div>
+      <div style="display:flex;justify-content:space-between;padding:.5rem 0;font-size:1.1rem"><strong>Saldo</strong><strong style="color:${stand>=0?'var(--success)':'var(--danger)'}">${formatEur(stand)}</strong></div>
+    </div>`;
+  const filtered = kasseFilter==='alle' ? state.kassenbuch : state.kassenbuch.filter(b=>b.typ===kasseFilter);
+  const tbody = document.getElementById('kasse-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = filtered.map(b => `
+    <tr>
+      <td>${formatDate(b.datum)}</td>
+      <td>${b.beschr}</td>
+      <td><span class="tag ${b.typ==='einnahme'?'tag-blue':'tag-yellow'}">${b.kat}</span></td>
+      <td class="${b.typ==='einnahme'?'pos':'neg'}">${b.typ==='einnahme'?'+':'-'}${formatEur(b.betrag)}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteBuchung('${b.id}')">🗑</button></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="empty-state">Keine Buchungen</td></tr>';
+}
+
+
+// ========== HISTORISCHER IMPORT ==========
+const IMPORT_SESSIONS = [{"name": "Kegeln 2025-11-01", "datum": "2025-11-01", "eintraege": [{"mitglied": "Dimi Renje", "kategorie": "Pumpe", "anzahl": 8, "betrag": 2.4}, {"mitglied": "Dimi Renje", "kategorie": "Verl. Spiel", "anzahl": 5, "betrag": 5.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Pumpe", "anzahl": 7, "betrag": 2.1}, {"mitglied": "Sebastian Eiken", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Matthias Robin", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Matthias Robin", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Matthias Robin", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Matthias Robin", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Matthias Robin", "kategorie": "Verl. Spiel", "anzahl": 5, "betrag": 5.0}, {"mitglied": "Matthias Robin", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Christian Lehmann", "kategorie": "Pumpe", "anzahl": 8, "betrag": 2.4}, {"mitglied": "Christian Lehmann", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Christian Lehmann", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Thorben Kloppe", "kategorie": "Pumpe", "anzahl": 12, "betrag": 3.6}, {"mitglied": "Thorben Kloppe", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Thorben Kloppe", "kategorie": "Verl. Spiel", "anzahl": 5, "betrag": 5.0}, {"mitglied": "Thorben Kloppe", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Laurenz Held", "kategorie": "Pumpe", "anzahl": 9, "betrag": 2.7}, {"mitglied": "Laurenz Held", "kategorie": "Kugel n. einholen", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Pumpe", "anzahl": 3, "betrag": 0.9}, {"mitglied": "Sebastian Jansen", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Jansen", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Lukas Cordes", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Lukas Cordes", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lukas Cordes", "kategorie": "Verl. Spiel", "anzahl": 6, "betrag": 6.0}, {"mitglied": "Lukas Cordes", "kategorie": "Lustwurf", "anzahl": 1, "betrag": 2.0}, {"mitglied": "Lukas Cordes", "kategorie": "Alle 9", "anzahl": 10, "betrag": 10.0}, {"mitglied": "Christian Jansen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Jansen", "kategorie": "Pumpe", "anzahl": 6, "betrag": 1.8}, {"mitglied": "Christian Jansen", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Jansen", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Jansen", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Hannes Kötter", "kategorie": "Pumpe", "anzahl": 2, "betrag": 0.6}, {"mitglied": "Hannes Kötter", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Hannes Kötter", "kategorie": "Lustwurf", "anzahl": 1, "betrag": 2.0}, {"mitglied": "Hannes Kötter", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Michael Runde", "kategorie": "Pumpe", "anzahl": 6, "betrag": 1.8}, {"mitglied": "Michael Runde", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Michael Runde", "kategorie": "Behinderung", "anzahl": 4, "betrag": 2.0}, {"mitglied": "Michael Runde", "kategorie": "Verl. Spiel", "anzahl": 5, "betrag": 5.0}, {"mitglied": "Michael Runde", "kategorie": "Alle 9", "anzahl": 9, "betrag": 9.0}], "angemeldet": ["Christian Jansen", "Christian Lehmann", "Dimi Renje", "Hannes Kötter", "Lukas Cordes", "Matthias Robin", "Michael Runde", "Sebastian Eiken", "Thorben Kloppe", "Laurenz Held", "Sebastian Jansen"], "importiert": true}, {"name": "Kegeln 2025-12-27", "datum": "2025-12-27", "eintraege": [{"mitglied": "Laurenz Held", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Laurenz Held", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Laurenz Held", "kategorie": "Kugel n. einholen", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Christian Lehmann", "kategorie": "Pumpe", "anzahl": 22, "betrag": 6.6}, {"mitglied": "Christian Lehmann", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Lehmann", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Lehmann", "kategorie": "Verl. Spiel", "anzahl": 3, "betrag": 3.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Pumpe", "anzahl": 19, "betrag": 5.7}, {"mitglied": "Sebastian Jansen", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Sebastian Jansen", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Alle 9", "anzahl": 14, "betrag": 14.0}, {"mitglied": "Lukas Cordes", "kategorie": "Stuhl umwerfen", "anzahl": 1, "betrag": 2.0}, {"mitglied": "Lukas Cordes", "kategorie": "Pumpe", "anzahl": 16, "betrag": 4.8}, {"mitglied": "Lukas Cordes", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lukas Cordes", "kategorie": "Behinderung", "anzahl": 6, "betrag": 3.0}, {"mitglied": "Lukas Cordes", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Lukas Cordes", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Christian Jansen", "kategorie": "Pumpe", "anzahl": 5, "betrag": 1.5}, {"mitglied": "Christian Jansen", "kategorie": "Verl. Spiel", "anzahl": 3, "betrag": 3.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Lucas Kossen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Lucas Kossen", "kategorie": "Pumpe", "anzahl": 12, "betrag": 3.6}, {"mitglied": "Lucas Kossen", "kategorie": "Klingel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Lucas Kossen", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Lucas Kossen", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Lucas Kossen", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Jan Brunsen", "kategorie": "Pumpe", "anzahl": 13, "betrag": 3.9}, {"mitglied": "Jan Brunsen", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Jan Brunsen", "kategorie": "Behinderung", "anzahl": 5, "betrag": 2.5}, {"mitglied": "Jan Brunsen", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Jan Brunsen", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Michael Runde", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Michael Runde", "kategorie": "Pumpe", "anzahl": 10, "betrag": 3.0}, {"mitglied": "Michael Runde", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Michael Runde", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Michael Runde", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Michael Runde", "kategorie": "Alle 9", "anzahl": 12, "betrag": 12.0}], "angemeldet": ["Christian Jansen", "Christian Lehmann", "Jan Brunsen", "Lukas Cordes", "Michael Runde", "Laurenz Held", "Sebastian Jansen", "Lucas Kossen"], "importiert": true}, {"name": "Kegeln 2026-01-24", "datum": "2026-01-24", "eintraege": [{"mitglied": "Dimi Renje", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Dimi Renje", "kategorie": "Pumpe", "anzahl": 18, "betrag": 5.4}, {"mitglied": "Dimi Renje", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Dimi Renje", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Dimi Renje", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9", "anzahl": 65, "betrag": 65.0}, {"mitglied": "Matthias Robin", "kategorie": "Stina", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Matthias Robin", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Matthias Robin", "kategorie": "Behinderung", "anzahl": 5, "betrag": 2.5}, {"mitglied": "Matthias Robin", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Matthias Robin", "kategorie": "Alle 9", "anzahl": 66, "betrag": 66.0}, {"mitglied": "Christian Wübben", "kategorie": "Pumpe", "anzahl": 15, "betrag": 4.5}, {"mitglied": "Christian Wübben", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Christian Wübben", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Alle 9", "anzahl": 69, "betrag": 69.0}, {"mitglied": "Christian Lehmann", "kategorie": "Pumpe", "anzahl": 14, "betrag": 4.2}, {"mitglied": "Christian Lehmann", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Lehmann", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Lehmann", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Christian Lehmann", "kategorie": "Lustwurf", "anzahl": 2, "betrag": 4.0}, {"mitglied": "Christian Lehmann", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Lehmann", "kategorie": "Alle 9", "anzahl": 65, "betrag": 65.0}, {"mitglied": "Laurenz Held", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Pumpe", "anzahl": 9, "betrag": 2.7}, {"mitglied": "Laurenz Held", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Laurenz Held", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9", "anzahl": 66, "betrag": 66.0}, {"mitglied": "Lukas Cordes", "kategorie": "Pumpe", "anzahl": 8, "betrag": 2.4}, {"mitglied": "Lukas Cordes", "kategorie": "Klingel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Lukas Cordes", "kategorie": "Verl. Spiel", "anzahl": 6, "betrag": 6.0}, {"mitglied": "Lukas Cordes", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lukas Cordes", "kategorie": "Alle 9", "anzahl": 68, "betrag": 68.0}, {"mitglied": "Lucas Kossen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Lucas Kossen", "kategorie": "Pumpe", "anzahl": 15, "betrag": 4.5}, {"mitglied": "Lucas Kossen", "kategorie": "Klingel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Lucas Kossen", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Lucas Kossen", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lucas Kossen", "kategorie": "Verl. Spiel", "anzahl": 6, "betrag": 6.0}, {"mitglied": "Lucas Kossen", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Lucas Kossen", "kategorie": "Alle 9", "anzahl": 65, "betrag": 65.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Pumpe", "anzahl": 11, "betrag": 3.3}, {"mitglied": "Sebastian Eiken", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Kugel z.T.", "anzahl": 3, "betrag": 3.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Verl. Spiel", "anzahl": 4, "betrag": 4.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9", "anzahl": 68, "betrag": 68.0}], "angemeldet": ["Christian Lehmann", "Christian Wübben", "Dimi Renje", "Lukas Cordes", "Matthias Robin", "Sebastian Eiken", "Laurenz Held", "Lucas Kossen"], "importiert": true}, {"name": "Kegeln 2026-03-21", "datum": "2026-03-21", "eintraege": [{"mitglied": "Dimi Renje", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Dimi Renje", "kategorie": "Pumpe", "anzahl": 23, "betrag": 6.9}, {"mitglied": "Dimi Renje", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Verl. Spiel", "anzahl": 11, "betrag": 11.0}, {"mitglied": "Dimi Renje", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Dimi Renje", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Christian Wübben", "kategorie": "Pumpe", "anzahl": 22, "betrag": 6.6}, {"mitglied": "Christian Wübben", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Behinderung", "anzahl": 2, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Wübben", "kategorie": "Verl. Spiel", "anzahl": 10, "betrag": 10.0}, {"mitglied": "Christian Wübben", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Laurenz Held", "kategorie": "Pumpe", "anzahl": 15, "betrag": 4.5}, {"mitglied": "Laurenz Held", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Laurenz Held", "kategorie": "Verl. Spiel", "anzahl": 9, "betrag": 9.0}, {"mitglied": "Laurenz Held", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Laurenz Held", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Pumpe", "anzahl": 13, "betrag": 3.9}, {"mitglied": "Sebastian Jansen", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Jansen", "kategorie": "Kugel z.T.", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Verl. Spiel", "anzahl": 11, "betrag": 11.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Jansen", "kategorie": "Alle 9", "anzahl": 19, "betrag": 19.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Heinrich von Lintel", "kategorie": "Pumpe", "anzahl": 12, "betrag": 3.6}, {"mitglied": "Heinrich von Lintel", "kategorie": "Klingel", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Behinderung", "anzahl": 3, "betrag": 1.5}, {"mitglied": "Heinrich von Lintel", "kategorie": "Kugel z.T.", "anzahl": 2, "betrag": 2.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Verl. Spiel", "anzahl": 12, "betrag": 12.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Heinrich von Lintel", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Christian Jansen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Christian Jansen", "kategorie": "Pumpe", "anzahl": 5, "betrag": 1.5}, {"mitglied": "Christian Jansen", "kategorie": "Verl. Spiel", "anzahl": 7, "betrag": 7.0}, {"mitglied": "Christian Jansen", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Christian Jansen", "kategorie": "Alle 9", "anzahl": 18, "betrag": 18.0}, {"mitglied": "Jan Brunsen", "kategorie": "Schnipsen", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Jan Brunsen", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Jan Brunsen", "kategorie": "Pumpe", "anzahl": 13, "betrag": 3.9}, {"mitglied": "Jan Brunsen", "kategorie": "Behinderung", "anzahl": 4, "betrag": 2.0}, {"mitglied": "Jan Brunsen", "kategorie": "Kugel z.T.", "anzahl": 3, "betrag": 3.0}, {"mitglied": "Jan Brunsen", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Jan Brunsen", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Jan Brunsen", "kategorie": "Alle 9", "anzahl": 19, "betrag": 19.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Stina", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Pumpe", "anzahl": 15, "betrag": 4.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Behinderung", "anzahl": 1, "betrag": 0.5}, {"mitglied": "Sebastian Eiken", "kategorie": "Kugel z.T.", "anzahl": 2, "betrag": 2.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Verl. Spiel", "anzahl": 8, "betrag": 8.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Straße", "anzahl": 1, "betrag": 1.0}, {"mitglied": "Sebastian Eiken", "kategorie": "Alle 9", "anzahl": 19, "betrag": 19.0}], "angemeldet": ["Christian Jansen", "Christian Wübben", "Dimi Renje", "Heinrich von Lintel", "Jan Brunsen", "Sebastian Eiken", "Laurenz Held", "Sebastian Jansen"], "importiert": true}];
+
+function zeigeImportVorschau() {
+  const popup = document.createElement('div');
+  popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:1rem';
+  const gesamtEintraege = IMPORT_SESSIONS.reduce((s,sess) => s + sess.eintraege.length, 0);
+  popup.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:1.5rem;width:100%;max-width:560px;margin:auto" onclick="event.stopPropagation()">
+      <h3 style="font-size:1rem;font-weight:700;margin-bottom:.5rem">📥 Historische Sessions importieren</h3>
+      <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:1rem">
+        ${IMPORT_SESSIONS.length} Sessions ·  ${gesamtEintraege} Einträge · Nur für Statistiken
+      </p>
+      ${IMPORT_SESSIONS.map(s => {
+        const total = s.eintraege.reduce((sum,e) => sum+e.betrag, 0);
+        return `<div style="background:var(--bg);border-radius:8px;padding:.75rem;margin-bottom:.5rem">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong>${s.name}</strong>
+            <span class="tag tag-blue">${formatEur(total)}</span>
+          </div>
+          <div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">
+            ${s.angemeldet.length} Spieler: ${s.angemeldet.join(', ')}
+          </div>
+        </div>`;
+      }).join('')}
+      <div style="background:#fef3c7;border-radius:8px;padding:.75rem;margin:.75rem 0;font-size:.82rem;color:#92400e">
+        ⚠️ Bereits importierte Sessions werden übersprungen.
+      </div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="fuehreImportAus(this.closest('[style*=fixed]'))">📥 Jetzt importieren</button>
+        <button class="btn btn-ghost" onclick="this.closest('[style*=fixed]').remove()">Abbrechen</button>
+      </div>
+    </div>`;
+  popup.addEventListener('click', () => popup.remove());
+  document.body.appendChild(popup);
+}
+
+async function fuehreImportAus(popup) {
+  const btn = popup.querySelector('.btn-primary');
+  btn.disabled = true;
+  btn.textContent = '⏳ Importiere…';
+  const existing = await db.collection('kegelsessions').get();
+  const existingNames = new Set(existing.docs.map(d => d.data().name));
+  let imported = 0;
+  for (const sess of IMPORT_SESSIONS) {
+    if (existingNames.has(sess.name)) continue;
+    await db.collection('kegelsessions').add({ ...sess, createdAt: new Date(sess.datum).getTime() });
+    imported++;
+  }
+  popup.remove();
+  const skipped = IMPORT_SESSIONS.length - imported;
+  alert('✅ ' + imported + ' Session(s) importiert!' + (skipped > 0 ? ' (' + skipped + ' bereits vorhanden)' : ''));
+  renderKegelHistorie();
+  renderKgStatistiken();
+  renderFunFacts();
+}
+
+function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); }
+
+// ========== BOOT ==========
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('input[type=date]').forEach(el => { if (!el.value) el.value = today(); });
+  if (loadConfig()) {
+    initFirebase();
+  } else {
+    document.getElementById('loading-overlay').style.display = 'none';
+    document.getElementById('setup-screen').style.display = 'flex';
+  }
+});
+</script>
+</body>
+</html>

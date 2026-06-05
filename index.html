@@ -161,7 +161,10 @@
   .kg-cell:active { background: #dbeafe; }
   .kg-auswahl-chip { padding: 6px 12px; border-radius: 99px; border: 2px solid var(--border); background: var(--bg); color: var(--text-muted); font-size: .82rem; font-weight: 600; cursor: pointer; transition: all .15s; -webkit-tap-highlight-color: transparent; }
   .kg-auswahl-chip.aktiv { background: #dcfce7; border-color: #16a34a; color: #15803d; }
-  .kg-gesamt-bar { background: var(--bg); border-top: 2px solid var(--border); padding: 8px 1rem; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: .9rem; position: sticky; bottom: 70px; }
+  .kg-gesamt-bar { background: var(--bg); border-top: 2px solid var(--border); padding: 8px 1rem 10px; font-size: .85rem; position: sticky; bottom: 70px; }
+  .kg-bar-row { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: 2px 0; }
+  .kg-bar-label { color: var(--text-muted); font-size: .8rem; }
+  .kg-bar-val { font-weight: 800; white-space: nowrap; }
   .fun-fact { background: var(--bg); border-radius: 12px; padding: 1rem; margin-bottom: .75rem; border-left: 4px solid var(--primary); }
   .fun-fact.red { border-left-color: var(--danger); }
   .fun-fact.green { border-left-color: var(--success); }
@@ -1446,9 +1449,39 @@ function renderKgMatrix() {
 
   document.getElementById('kg-matrix-table').innerHTML = thead + tbody;
 
-  // Gesamt-Bar
-  document.getElementById('kg-gesamt-bar').innerHTML =
-    `<span style="color:var(--text-muted)">Gesamtstrafen</span><strong>${formatEur(gesamtTotal)}</strong>`;
+  // Gesamt-Bar mit Durchschnitt & Abwesenheits-Berechnung
+  const barAngemeldet = aktiveSession.angemeldet || [];
+  const aktiveSpieler = barAngemeldet.length > 0
+    ? spieler.filter(m => barAngemeldet.includes(m.name))
+    : spieler;
+  const abwesendeSpieler = state.mitglieder.filter(m => !aktiveSpieler.find(a => a.name === m.name));
+  const aktivAnzahl = aktiveSpieler.length || 1;
+  const durchschnitt = gesamtTotal / aktivAnzahl;
+  const BAHN = 3.00;
+
+  document.getElementById('kg-gesamt-bar').innerHTML = `
+    <div class="kg-bar-row" style="border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:5px">
+      <span class="kg-bar-label">Kegelbuch gesamt (${aktivAnzahl} aktive)</span>
+      <span class="kg-bar-val">${formatEur(gesamtTotal)}</span>
+    </div>
+    <div class="kg-bar-row">
+      <span class="kg-bar-label">Ø pro Kegler (ohne Bahn)</span>
+      <span class="kg-bar-val" style="color:var(--primary)">${formatEur(durchschnitt)}</span>
+    </div>
+    <div class="kg-bar-row">
+      <span class="kg-bar-label">Ø pro Kegler (+ ${formatEur(BAHN)} Bahn)</span>
+      <span class="kg-bar-val" style="color:var(--primary)">${formatEur(durchschnitt + BAHN)}</span>
+    </div>
+    ${abwesendeSpieler.length > 0 ? `
+    <div class="kg-bar-row" style="border-top:1px solid var(--border);padding-top:5px;margin-top:3px">
+      <span class="kg-bar-label" style="color:var(--text-muted)">Abwesende zahlen (ohne Bahn)</span>
+      <span class="kg-bar-val" style="color:var(--warning)">${formatEur(durchschnitt)}</span>
+    </div>
+    <div class="kg-bar-row">
+      <span class="kg-bar-label" style="color:var(--text-muted)">Abwesende zahlen (+ Bahn)</span>
+      <span class="kg-bar-val" style="color:var(--warning)">${formatEur(durchschnitt + BAHN)}</span>
+    </div>` : ''}
+  `;
 
   // Long-press support für mobile
   setupLongPress();

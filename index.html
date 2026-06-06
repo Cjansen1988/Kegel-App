@@ -400,6 +400,7 @@
       <button class="nav-tab" onclick="showPage('statistiken',this)">📊 Statistiken</button>
       <button class="nav-tab" onclick="showPage('kassenbuch',this)">💰 Kasse</button>
       <button class="nav-tab" onclick="showPage('spiele',this)">🎮 Spiele</button>
+      <button class="nav-tab" onclick="showPage('quiz',this)">🧠 Quiz</button>
       <button class="nav-tab" onclick="showPage('mitglieder',this)">👥 Mitglieder</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Abmelden</button>
@@ -414,6 +415,7 @@
     <button class="bnav-tab" onclick="showPage('strafen',this)" data-page="strafen"><span class="icon">⚠️</span>Strafen<span id="zahlung-badge-m" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.6rem;padding:0 5px;font-weight:800;margin-left:2px;line-height:1.4"></span></button>
     <button class="bnav-tab" onclick="showPage('kassenbuch',this)" data-page="kassenbuch"><span class="icon">💰</span>Kasse</button>
     <button class="bnav-tab" onclick="showPage('spiele',this)" data-page="spiele"><span class="icon">🎮</span>Spiele</button>
+    <button class="bnav-tab" onclick="showPage('quiz',this)" data-page="quiz"><span class="icon">🧠</span>Quiz</button>
     <button class="bnav-tab" onclick="showPage('mitglieder',this)" data-page="mitglieder"><span class="icon">👥</span>Mehr</button>
   </div>
 </div>
@@ -480,6 +482,16 @@
         <button class="btn btn-ghost" onclick="zurueckZuSession()">← Zurück</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- QUIZ -->
+<div class="page" id="page-quiz">
+  <div class="card" style="text-align:center;padding:2.5rem">
+    <div style="font-size:3rem;margin-bottom:.75rem">🧠</div>
+    <h2 style="font-size:1.2rem;margin-bottom:.5rem">Quiz</h2>
+    <p style="color:var(--text-muted);font-size:.9rem">Hier entsteht das Jahresend-Quiz.<br>Fun Facts und Fragen aus euren Kegel-Daten.</p>
+    <div id="quiz-funfacts-container" style="margin-top:1.5rem;text-align:left"></div>
   </div>
 </div>
 
@@ -606,11 +618,6 @@
     <div id="kg-stats-container"><div class="empty-state">Noch keine Kegel-Sessions abgeschlossen.</div></div>
   </div>
 
-  <!-- Fun Facts & Quiz -->
-  <div class="card">
-    <div class="card-title">🎉 Fun Facts & Quiz</div>
-    <div id="fun-facts-container"><div class="empty-state">Noch keine Daten für Fun Facts.</div></div>
-  </div>
 </div>
 
 <!-- KASSENBUCH -->
@@ -1330,6 +1337,7 @@ function showPage(name, btn) {
   if (name === 'statistiken') renderStatistiken();
   if (name === 'kegeln') { renderKegelHistorie(); renderKgTerminListe(); renderKgSpielerAuswahl(); }
   if (name === 'spiele') { setzSpiel = null; renderSpieleListe(); }
+  if (name === 'quiz') { renderFunFacts(); }
   window.scrollTo(0, 0);
 }
 
@@ -2366,7 +2374,7 @@ function renderStrafen() {
 }
 
 function renderFunFacts() {
-  const container = document.getElementById('fun-facts-container');
+  const container = document.getElementById('quiz-funfacts-container') || document.getElementById('fun-facts-container');
   if (!container) return;
   const sessions = state.kegelsessions || [];
   const alle = sessions.flatMap(s => s.eintraege || []);

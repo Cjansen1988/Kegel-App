@@ -178,6 +178,36 @@
   .platz-loser { background: #fee2e2; color: #dc2626; }
   .platz-normal { background: var(--bg); color: var(--text-muted); }
 
+  /* 4 GEWINNT */
+  .vg-board { background: #1e293b; border-radius: 12px; padding: 10px; display: inline-block; }
+  .vg-row { display: flex; gap: 5px; margin-bottom: 5px; }
+  .vg-cell { width: 44px; height: 44px; border-radius: 50%; background: #334155; transition: background .2s; flex-shrink: 0; }
+  .vg-cell.team-a { background: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,.6); }
+  .vg-cell.team-b { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,.6); }
+  .vg-cell.win { animation: vg-pulse .5s ease-in-out infinite alternate; }
+  @keyframes vg-pulse { from { transform: scale(1); } to { transform: scale(1.15); } }
+  .vg-col-btn { width: 44px; height: 36px; border-radius: 6px; border: 2px solid; font-weight: 800; font-size: .9rem; cursor: pointer; transition: all .15s; flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
+  .vg-col-btn.team-a { background: #dbeafe; border-color: #3b82f6; color: #1d4ed8; }
+  .vg-col-btn.team-b { background: #fee2e2; border-color: #ef4444; color: #b91c1c; }
+  .vg-col-btn:disabled { opacity: .3; cursor: default; }
+  .vg-pumpe-btn { background: #fef3c7; border: 2px solid #f59e0b; color: #92400e; border-radius: 8px; padding: 8px 20px; font-weight: 700; cursor: pointer; font-size: .875rem; -webkit-tap-highlight-color: transparent; }
+
+  /* TANNENBAUM */
+  .tb-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: .5rem; }
+  .tb-row { display: flex; gap: 3px; justify-content: center; }
+  .tb-tile { width: 36px; height: 36px; border-radius: 6px; border: 2px solid; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .9rem; cursor: pointer; transition: all .15s; -webkit-tap-highlight-color: transparent; user-select: none; }
+  .tb-tile.team-a { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+  .tb-tile.team-a:active { background: #bfdbfe; }
+  .tb-tile.team-b { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+  .tb-tile.team-b:active { background: #fecaca; }
+  .tb-tile.done { background: #f1f5f9; border-color: #cbd5e1; color: #94a3b8; cursor: default; text-decoration: line-through; }
+  .tb-tile.aktiv-a { box-shadow: 0 0 0 3px #2563eb; }
+  .tb-tile.aktiv-b { box-shadow: 0 0 0 3px #dc2626; }
+  .tb-container { background: white; border-radius: 12px; border: 2px solid var(--border); padding: .5rem; flex: 1; }
+  .tb-container.aktiv-a { border-color: #2563eb; }
+  .tb-container.aktiv-b { border-color: #dc2626; }
+  .tb-label { text-align: center; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: .25rem 0; }
+
   .kg-auswahl-chip { padding: 6px 12px; border-radius: 99px; border: 2px solid var(--border); background: var(--bg); color: var(--text-muted); font-size: .82rem; font-weight: 600; cursor: pointer; transition: all .15s; -webkit-tap-highlight-color: transparent; }
   .kg-auswahl-chip.aktiv { background: #dcfce7; border-color: #16a34a; color: #15803d; }
   .kg-gesamt-bar { background: var(--bg); border-top: 2px solid var(--border); padding: 8px 1rem 10px; font-size: .85rem; position: sticky; bottom: 70px; }
@@ -427,11 +457,14 @@
     <div class="kg-tabs">
       <button class="kg-tab active" onclick="switchKgTab('kegel',this)">Kegel</button>
       <button class="kg-tab" onclick="switchKgTab('allgemein',this)">Allgemein</button>
+      <button class="kg-tab" onclick="switchKgTab('spiele',this)" id="kg-tab-spiele">🎮 Spiele</button>
     </div>
     <!-- Matrix -->
-    <div class="kg-matrix-wrap">
+    <div class="kg-matrix-wrap" id="kg-matrix-wrap">
       <table class="kg-matrix" id="kg-matrix-table"></table>
     </div>
+    <!-- Spiele-Liste -->
+    <div id="kg-spiele-liste" style="display:none;padding:.75rem 1rem"></div>
     <!-- Gesamt-Leiste -->
     <div class="kg-gesamt-bar" id="kg-gesamt-bar"></div>
   </div>
@@ -678,6 +711,8 @@
       <hr class="divider">
       <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">📥 Historische Daten</div>
       <button class="btn btn-ghost btn-sm" onclick="zeigeImportVorschau()">📥 Alte Sessions importieren (2025/26)</button>
+      <hr class="divider">
+      <div id="saison-settings"></div>
     </div>
   </div>
   <div class="card">
@@ -823,9 +858,13 @@ function subscribeAll() {
     autoExtendSerien();
   }, () => { loaded.termine = true; checkAllLoaded(); }));
 
-  // Strafen
+  // Strafen (gefiltert nach aktiver Saison)
   unsubscribers.push(db.collection('strafen').orderBy('datum','desc').onSnapshot(snap => {
-    state.strafen = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const alle = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const saisonId = state.aktiveSaison?.id || null;
+    state.strafen = saisonId
+      ? alle.filter(s => s.saisonId === saisonId)
+      : alle.filter(s => !s.saisonId);
     loaded.strafen = true; checkAllLoaded();
     renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview();
 
@@ -848,11 +887,23 @@ function subscribeAll() {
     renderStrafKategorien(); updateStrafKatSelect();
   }, () => {}));
 
-  // Kegelsessions
+  // Saison
+  unsubscribers.push(db.collection('config').doc('saison').onSnapshot(snap => {
+    state.aktiveSaison = snap.exists ? snap.data() : null;
+    renderSaisonInfo();
+  }, () => {}));
+
+  // Kegelsessions (gefiltert nach aktiver Saison)
   unsubscribers.push(db.collection('kegelsessions').orderBy('createdAt','desc').onSnapshot(snap => {
-    state.kegelsessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const alle = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const saisonId = state.aktiveSaison?.id || null;
+    state.kegelsessions = saisonId
+      ? alle.filter(s => s.saisonId === saisonId)
+      : alle.filter(s => !s.saisonId);
+    state.alleKegelsessions = alle;
     renderKgStatistiken();
     renderFunFacts();
+    renderKegelHistorie();
   }, () => {}));
 
   // Ist-Bestand
@@ -1278,7 +1329,7 @@ function showPage(name, btn) {
   });
   if (name === 'statistiken') renderStatistiken();
   if (name === 'kegeln') { renderKegelHistorie(); renderKgTerminListe(); renderKgSpielerAuswahl(); }
-  if (name === 'spiele') { renderSpieleListe(); }
+  if (name === 'spiele') { setzSpiel = null; renderSpieleListe(); }
   window.scrollTo(0, 0);
 }
 
@@ -1410,14 +1461,54 @@ function switchKgTab(tabId, btn) {
   aktiverKgTab = tabId;
   document.querySelectorAll('.kg-tab').forEach(t => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  renderKgMatrix();
+  const isSpiele = tabId === 'spiele';
+  document.getElementById('kg-matrix-wrap').style.display = isSpiele ? 'none' : 'block';
+  document.getElementById('kg-spiele-liste').style.display = isSpiele ? 'block' : 'none';
+  if (isSpiele) renderKgSpieleTab();
+  else renderKgMatrix();
+}
+
+function renderKgSpieleTab() {
+  const container = document.getElementById('kg-spiele-liste');
+  if (!aktiveSession) return;
+  const spiele = aktiveSession.spiele || {};
+  const details = aktiveSession.spieleDetail || {};
+  // Alle Spieler mit Einträgen anzeigen (nicht nur Session-Spieler)
+  const spielerMitStrafe = Object.keys(spiele).filter(n => spiele[n] > 0).sort();
+
+  container.innerHTML = `
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.75rem">Strafen aus Spielen — fließen in den Gesamtbetrag ein.</div>
+    ${spielerMitStrafe.length > 0
+      ? spielerMitStrafe.map(name => `
+        <div style="display:flex;justify-content:space-between;align-items:start;padding:.6rem 0;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-weight:700">${name}</div>
+            ${(details[name]||[]).map(d => `<div style="font-size:.75rem;color:var(--text-muted)">${d.beschreibung}: ${formatEur(d.betrag)}</div>`).join('')}
+          </div>
+          <strong style="color:var(--danger)">${formatEur(spiele[name])}</strong>
+        </div>`).join('')
+      : '<div class="empty-state">Noch keine Spielstrafen.</div>'}`;
 }
 
 function kgSpielerTotal(spieler) {
   const counts = aktiveSession?.counts[spieler] || {};
   let total = 0;
   KG_KATEGORIEN.forEach(g => g.strafen.forEach(s => { total += (counts[s.name]||0) * s.betrag; }));
+  // Spiele-Strafen dazu
+  total += aktiveSession?.spiele?.[spieler] || 0;
   return Math.round(total * 100) / 100;
+}
+
+function addSpieleStrafe(spieler, betrag, beschreibung) {
+  // Strafe aus Spiel in Live-Session eintragen
+  if (!aktiveSession) return;
+  if (!aktiveSession.spiele) aktiveSession.spiele = {};
+  if (!aktiveSession.spieleDetail) aktiveSession.spieleDetail = {};
+  aktiveSession.spiele[spieler] = Math.round(((aktiveSession.spiele[spieler] || 0) + betrag) * 100) / 100;
+  if (!aktiveSession.spieleDetail[spieler]) aktiveSession.spieleDetail[spieler] = [];
+  aktiveSession.spieleDetail[spieler].push({ beschreibung, betrag });
+  saveLiveSession();
+  renderKgMatrix();
 }
 
 function renderKgMatrix() {
@@ -1450,7 +1541,7 @@ function renderKgMatrix() {
     const rowStyle = nichtAngemeldet ? 'opacity:.35' : '';
     tbody += `<tr style="${rowStyle}">
       <td class="name-col">
-        <span class="kg-avatar" style="background:${nichtAngemeldet ? '#94a3b8' : col}">${initials}</span>${m.name}
+        ${m.name}
       </td>`;
     strafen.forEach(s => {
       const n = counts[s.name] || 0;
@@ -1499,15 +1590,33 @@ function renderKgMatrix() {
       <span class="kg-bar-label">Ø pro Kegler (+ ${formatEur(BAHN)} Bahn)</span>
       <span class="kg-bar-val" style="color:var(--primary)">${formatEur(durchschnitt + BAHN)}</span>
     </div>
-    ${abwesendeSpieler.length > 0 ? `
+    ${abwesendeSpieler.length > 0 ? (() => {
+      const anzAbw = abwesendeSpieler.length;
+      const einnahmenAktiv = gesamtTotal + (aktivAnzahl * BAHN);
+      const einnahmenAbw = anzAbw * (durchschnitt + BAHN);
+      const einnahmenGesamt = einnahmenAktiv + einnahmenAbw;
+      return `
     <div class="kg-bar-row" style="border-top:1px solid var(--border);padding-top:5px;margin-top:3px">
-      <span class="kg-bar-label" style="color:var(--text-muted)">Abwesende zahlen (ohne Bahn)</span>
-      <span class="kg-bar-val" style="color:var(--warning)">${formatEur(durchschnitt)}</span>
+      <span class="kg-bar-label" style="color:var(--text-muted)">Abwesende zahlen je (${anzAbw}×)</span>
+      <span class="kg-bar-val" style="color:var(--warning)">${formatEur(durchschnitt + BAHN)}</span>
+    </div>
+    <div class="kg-bar-row" style="border-top:1px solid var(--border);padding-top:5px;margin-top:3px">
+      <span class="kg-bar-label" style="font-weight:700">💰 Einnahmen aktive Kegler</span>
+      <span class="kg-bar-val" style="color:var(--success)">${formatEur(einnahmenAktiv)}</span>
     </div>
     <div class="kg-bar-row">
-      <span class="kg-bar-label" style="color:var(--text-muted)">Abwesende zahlen (+ Bahn)</span>
-      <span class="kg-bar-val" style="color:var(--warning)">${formatEur(durchschnitt + BAHN)}</span>
-    </div>` : ''}
+      <span class="kg-bar-label" style="font-weight:700">💰 Einnahmen Abwesende</span>
+      <span class="kg-bar-val" style="color:var(--success)">${formatEur(einnahmenAbw)}</span>
+    </div>
+    <div class="kg-bar-row" style="border-top:2px solid var(--border);padding-top:5px;margin-top:3px">
+      <span class="kg-bar-label" style="font-weight:800">💰 Gesamt-Einnahmen</span>
+      <span class="kg-bar-val" style="color:var(--success);font-size:1rem">${formatEur(einnahmenGesamt)}</span>
+    </div>`;
+    })() : `
+    <div class="kg-bar-row" style="border-top:1px solid var(--border);padding-top:5px;margin-top:3px">
+      <span class="kg-bar-label" style="font-weight:700">💰 Gesamt-Einnahmen (inkl. Bahn)</span>
+      <span class="kg-bar-val" style="color:var(--success)">${formatEur(gesamtTotal + aktivAnzahl * BAHN)}</span>
+    </div>`}
   `;
 
   // Long-press support für mobile
@@ -1701,7 +1810,7 @@ function bestaetigeKegelSession() {
 
   db.collection('kegelsessions').add({
     name: aktiveSession.name, datum: today(),
-    eintraege: eintraegeFlach,
+    eintraege: eintraegeFlach, ...saisonMeta(),
     angemeldet: aktiveSession.angemeldet || [],
     spieler: aktiveSession.spieler || [],
     createdAt: Date.now()
@@ -2035,7 +2144,7 @@ function addStrafe() {
   const notiz = document.getElementById('s-notiz').value.trim();
   const bezahlt = document.getElementById('s-bezahlt').checked;
   if (!mitglied || !kategorie || isNaN(betrag)) { alert('Mitglied, Kategorie und Betrag ausfüllen!'); return; }
-  db.collection('strafen').add({ mitglied, kategorie, betrag, datum, notiz, bezahlt, createdAt: Date.now() }).then(ref => {
+  db.collection('strafen').add({ mitglied, kategorie, betrag, datum, notiz, bezahlt, ...saisonMeta(), createdAt: Date.now() }).then(ref => {
     if (bezahlt) {
       db.collection('kassenbuch').add({
         typ: 'einnahme',
@@ -2860,6 +2969,14 @@ function renderKassenbuch() {
 
 const SPIELE_KATALOG = [
   {
+    id: 'setzen',
+    name: 'Setzen',
+    emoji: '🎯',
+    erklaerung: `Jeder wirft reihum und ordnet das Ergebnis einer Spalte (0,20€–1,00€) zu. Eine 9 muss immer in die 1,00€-Spalte.\n\nNach 5 Runden: Wer in einer Spalte den niedrigsten Wert hat, zahlt den entsprechenden Betrag. Bei Gleichstand zahlen alle Betroffenen.`,
+    typ: 'einzeln',
+    strafKategorie: null
+  },
+  {
     id: 'hohe-hausnummer',
     name: 'Hohe Hausnummer',
     emoji: '🏠',
@@ -2872,7 +2989,31 @@ const SPIELE_KATALOG = [
     name: 'Tiefe Hausnummer',
     emoji: '🏚️',
     erklaerung: `Gleiche Regeln wie Hohe Hausnummer — jeder Kegler hat 3 Würfe und muss nach jedem Wurf sofort entscheiden, auf welche Stelle die Zahl kommt.\n\nEinmal platziert, kein Tauschen erlaubt.\n\n🏆 Die niedrigste Hausnummer gewinnt — die höchsten verlieren.`,
-    sortierung: 'tief',  // niedrigste gewinnt → höchste verlieren
+    sortierung: 'tief',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'abraeumen',
+    name: 'Abräumen',
+    emoji: '🧹',
+    erklaerung: `Teamspiel. Ziel: 2× alle Kegel abräumen.\n\nJeder Kegler wirft einmal — jeder Wurf zählt als +1 Versuch für das Team. Wenn alle Kegel gefallen sind: Abgeräumt! Das Team muss noch ein zweites Mal abräumen.\n\n🏆 Das Team mit weniger Gesamtversuchen für 2× Abräumen gewinnt — das andere Team zahlt.`,
+    typ: 'team',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'tannenbaum',
+    name: 'Tannenbaum',
+    emoji: '🎄',
+    erklaerung: `Jedes Team hat einen eigenen Tannenbaum aus Zahlen (9 oben bis 1 unten).\n\nDie Teams wechseln sich ab: Ein Spieler wirft und tippt auf die Zahl die er geworfen hat — auf dem eigenen Baum.\n\nSind alle Felder einer Zahl beim eigenen Team bereits abgehakt, tippt man stattdessen diese Zahl beim Gegner an.\n\n🏆 Das Team das seinen eigenen Baum zuerst komplett abräumt gewinnt — das andere zahlt.`,
+    typ: 'team',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: '4gewinnt',
+    name: '4 Gewinnt',
+    emoji: '🔵',
+    erklaerung: `Teilt die Spieler auf 2 Teams auf. Nach jedem Wurf tippt ihr die geworfene Zahl (1–9) — die Münze eures Teams fällt in die entsprechende Spalte.\n\nWer zuerst 4 Münzen in einer Reihe verbindet (horizontal, vertikal oder diagonal) gewinnt!\n\nBei einer Pumpe fällt keine Münze und das andere Team ist dran.`,
+    typ: 'team',
     strafKategorie: 'Verl. Spiel'
   }
 ];
@@ -2894,25 +3035,36 @@ function renderSpieleListe() {
 
   const aktiveSpielerListe = getAktiveSpieler();
 
-  container.innerHTML = SPIELE_KATALOG.map(spiel => `
+  const einzelspiele = SPIELE_KATALOG.filter(s => s.typ !== 'team' && s.typ !== 'einzeln_special');
+  const teamspiele = SPIELE_KATALOG.filter(s => s.typ === 'team');
+  const spielerInfo = aktiveSpielerListe.length > 0
+    ? `<span style="font-size:.78rem;color:var(--text-muted)">👥 ${aktiveSpielerListe.length} Spieler</span>`
+    : `<span style="font-size:.78rem;color:var(--warning)">⚠️ Alle Mitglieder</span>`;
+
+  const renderSpielKarte = spiel => `
     <div class="spiel-card">
       <h3 style="margin-bottom:.5rem">${spiel.emoji} ${spiel.name}</h3>
       <details style="margin-bottom:.875rem">
         <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted);font-weight:600">📖 Spielerklärung</summary>
         <div class="spiel-erklaerung" style="margin-top:.5rem;white-space:pre-line">${spiel.erklaerung}</div>
       </details>
+      ${spiel.typ !== 'team' ? `
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
         <span style="font-size:.85rem;font-weight:600;color:var(--text-muted)">Verlierer:</span>
         ${[1,2,3,4].map(n => `<button id="vl-${spiel.id}-${n}" class="btn btn-sm ${n===1?'btn-primary':'btn-ghost'}"
           onclick="setVorauswahlVerlierer('${spiel.id}',${n})">${n}</button>`).join('')}
-      </div>
+      </div>` : ''}
       <div style="display:flex;justify-content:space-between;align-items:center">
-        ${aktiveSpielerListe.length > 0
-          ? `<span style="font-size:.78rem;color:var(--text-muted)">👥 ${aktiveSpielerListe.length} Spieler</span>`
-          : `<span style="font-size:.78rem;color:var(--warning)">⚠️ Alle Mitglieder</span>`}
+        ${spielerInfo}
         <button class="btn btn-primary btn-sm" onclick="starteSpiel('${spiel.id}')">▶ Spielen</button>
       </div>
-    </div>`).join('') +
+    </div>`;
+
+  container.innerHTML =
+    `<div class="section-title">👤 Einzelspiele</div>` +
+    einzelspiele.map(renderSpielKarte).join('') +
+    `<div class="section-title" style="margin-top:1.25rem">👥 Teamspiele</div>` +
+    teamspiele.map(renderSpielKarte).join('') +
     `<div style="font-size:.8rem;color:var(--text-muted);text-align:center;padding:1rem">Weitere Spiele folgen…</div>`;
 }
 
@@ -2927,13 +3079,515 @@ function getAktiveSpieler() {
 function starteSpiel(spielId) {
   const spiel = SPIELE_KATALOG.find(s => s.id === spielId);
   if (!spiel) return;
-  const spieler = getAktiveSpieler();
-  aktivesSpiel = {
-    spielId,
-    spieler: spieler.map(m => ({ name: m.name, ziffern: [null, null, null] })),
-    anzahlVerlierer: vorauswahlVerlierer[spielId] || 1
+  if (spiel.typ === 'team') {
+    starteTeamSpiel(spielId);
+  } else if (spiel.typ === 'einzeln') {
+    starteSetzSpiel(spielId);
+  } else {
+    const spieler = getAktiveSpieler();
+    aktivesSpiel = {
+      spielId,
+      spieler: spieler.map(m => ({ name: m.name, ziffern: [null, null, null] })),
+      anzahlVerlierer: vorauswahlVerlierer[spielId] || 1
+    };
+    renderAktivesSpiel();
+  }
+}
+
+// ---- TEAMSPIEL ----
+let teamSpielState = null;
+
+function starteTeamSpiel(spielId) {
+  const spieler = getAktiveSpieler().map(m => m.name);
+  teamSpielState = { spielId, phase: 'teams', spieler, teamA: [], teamB: [], unverteilt: [...spieler] };
+  renderTeamSpiel();
+}
+
+function renderTeamSpiel() {
+  const container = document.getElementById('spiele-liste');
+  const spiel = SPIELE_KATALOG.find(s => s.id === teamSpielState.spielId);
+  const ts = teamSpielState;
+
+  if (ts.phase === 'teams') {
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name} — Teams</h3>
+          <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">← Zurück</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-bottom:1rem" onclick="teamsZufaellig()">🎲 Zufällig aufteilen</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+          <div>
+            <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--primary);margin-bottom:.4rem">Team A</div>
+            <div id="team-a-liste" style="min-height:40px;background:#eff6ff;border-radius:8px;padding:.4rem;display:flex;flex-direction:column;gap:.3rem">
+              ${ts.teamA.map(n => `<div style="display:flex;justify-content:space-between;align-items:center;background:white;border-radius:6px;padding:4px 8px;font-size:.85rem;font-weight:600">
+                ${n} <button onclick="spielerVerschieben('${n}','a','pool')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:.9rem">✕</button>
+              </div>`).join('') || '<div style="color:var(--text-muted);font-size:.8rem;padding:.25rem">Leer</div>'}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--danger);margin-bottom:.4rem">Team B</div>
+            <div id="team-b-liste" style="min-height:40px;background:#fff5f5;border-radius:8px;padding:.4rem;display:flex;flex-direction:column;gap:.3rem">
+              ${ts.teamB.map(n => `<div style="display:flex;justify-content:space-between;align-items:center;background:white;border-radius:6px;padding:4px 8px;font-size:.85rem;font-weight:600">
+                ${n} <button onclick="spielerVerschieben('${n}','b','pool')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:.9rem">✕</button>
+              </div>`).join('') || '<div style="color:var(--text-muted);font-size:.8rem;padding:.25rem">Leer</div>'}
+            </div>
+          </div>
+        </div>
+        ${ts.unverteilt.length > 0 ? `
+        <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.4rem">Noch nicht zugeteilt</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:1rem">
+          ${ts.unverteilt.map(n => `
+            <div style="display:flex;gap:.2rem">
+              <button onclick="spielerVerschieben('${n}','pool','a')" class="btn btn-ghost btn-sm" style="border-color:var(--primary);color:var(--primary)">${n} → A</button>
+              <button onclick="spielerVerschieben('${n}','pool','b')" class="btn btn-ghost btn-sm" style="border-color:var(--danger);color:var(--danger)">B</button>
+            </div>`).join('')}
+        </div>` : ''}
+        ${ts.teamA.length > 0 && ts.teamB.length > 0
+          ? `<button class="btn btn-primary btn-full" onclick="starteTeamSpielPhase()">▶ Spiel starten (Team A: ${ts.teamA.length}, Team B: ${ts.teamB.length})</button>`
+          : `<div style="background:#fef3c7;border-radius:8px;padding:.6rem;font-size:.83rem;color:#92400e;text-align:center">⚠️ Beide Teams müssen mindestens 1 Spieler haben</div>`}
+      </div>`;
+    return;
+  }
+
+  if (ts.phase === 'tannenbaum') { renderTannenbaum(); return; }
+  if (ts.phase === '4gewinnt') { renderVierGewinnt(); return; }
+
+  if (ts.phase === 'spiel') {
+    const aktiv = ts.aktivesTeam; // 'A' oder 'B'
+    const team = aktiv === 'A' ? ts.teamA : ts.teamB;
+    const daten = aktiv === 'A' ? ts.datenA : ts.datenB;
+    const anderesDaten = aktiv === 'A' ? ts.datenB : ts.datenA;
+    const anderesTeam = aktiv === 'A' ? 'B' : 'A';
+    const hatZielErreicht = anderesDaten.fertig;
+
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+          <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+        </div>
+
+        <!-- Scoreboard -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+          ${['A','B'].map(t => {
+            const d = t === 'A' ? ts.datenA : ts.datenB;
+            const tm = t === 'A' ? ts.teamA : ts.teamB;
+            const istAktiv = aktiv === t;
+            return `<div style="background:${istAktiv?'linear-gradient(135deg,#1e3a5f,#2563eb)':'var(--bg)'};color:${istAktiv?'white':'var(--text)'};border-radius:10px;padding:.75rem;text-align:center">
+              <div style="font-size:.72rem;font-weight:700;opacity:${istAktiv?'.8':'1'};margin-bottom:.25rem">TEAM ${t} ${istAktiv?'▶':''}</div>
+              ${d ? `<div style="display:flex;justify-content:center;gap:1rem">
+                <div><div style="font-weight:800;font-size:1.3rem">${d.versuche}</div><div style="font-size:.7rem;opacity:.8">Versuche</div></div>
+                <div><div style="font-weight:800;font-size:1.3rem">${d.abraeumungen}/2</div><div style="font-size:.7rem;opacity:.8">Abgeräumt</div></div>
+              </div>${d.fertig ? `<div style="font-size:.72rem;margin-top:.25rem;font-weight:700">✅ Fertig!</div>` : ''}` : ''}
+              <div style="font-size:.72rem;margin-top:.3rem;opacity:.7">${tm.join(', ')}</div>
+            </div>`;
+          }).join('')}
+        </div>
+
+        ${hatZielErreicht ? `<div style="background:#fef3c7;border-radius:8px;padding:.5rem .75rem;font-size:.82rem;margin-bottom:.75rem;color:#92400e;font-weight:600">
+          Team ${anderesTeam} hat ${anderesDaten.versuche} Versuche gebraucht — versucht es zu unterbieten!
+        </div>` : ''}
+
+        <!-- Aktionen -->
+        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.5rem">Team ${aktiv} — Abraeumung ${daten.abraeumungen + 1}/2</div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          <button class="btn btn-ghost" style="flex:1;font-size:1rem" onclick="versuchPlus()">+1 Versuch</button>
+          <button class="btn btn-primary" style="flex:1;font-size:1rem" onclick="abraeumen()">🎳 Abgeräumt!</button>
+        </div>
+        <div style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem">Aktuelle Versuche: <strong>${daten.versuche}</strong></div>
+      </div>`;
+  }
+
+  if (ts.phase === 'ergebnis') {
+    let gewinnerTeam, verliererSpieler, ergebnisText;
+    if (ts.gewinner) {
+      // Tannenbaum
+      gewinnerTeam = ts.gewinner;
+      verliererSpieler = ts.verliererSpieler || (gewinnerTeam === 'A' ? ts.teamB : ts.teamA);
+      ergebnisText = `Team ${gewinnerTeam} hat den Tannenbaum zuerst abgeräumt!`;
+    } else {
+      // Abräumen
+      const a = ts.datenA.versuche, b = ts.datenB.versuche;
+      gewinnerTeam = a < b ? 'A' : b < a ? 'B' : 'unentschieden';
+      verliererSpieler = gewinnerTeam === 'A' ? ts.teamB : gewinnerTeam === 'B' ? ts.teamA : [];
+      ergebnisText = gewinnerTeam !== 'unentschieden' ? `Team ${gewinnerTeam === 'A' ? 'B' : 'A'} verliert (${gewinnerTeam === 'A' ? b : a} vs ${gewinnerTeam === 'A' ? a : b} Versuche)` : 'Unentschieden';
+    }
+    container.innerHTML = `
+      <div class="card">
+        <h3 style="font-size:1rem;font-weight:800;margin-bottom:1rem">${spiel.emoji} Ergebnis</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+          ${['A','B'].map(t => {
+            const d = t === 'A' ? ts.datenA : ts.datenB;
+            const istGewinner = gewinnerTeam === t;
+            return `<div style="background:${istGewinner?'#dcfce7':'#fee2e2'};border-radius:10px;padding:1rem;text-align:center">
+              <div style="font-size:.8rem;font-weight:700;margin-bottom:.25rem">${istGewinner?'🏆':'😬'} Team ${t}</div>
+              ${d ? `<div style="font-weight:800;font-size:1.5rem;color:${istGewinner?'var(--success)':'var(--danger)'}">${d.versuche} Versuche</div>` : ''}
+              <div style="font-size:.75rem;margin-top:.3rem">${(t==='A'?ts.teamA:ts.teamB).join(', ')}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        ${gewinnerTeam === 'unentschieden'
+          ? '<div style="text-align:center;font-weight:700;margin-bottom:1rem">🤝 Unentschieden — niemand zahlt!</div>'
+          : `<div style="background:#fee2e2;border-radius:8px;padding:.75rem;margin-bottom:1rem;font-size:.875rem">
+              <strong>${ergebnisText}</strong><br>
+              ${verliererSpieler.join(', ')} bekommen je 1× Verl. Spiel
+            </div>`}
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          ${gewinnerTeam !== 'unentschieden' ? `<button class="btn btn-primary" onclick="bestaetigeTeamErgebnis()">✅ Strafen eintragen</button>` : ''}
+          <button class="btn btn-ghost" onclick="teamSpielState=null;renderSpieleListe()">Fertig</button>
+        </div>
+      </div>`;
+  }
+}
+
+function spielerVerschieben(name, von, nach) {
+  const ts = teamSpielState;
+  if (von === 'pool') ts.unverteilt = ts.unverteilt.filter(n => n !== name);
+  else if (von === 'a') ts.teamA = ts.teamA.filter(n => n !== name);
+  else if (von === 'b') ts.teamB = ts.teamB.filter(n => n !== name);
+
+  if (nach === 'pool') ts.unverteilt.push(name);
+  else if (nach === 'a') ts.teamA.push(name);
+  else if (nach === 'b') ts.teamB.push(name);
+  renderTeamSpiel();
+}
+
+function teamsZufaellig() {
+  const ts = teamSpielState;
+  const alle = [...ts.spieler].sort(() => Math.random() - .5);
+  const mitte = Math.ceil(alle.length / 2);
+  ts.teamA = alle.slice(0, mitte);
+  ts.teamB = alle.slice(mitte);
+  ts.unverteilt = [];
+  renderTeamSpiel();
+}
+
+// ---- TANNENBAUM ----
+const TB_REIHEN = [9,8,7,6,5,4,3,2,1]; // top to bottom
+const TB_ANZAHL = { 9:1, 8:2, 7:3, 6:4, 5:5, 4:4, 3:3, 2:2, 1:1 };
+
+function neuenBaum() {
+  const b = {};
+  TB_REIHEN.forEach(n => { b[n] = TB_ANZAHL[n]; });
+  return b;
+}
+
+function spieleTannenbaum() {
+  const ts = teamSpielState;
+  ts.phase = 'tannenbaum';
+  ts.aktivesTeam = 'A';
+  ts.baumA = neuenBaum();
+  ts.baumB = neuenBaum();
+  ts.letzterZug = null;
+  renderTeamSpiel();
+}
+
+function renderTannenbaum() {
+  const ts = teamSpielState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === ts.spielId);
+  const container = document.getElementById('spiele-liste');
+  const aktiv = ts.aktivesTeam;
+  const maxTotal = Object.values(TB_ANZAHL).reduce((s,v)=>s+v,0);
+  const totalA = Object.values(ts.baumA).reduce((s,v)=>s+v,0);
+  const totalB = Object.values(ts.baumB).reduce((s,v)=>s+v,0);
+  const aktivSpieler = aktiv === 'A'
+    ? ts.teamA[ts.aktiverSpielerA % ts.teamA.length]
+    : ts.teamB[ts.aktiverSpielerB % ts.teamB.length];
+  const eigenBaum = aktiv === 'A' ? ts.baumA : ts.baumB;
+  const gegnerBaum = aktiv === 'A' ? ts.baumB : ts.baumA;
+
+  const renderBaumDisplay = (seite) => {
+    const baum = seite === 'A' ? ts.baumA : ts.baumB;
+    const total = seite === 'A' ? totalA : totalB;
+    return `<div class="tb-container ${aktiv===seite?'aktiv-'+seite.toLowerCase():''}">
+      <div class="tb-label" style="color:${seite==='A'?'var(--primary)':'var(--danger)'}">
+        Team ${seite} ${aktiv===seite?'▶':''} — ${maxTotal-total}/${maxTotal}
+      </div>
+      <div class="tb-label" style="font-size:.7rem;color:var(--text-muted);font-weight:400">${ts['team'+seite].join(', ')}</div>
+      <div class="tb-wrap">
+        ${TB_REIHEN.map(n => {
+          const verbleibend = baum[n];
+          return `<div class="tb-row">${Array.from({length:TB_ANZAHL[n]},(_,i)=>`<div class="tb-tile ${i>=verbleibend?'done':'team-'+seite.toLowerCase()}">${n}</div>`).join('')}</div>`;
+        }).join('')}
+      </div>
+    </div>`;
   };
-  renderAktivesSpiel();
+
+  // Zahlenbuttons: zeige welche Zahlen noch verfügbar sind
+  const zahlenBtns = TB_REIHEN.map(n => {
+    const eigenHat = eigenBaum[n] > 0;
+    const gegnerHat = gegnerBaum[n] > 0;
+    const verfuegbar = eigenHat || gegnerHat;
+    const hinweis = !eigenHat && gegnerHat ? '→ Gegner' : '';
+    return `<button onclick="tippeBaum(${n})"
+      style="padding:8px 4px;border-radius:8px;border:2px solid;font-weight:800;font-size:.9rem;flex:1;
+             background:${eigenHat?aktiv==='A'?'#dbeafe':'#fee2e2':'#f8faff'};
+             border-color:${eigenHat?aktiv==='A'?'#3b82f6':'#ef4444':'#cbd5e1'};
+             color:${eigenHat?aktiv==='A'?'#1d4ed8':'#b91c1c':'#94a3b8'};
+             ${!verfuegbar?'opacity:.3;cursor:default':''}"
+      ${!verfuegbar?'disabled':''}>
+      ${n}${hinweis?`<br><span style="font-size:.6rem;font-weight:600">${hinweis}</span>`:''}
+    </button>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+      <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+    </div>
+    <div style="background:${aktiv==='A'?'#eff6ff':'#fff5f5'};border-radius:8px;padding:.5rem .75rem;margin-bottom:.75rem;font-size:.9rem;font-weight:700;color:${aktiv==='A'?'var(--primary)':'var(--danger)'}">
+      ${aktiv==='A'?'🔵':'🔴'} Team ${aktiv} wirft${aktivSpieler?' — '+aktivSpieler:''}
+    </div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
+      ${renderBaumDisplay('A')}
+      ${renderBaumDisplay('B')}
+    </div>
+    <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.35rem">Geworfene Zahl tippen:</div>
+    <div style="display:flex;gap:.3rem;flex-wrap:nowrap;overflow-x:auto">${zahlenBtns}</div>
+    ${ts.letzterZug?`<div style="font-size:.78rem;color:var(--text-muted);margin-top:.5rem;text-align:center;background:var(--bg);border-radius:6px;padding:.3rem">${ts.letzterZug}</div>`:''}`;
+}
+
+function tippeBaum(zahl) {
+  const ts = teamSpielState;
+  const aktiv = ts.aktivesTeam;
+  const eigenBaum = aktiv === 'A' ? ts.baumA : ts.baumB;
+  const gegnerBaum = aktiv === 'A' ? ts.baumB : ts.baumA;
+
+  // Eigene Gruppe noch verfügbar → eigenen Baum
+  if (eigenBaum[zahl] > 0) {
+    eigenBaum[zahl]--;
+    ts.letzterZug = `Team ${aktiv}: ${zahl} auf eigenem Baum ✓`;
+  } else if (gegnerBaum[zahl] > 0) {
+    // Eigene Gruppe leer → Gegner-Baum (hilft dem Gegner)
+    gegnerBaum[zahl]--;
+    ts.letzterZug = `Team ${aktiv}: eigene ${zahl}er leer → Gegner bekommt ${zahl} abgehakt`;
+  } else {
+    ts.letzterZug = `${zahl} ist auf beiden Bäumen schon komplett abgehakt.`;
+    return;
+  }
+
+  // Spielerwechsel
+  if (aktiv === 'A') {
+    ts.aktiverSpielerA = (ts.aktiverSpielerA || 0) + 1;
+    ts.aktivesTeam = 'B';
+  } else {
+    ts.aktiverSpielerB = (ts.aktiverSpielerB || 0) + 1;
+    ts.aktivesTeam = 'A';
+  }
+
+  // Gewinner prüfen
+  const totalA = Object.values(ts.baumA).reduce((s,v)=>s+v,0);
+  const totalB = Object.values(ts.baumB).reduce((s,v)=>s+v,0);
+  if (totalA === 0 || totalB === 0) {
+    const gewinner = totalA === 0 ? 'A' : 'B';
+    ts.phase = 'ergebnis';
+    ts.gewinner = gewinner;
+    ts.verliererSpieler = gewinner === 'A' ? ts.teamB : ts.teamA;
+  }
+
+  renderTeamSpiel();
+}
+
+
+// ---- 4 GEWINNT ----
+const VG_COLS = 9, VG_ROWS = 7;
+
+function starteVierGewinnt() {
+  const ts = teamSpielState;
+  ts.phase = '4gewinnt';
+  ts.aktivesTeam = 'A';
+  // board[row][col] = null | 'A' | 'B'  (row 0 = top)
+  ts.vgBoard = Array.from({length: VG_ROWS}, () => Array(VG_COLS).fill(null));
+  ts.vgGewinner = null;
+  ts.vgWinCells = [];
+  renderTeamSpiel();
+}
+
+function vgDropCoin(col) {
+  const ts = teamSpielState;
+  if (ts.vgGewinner) return;
+  // Schwerkraft: unterste freie Zeile finden
+  let row = -1;
+  for (let r = VG_ROWS - 1; r >= 0; r--) {
+    if (!ts.vgBoard[r][col]) { row = r; break; }
+  }
+  if (row === -1) return; // Spalte voll
+  ts.vgBoard[row][col] = ts.aktivesTeam;
+  // Gewinner prüfen
+  const win = vgPruefeGewinner(ts.vgBoard, row, col, ts.aktivesTeam);
+  if (win) {
+    ts.vgGewinner = ts.aktivesTeam;
+    ts.vgWinCells = win;
+    ts.phase = 'ergebnis';
+    ts.gewinner = ts.aktivesTeam;
+    ts.verliererSpieler = ts.aktivesTeam === 'A' ? ts.teamB : ts.teamA;
+  } else if (ts.vgBoard[0].every(c => c !== null)) {
+    // Unentschieden - volles Board
+    ts.phase = 'ergebnis';
+    ts.gewinner = 'unentschieden';
+    ts.verliererSpieler = [];
+  } else {
+    ts.aktivesTeam = ts.aktivesTeam === 'A' ? 'B' : 'A';
+  }
+  renderTeamSpiel();
+}
+
+function vgPumpe() {
+  const ts = teamSpielState;
+  ts.aktivesTeam = ts.aktivesTeam === 'A' ? 'B' : 'A';
+  renderTeamSpiel();
+}
+
+function vgPruefeGewinner(board, row, col, team) {
+  const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+  for (const [dr, dc] of dirs) {
+    const cells = [[row, col]];
+    for (const sign of [1, -1]) {
+      let r = row + dr*sign, c = col + dc*sign;
+      while (r >= 0 && r < VG_ROWS && c >= 0 && c < VG_COLS && board[r][c] === team) {
+        cells.push([r, c]);
+        r += dr*sign; c += dc*sign;
+      }
+    }
+    if (cells.length >= 4) return cells;
+  }
+  return null;
+}
+
+function renderVierGewinnt() {
+  const ts = teamSpielState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === ts.spielId);
+  const container = document.getElementById('spiele-liste');
+  const aktiv = ts.aktivesTeam;
+  const winSet = new Set((ts.vgWinCells||[]).map(([r,c]) => `${r},${c}`));
+
+  const boardHtml = ts.vgBoard.map((row, r) =>
+    `<div class="vg-row">${row.map((cell, c) =>
+      `<div class="vg-cell${cell?' team-'+cell.toLowerCase():''}${winSet.has(`${r},${c}`)?' win':''}"></div>`
+    ).join('')}</div>`
+  ).join('');
+
+  const btnClass = `vg-col-btn team-${aktiv.toLowerCase()}`;
+  const colBtns = Array.from({length: VG_COLS}, (_,i) => {
+    const full = ts.vgBoard[0][i] !== null;
+    return `<button class="${btnClass}" onclick="vgDropCoin(${i})" ${full?'disabled':''}>${i+1}</button>`;
+  }).join('<span style="width:5px;display:inline-block"></span>');
+
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+      <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:.5rem">
+      <div style="font-size:.82rem;font-weight:700;color:var(--primary)">🔵 Team A: ${ts.teamA.join(', ')}</div>
+      <div style="font-size:.82rem;font-weight:700;color:var(--danger)">🔴 Team B: ${ts.teamB.join(', ')}</div>
+    </div>
+    <div style="background:${aktiv==='A'?'#eff6ff':'#fff5f5'};border-radius:8px;padding:.4rem .75rem;margin-bottom:.75rem;font-size:.85rem;font-weight:700;color:${aktiv==='A'?'var(--primary)':'var(--danger)'}">
+      ${aktiv==='A'?'🔵':'🔴'} Team ${aktiv} ist dran
+    </div>
+    <div style="overflow-x:auto;padding-bottom:.5rem">
+      <div class="vg-board">${boardHtml}</div>
+    </div>
+    <div style="display:flex;gap:5px;flex-wrap:nowrap;margin-top:.5rem;overflow-x:auto;padding-bottom:.25rem">
+      ${colBtns}
+    </div>
+    <div style="margin-top:.75rem;text-align:center">
+      <button class="vg-pumpe-btn" onclick="vgPumpe()">🎳 Pumpe — keine Münze, nächstes Team</button>
+    </div>`;
+}
+
+function starteTeamSpielPhase() {
+  const ts = teamSpielState;
+  if (ts.spielId === 'tannenbaum') {
+    ts.aktiverSpielerA = 0;
+    ts.aktiverSpielerB = 0;
+    spieleTannenbaum();
+  } else if (ts.spielId === '4gewinnt') {
+    starteVierGewinnt();
+  } else {
+    spieleAbraeuumen();
+  }
+}
+
+function spieleAbraeuumen() {
+  const ts = teamSpielState;
+  if (ts.teamA.length === 0 || ts.teamB.length === 0) return;
+  ts.phase = 'spiel';
+  ts.aktivesTeam = 'A';
+  ts.datenA = { versuche: 0, abraeumungen: 0, fertig: false };
+  ts.datenB = { versuche: 0, abraeumungen: 0, fertig: false };
+  renderTeamSpiel();
+}
+
+function versuchPlus() {
+  const ts = teamSpielState;
+  const daten = ts.aktivesTeam === 'A' ? ts.datenA : ts.datenB;
+  daten.versuche++;
+  renderTeamSpiel();
+}
+
+function abraeumen() {
+  const ts = teamSpielState;
+  const daten = ts.aktivesTeam === 'A' ? ts.datenA : ts.datenB;
+  daten.versuche++;
+  daten.abraeumungen++;
+  if (daten.abraeumungen >= 2) {
+    daten.fertig = true;
+    // Zum anderen Team wechseln oder Ergebnis zeigen
+    const anderesDaten = ts.aktivesTeam === 'A' ? ts.datenB : ts.datenA;
+    if (anderesDaten.fertig) {
+      ts.phase = 'ergebnis';
+    } else {
+      ts.aktivesTeam = ts.aktivesTeam === 'A' ? 'B' : 'A';
+    }
+  }
+  renderTeamSpiel();
+}
+
+function bestaetigeTeamErgebnis() {
+  const ts = teamSpielState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === ts.spielId);
+  let verliererSpieler;
+  let versucheA = null, versucheB = null;
+  if (ts.gewinner) {
+    verliererSpieler = ts.verliererSpieler || (ts.gewinner === 'A' ? ts.teamB : ts.teamA);
+  } else {
+    versucheA = ts.datenA.versuche;
+    versucheB = ts.datenB.versuche;
+    verliererSpieler = versucheA < versucheB ? ts.teamB : ts.teamA;
+  }
+  if (!verliererSpieler || !verliererSpieler.length) return;
+
+  if (aktiveSession) {
+    verliererSpieler.forEach(name => {
+      if (!aktiveSession.counts[name]) aktiveSession.counts[name] = {};
+      addSpieleStrafe(name, 1.00, `Verl. Spiel (${spiel?.name || 'Spiel'})`);
+    });
+    saveLiveSession();
+    if (document.getElementById('page-kegeln').classList.contains('active')) renderKgMatrix();
+  } else {
+    const batch = db.batch();
+    verliererSpieler.forEach(name => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: name, kategorie: 'Verl. Spiel',
+        notiz: `${spiel.name} (Team ${a < b ? 'B' : 'A'}: ${Math.max(a,b)} vs ${Math.min(a,b)} Versuche)`,
+        betrag: 1.00, datum: today(), bezahlt: false, createdAt: Date.now()
+      });
+    });
+    batch.commit();
+  }
+
+  db.collection('spielergebnisse').add({
+    spiel: spiel.name, datum: today(),
+    teamA: ts.teamA, teamB: ts.teamB,
+    versucheA, versucheB,
+    verlierer: verliererSpieler, createdAt: Date.now()
+  });
+
+  teamSpielState = null;
+  renderSpieleListe();
+  alert(`✅ ${verliererSpieler.join(', ')} bekommen je 1× Verl. Spiel${aktiveSession ? ' in der Live-Session' : ''}.`);
 }
 
 function berechneSortierteRangliste() {
@@ -3060,7 +3714,7 @@ function schliesseSpielAb() {
   if (aktiveSession) {
     verlierer.forEach(name => {
       if (!aktiveSession.counts[name]) aktiveSession.counts[name] = {};
-      aktiveSession.counts[name]['Verl. Spiel'] = (aktiveSession.counts[name]['Verl. Spiel'] || 0) + 1;
+      addSpieleStrafe(name, 1.00, `Verl. Spiel (${spiel?.name || 'Spiel'})`);
     });
     saveLiveSession();
     if (document.getElementById('page-kegeln').classList.contains('active')) {
@@ -3090,6 +3744,388 @@ function schliesseSpielAb() {
   aktivesSpiel = null;
   renderSpieleListe();
   alert(`✅ Eingetragen! ${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel${hatSession ? ' in der Live-Session' : ' als Strafe'}.`);
+}
+
+// ========== SETZEN ==========
+const SETZEN_SPALTEN = [
+  { label: '0,20€', betrag: 0.20 },
+  { label: '0,40€', betrag: 0.40 },
+  { label: '0,60€', betrag: 0.60 },
+  { label: '0,80€', betrag: 0.80 },
+  { label: '1,00€', betrag: 1.00 }
+];
+let setzSpiel = null;
+
+function starteSetzSpiel(spielId) {
+  const spieler = getAktiveSpieler().map(m => m.name);
+  const scores = {};
+  spieler.forEach(n => { scores[n] = [null, null, null, null, null]; });
+  setzSpiel = { spielId, spieler, scores, runde: 1, spielerIdx: 0, pendingWurf: null };
+  renderSetzSpiel();
+}
+
+function renderSetzSpiel() {
+  const container = document.getElementById('spiele-liste');
+  if (!setzSpiel) return;
+  const { spieler, scores, runde, spielerIdx, pendingWurf } = setzSpiel;
+  const aktiverSpieler = spieler[spielerIdx];
+  const totalRunden = SETZEN_SPALTEN.length;
+
+  // Tabelle
+  const tableRows = spieler.map(sp => {
+    const istAktiv = sp === aktiverSpieler;
+    const cells = scores[sp].map((v, i) => {
+      const istLowest = false; // berechnen nach Spielende
+      return `<td style="text-align:center;padding:8px 4px;border-bottom:1px solid var(--border);font-weight:${v!==null?'700':'400'};color:${v!==null?'var(--text)':'var(--text-muted)'}">${v !== null ? v : '—'}</td>`;
+    }).join('');
+    return `<tr style="background:${istAktiv?'#eff6ff':''}">
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:${istAktiv?'800':'400'};white-space:nowrap">${istAktiv?'▶ ':''} ${sp}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  // Pending: nach Wurf Spalte wählen
+  const spaltenwahl = pendingWurf !== null ? `
+    <div style="background:#fef3c7;border-radius:8px;padding:.75rem;margin-top:.75rem">
+      <div style="font-size:.85rem;font-weight:700;margin-bottom:.5rem;color:#92400e">
+        ${aktiverSpieler} hat <strong>${pendingWurf}</strong> geworfen — Spalte wählen:
+      </div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        ${SETZEN_SPALTEN.map((sp, i) => {
+          const besetzt = scores[aktiverSpieler][i] !== null;
+          const muss1euro = pendingWurf === 9 && i !== 4;
+          const disabled = besetzt || muss1euro;
+          const grund = besetzt ? 'belegt' : muss1euro ? '9→1€' : '';
+          return `<button onclick="setzePlatzieren(${i})"
+            style="flex:1;padding:10px 6px;border-radius:8px;border:2px solid;font-weight:700;font-size:.85rem;cursor:${disabled?'not-allowed':'pointer'};
+                   background:${disabled?'#f1f5f9':'white'};border-color:${disabled?'#cbd5e1':'var(--primary)'};color:${disabled?'#94a3b8':'var(--primary)'}"
+            ${disabled?'disabled':''}>
+            ${sp.label}${grund?`<br><span style="font-size:.65rem">${grund}</span>`:''}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>` : `
+    <div style="margin-top:.75rem">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:.4rem">${aktiverSpieler} — Zahl tippen:</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.3rem">
+        ${[0,1,2,3,4,5,6,7,8,9].map(n =>
+          `<button onclick="setzeWurf(${n})"
+            style="padding:10px;border-radius:8px;border:2px solid var(--border);font-weight:800;font-size:1rem;background:white;cursor:pointer">${n}</button>`
+        ).join('')}
+      </div>
+    </div>`;
+
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h3 style="font-size:1rem;font-weight:800">🎯 Setzen</h3>
+      <button class="btn btn-ghost btn-sm" onclick="setzSpiel=null;renderSpieleListe()">✕</button>
+    </div>
+    <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:.5rem">Runde ${runde} von ${totalRunden}</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:.5rem">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;min-width:420px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:6px 12px;font-size:.72rem;font-weight:700;color:var(--text-muted);border-bottom:2px solid var(--border)">Spieler</th>
+            ${SETZEN_SPALTEN.map(s => `<th style="text-align:center;padding:6px 4px;font-size:.72rem;font-weight:700;color:var(--text-muted);border-bottom:2px solid var(--border)">${s.label}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+    ${spaltenwahl}
+    <button class="btn btn-danger btn-sm" style="margin-top:.75rem;width:100%" onclick="if(confirm('Spiel zurücksetzen?')){setzSpiel=null;renderSpieleListe()}">↺ Zurücksetzen</button>`;
+}
+
+function setzeWurf(n) {
+  setzSpiel.pendingWurf = n;
+  // 9 muss in 1.00€ → auto-assign falls frei
+  if (n === 9 && setzSpiel.scores[setzSpiel.spieler[setzSpiel.spielerIdx]][4] === null) {
+    setzePlatzieren(4);
+    return;
+  }
+  renderSetzSpiel();
+}
+
+function setzePlatzieren(spalteIdx) {
+  const { spieler, scores, runde, spielerIdx, pendingWurf } = setzSpiel;
+  const aktiverSpieler = spieler[spielerIdx];
+  scores[aktiverSpieler][spalteIdx] = pendingWurf;
+  setzSpiel.pendingWurf = null;
+
+  // Nächster Spieler / Runde
+  const naechsterIdx = spielerIdx + 1;
+  if (naechsterIdx >= spieler.length) {
+    const naechsteRunde = runde + 1;
+    if (naechsteRunde > SETZEN_SPALTEN.length) {
+      // Spiel vorbei
+      setzAuswerten();
+      return;
+    }
+    setzSpiel.runde = naechsteRunde;
+    setzSpiel.spielerIdx = 0;
+  } else {
+    setzSpiel.spielerIdx = naechsterIdx;
+  }
+  renderSetzSpiel();
+}
+
+function setzAuswerten() {
+  const { spieler, scores } = setzSpiel;
+  const container = document.getElementById('spiele-liste');
+
+  // Pro Spalte: wer hat den niedrigsten Wert?
+  const ergebnisse = SETZEN_SPALTEN.map((sp, i) => {
+    const werte = spieler.map(n => ({ name: n, wert: scores[n][i] ?? 999 }));
+    const minWert = Math.min(...werte.map(w => w.wert));
+    const verlierer = werte.filter(w => w.wert === minWert).map(w => w.name);
+    return { spalte: sp, minWert, verlierer };
+  });
+
+  // Strafen eintragen — in Live-Session falls aktiv, sonst direkt
+  ergebnisse.forEach(e => {
+    if (e.minWert === 999) return;
+    e.verlierer.forEach(name => {
+      if (aktiveSession) {
+        addSpieleStrafe(name, e.spalte.betrag, `Setzen ${e.spalte.label} (${e.minWert})`);
+      } else {
+        db.collection('strafen').add({
+          mitglied: name, kategorie: 'Setzen',
+          notiz: `Spalte ${e.spalte.label} (niedrigster Wert: ${e.minWert})`,
+          betrag: e.spalte.betrag, datum: today(), bezahlt: false, createdAt: Date.now()
+        });
+      }
+    });
+  });
+
+  // Tabellenauswertung anzeigen
+  const tableRows = spieler.map(sp => {
+    const cells = scores[sp].map((v, i) => {
+      const istVerlierer = ergebnisse[i].verlierer.includes(sp);
+      return `<td style="text-align:center;padding:8px 4px;border-bottom:1px solid var(--border);font-weight:700;background:${istVerlierer?'#fee2e2':''};color:${istVerlierer?'var(--danger)':'var(--text)'}">${v ?? '—'}</td>`;
+    }).join('');
+    const gesamtStrafe = ergebnisse.reduce((sum, e) => sum + (e.verlierer.includes(sp) ? e.spalte.betrag : 0), 0);
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:600">${sp}</td>
+      ${cells}
+      <td style="padding:8px 8px;border-bottom:1px solid var(--border);font-weight:800;color:${gesamtStrafe>0?'var(--danger)':'var(--success)'};text-align:right">${gesamtStrafe>0?'-'+formatEur(gesamtStrafe):'✓'}</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h3 style="font-size:1rem;font-weight:800">🎯 Setzen — Ergebnis</h3>
+    </div>
+    <div style="overflow-x:auto;margin-bottom:1rem">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:6px 12px;font-size:.72rem;color:var(--text-muted);border-bottom:2px solid var(--border)">Spieler</th>
+            ${SETZEN_SPALTEN.map(s=>`<th style="text-align:center;padding:6px 4px;font-size:.72rem;color:var(--text-muted);border-bottom:2px solid var(--border)">${s.label}</th>`).join('')}
+            <th style="text-align:right;padding:6px 8px;font-size:.72rem;color:var(--text-muted);border-bottom:2px solid var(--border)">Zahlt</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+    <div style="background:#fee2e2;border-radius:8px;padding:.75rem;margin-bottom:1rem">
+      ${ergebnisse.map(e => e.verlierer.length ? `<div style="font-size:.875rem;margin-bottom:.3rem">
+        <strong>${e.spalte.label}</strong>: ${e.verlierer.join(', ')} zahlen je <strong style="color:var(--danger)">${formatEur(e.spalte.betrag)}</strong> (${e.minWert} war niedrigste Zahl)
+      </div>` : '').join('')}
+    </div>
+    <div style="font-size:.78rem;color:var(--success);margin-bottom:.75rem">✅ Strafen wurden automatisch eingetragen.</div>
+    <button class="btn btn-primary btn-full" onclick="setzSpiel=null;renderSpieleListe()">Fertig</button>`;
+}
+
+// ========== SAISON-SYSTEM ==========
+function saisonMeta() {
+  return state.aktiveSaison ? { saisonId: state.aktiveSaison.id } : {};
+}
+
+function renderSaisonInfo() {
+  const el = document.getElementById('saison-settings');
+  if (!el) return;
+  const s = state.aktiveSaison;
+
+  el.innerHTML = `
+    <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">📅 Saison</div>
+    ${s ? `
+      <div style="background:#eff6ff;border-radius:8px;padding:.6rem .875rem;margin-bottom:.5rem;font-size:.85rem">
+        <div style="font-weight:700">Aktive Saison: ${s.name}</div>
+        <div style="font-size:.75rem;color:var(--text-muted)">Gestartet: ${formatDate(s.startDatum)}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:.4rem;width:100%" onclick="zeigeArchivListe()">📚 Archivierte Saisons anzeigen</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:.3rem" onclick="alteDatenZuweisen()">📥 Alte Daten dieser Saison zuweisen</button>
+      <button class="btn btn-danger btn-sm" style="width:100%" onclick="saisionAbschliessen()">🏁 Saison abschließen & neu starten</button>
+    ` : `
+      <div style="background:#fef3c7;border-radius:8px;padding:.6rem .875rem;margin-bottom:.5rem;font-size:.82rem;color:#92400e">
+        Noch keine Saison aktiv — alle Daten sind "saisonlos".
+      </div>
+      <div class="form-group" style="margin-bottom:.5rem">
+        <label>Saison-Name</label>
+        <input type="text" id="neue-saison-name" placeholder="z.B. Saison 2026/27">
+      </div>
+      <button class="btn btn-primary btn-sm" style="width:100%" onclick="starteNeueSaison()">🚀 Neue Saison starten</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.3rem" onclick="zeigeArchivListe()">📚 Archiv anzeigen</button>
+    `}`;
+}
+
+async function alteDatenZuweisen() {
+  const s = state.aktiveSaison;
+  if (!s) { alert('Keine aktive Saison. Bitte erst eine Saison starten.'); return; }
+  if (!confirm(`Alle Daten ohne Saison-Zuordnung der Saison "${s.name}" zuweisen?\n\nDas betrifft Strafen und Kegel-Sessions die vor dem Start dieser Saison eingetragen wurden.`)) return;
+
+  const saisonId = s.id;
+  let count = 0;
+
+  const [strafen, sessions] = await Promise.all([
+    db.collection('strafen').get(),
+    db.collection('kegelsessions').get()
+  ]);
+
+  const batch = db.batch();
+  strafen.docs.filter(d => !d.data().saisonId).forEach(d => {
+    batch.update(d.ref, { saisonId }); count++;
+  });
+  sessions.docs.filter(d => !d.data().saisonId).forEach(d => {
+    batch.update(d.ref, { saisonId }); count++;
+  });
+
+  if (count === 0) { alert('Keine Daten ohne Saison-Zuordnung gefunden.'); return; }
+  await batch.commit();
+  alert(`✅ ${count} Dokumente der Saison "${s.name}" zugewiesen.`);
+}
+
+function starteNeueSaison() {
+  const name = document.getElementById('neue-saison-name')?.value.trim()
+    || `Saison ${new Date().getFullYear()}`;
+  const id = uid();
+  db.collection('config').doc('saison').set({
+    id, name, startDatum: today(), aktiv: true
+  });
+  alert(`✅ Saison "${name}" gestartet! Alle neuen Daten gehören jetzt zu dieser Saison.`);
+}
+
+async function saisionAbschliessen() {
+  const s = state.aktiveSaison;
+  if (!s) return;
+  if (!confirm(`Saison "${s.name}" abschließen?\n\nAlle aktuellen Strafen und Kegel-Sessions werden dieser Saison zugeordnet und archiviert. Danach starten die Statistiken bei 0.`)) return;
+
+  // Aktuelle Daten mit saisonId stempeln
+  const saisonId = s.id;
+  const batch1 = db.batch();
+  const batch2 = db.batch();
+
+  const [strafen, sessions] = await Promise.all([
+    db.collection('strafen').where('saisonId', '==', null).get().catch(() => db.collection('strafen').get()),
+    db.collection('kegelsessions').where('saisonId', '==', null).get().catch(() => db.collection('kegelsessions').get())
+  ]);
+
+  // Filter: nur Dokumente ohne saisonId
+  const ohneId = strafen.docs.filter(d => !d.data().saisonId);
+  const sessOhneId = sessions.docs.filter(d => !d.data().saisonId);
+
+  ohneId.slice(0, 500).forEach(d => batch1.update(d.ref, { saisonId }));
+  sessOhneId.slice(0, 500).forEach(d => batch2.update(d.ref, { saisonId }));
+
+  // Saison-Archiveintrag
+  await db.collection('saisons').doc(saisonId).set({
+    ...s,
+    endDatum: today(),
+    anzahlStrafen: ohneId.length,
+    anzahlSessions: sessOhneId.length,
+    archiviertAm: Date.now()
+  });
+
+  await Promise.all([batch1.commit(), batch2.commit()]);
+
+  // Neue leere Saison starten
+  const neuerName = prompt('Name für die neue Saison:', `Saison ${new Date().getFullYear() + 1}`);
+  const neueId = uid();
+  await db.collection('config').doc('saison').set({
+    id: neueId,
+    name: neuerName || `Saison ${new Date().getFullYear() + 1}`,
+    startDatum: today(),
+    aktiv: true
+  });
+
+  alert('✅ Saison abgeschlossen und archiviert! Neue Saison läuft.');
+}
+
+async function zeigeArchivListe() {
+  const snap = await db.collection('saisons').orderBy('archiviertAm', 'desc').get();
+  if (snap.empty) { alert('Noch keine archivierten Saisons.'); return; }
+
+  const popup = document.createElement('div');
+  popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:flex-end;justify-content:center';
+  popup.innerHTML = `
+    <div style="background:white;border-radius:16px 16px 0 0;padding:1.5rem;width:100%;max-width:540px;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h3 style="font-weight:800">📚 Archivierte Saisons</h3>
+        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--text-muted)">✕</button>
+      </div>
+      <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.75rem">Tippe auf eine Saison um die Statistiken anzusehen.</div>
+      ${snap.docs.map(d => {
+        const s = d.data();
+        return `<div style="background:var(--bg);border-radius:10px;padding:.875rem;margin-bottom:.5rem;cursor:pointer" onclick="ladeSaisonStatistiken('${d.id}',this.closest('[style*=fixed]'))">
+          <div style="font-weight:700">${s.name}</div>
+          <div style="font-size:.78rem;color:var(--text-muted)">${formatDate(s.startDatum)} → ${formatDate(s.endDatum)} · ${s.anzahlSessions||0} Sessions · ${s.anzahlStrafen||0} Strafen</div>
+        </div>`;
+      }).join('')}
+      ${state.aktiveSaison ? '' : `<div style="background:#eff6ff;border-radius:10px;padding:.875rem;margin-top:.5rem;font-size:.82rem">
+        Kein aktiver Saisonfilter — zeige alle Daten ohne Saison-Zuordnung.
+      </div>`}
+    </div>`;
+  popup.addEventListener('click', () => popup.remove());
+  document.body.appendChild(popup);
+}
+
+async function ladeSaisonStatistiken(saisonId, popup) {
+  popup.remove();
+  const snap = await db.collection('saisons').doc(saisonId).get();
+  if (!snap.exists) return;
+  const s = snap.data();
+
+  // Temporär Statistiken für diese Saison laden
+  const [sessions, strafen] = await Promise.all([
+    db.collection('kegelsessions').where('saisonId','==',saisonId).get(),
+    db.collection('strafen').where('saisonId','==',saisonId).get()
+  ]);
+
+  const sessData = sessions.docs.map(d => ({ id: d.id, ...d.data() }));
+  const strafData = strafen.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const gesamtStrafen = strafData.reduce((s,x) => s+Number(x.betrag), 0);
+  const alle9 = sessData.flatMap(s => s.eintraege||[]);
+  const pumpenGesamt = alle9.filter(e => e.kategorie === 'Pumpe').reduce((s,e) => s+(e.anzahl||1), 0);
+
+  // Spieler-Strafen-Ranking
+  const perSpieler = {};
+  strafData.forEach(s => { perSpieler[s.mitglied] = (perSpieler[s.mitglied]||0) + Number(s.betrag); });
+  const ranking = Object.entries(perSpieler).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  const popup2 = document.createElement('div');
+  popup2.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:flex-end;justify-content:center';
+  popup2.innerHTML = `
+    <div style="background:white;border-radius:16px 16px 0 0;padding:1.5rem;width:100%;max-width:540px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h3 style="font-weight:800">📊 ${s.name}</h3>
+        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:1.2rem;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">${formatDate(s.startDatum)} → ${formatDate(s.endDatum)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:1rem">
+        <div class="stat" style="padding:.75rem"><div class="val" style="font-size:1.2rem">${sessData.length}</div><div class="lbl">Sessions</div></div>
+        <div class="stat" style="padding:.75rem"><div class="val" style="font-size:1.2rem">${formatEur(gesamtStrafen)}</div><div class="lbl">Strafen</div></div>
+        <div class="stat" style="padding:.75rem"><div class="val" style="font-size:1.2rem">${pumpenGesamt}</div><div class="lbl">Pumpen</div></div>
+      </div>
+      <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.5rem">🏆 Top-Strafer</div>
+      ${ranking.map(([name,betrag],i) => `
+        <div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.875rem">
+          <span>${i+1}. <strong>${name}</strong></span>
+          <strong style="color:var(--danger)">${formatEur(betrag)}</strong>
+        </div>`).join('')}
+    </div>`;
+  popup2.addEventListener('click', () => popup2.remove());
+  document.body.appendChild(popup2);
 }
 
 // ========== HISTORISCHER IMPORT ==========

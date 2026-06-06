@@ -3984,7 +3984,7 @@ function subscribeQuiz() {
 }
 
 // Fragen generieren aus echten Daten
-function generiereQuizFragen() {
+function generiereQuizFragen(anzahl = 10) {
   const sessions = state.kegelsessions || [];
   const alle = sessions.flatMap(s => s.eintraege || []);
   const strafen = state.strafen || [];
@@ -4068,12 +4068,11 @@ function generiereQuizFragen() {
     fragen.push({ typ:'schaetzung', frage:`Wie viele Verl. Spiele gab es diese Saison insgesamt?`, richtig: verlSpielGesamt, einheit:'×', erklaerung:`${verlSpielGesamt}× Verl. Spiel in allen Sessions.` });
   }
 
-  // Auffüllen falls weniger als 10
-  const basis = shuffle(fragen).slice(0, 10);
-  while (basis.length < 10) {
-    basis.push({ typ:'mc', frage:`Wer hat die wenigsten Strafen diese Saison?`, antworten: pick4(strafRanking[strafRanking.length-1]?.name || mitglieder[0], mitglieder), richtig: strafRanking[strafRanking.length-1]?.name || mitglieder[0], erklaerung:'Sauberste Kegler!' });
+  const basis = shuffle(fragen).slice(0, anzahl);
+  while (basis.length < Math.min(anzahl, fragen.length + 1)) {
+    basis.push({ typ:'mc', frage:`Wer hat die wenigsten Strafen diese Saison?`, antworten: pick4(strafRanking[strafRanking.length-1]?.name || mitglieder[0], mitglieder), richtig: strafRanking[strafRanking.length-1]?.name || mitglieder[0], erklaerung:'Die sauberste Person der Saison!' });
   }
-  return basis.slice(0, 10);
+  return basis.slice(0, anzahl);
 }
 
 // ---- ADMIN ----
@@ -4083,28 +4082,58 @@ function renderQuizAdmin() {
   const q = state.quiz;
 
   if (!q || q.phase === 'setup' || !q.phase) {
-    // Setup-Screen
     container.innerHTML = `
       <div class="card">
-        <div class="card-title">🧠 Quiz starten</div>
+        <div class="card-title">🧠 Quiz vorbereiten</div>
         <p style="font-size:.875rem;color:var(--text-muted);margin-bottom:1rem">
-          10 Fragen aus euren Kegel-Daten. Jeder antwortet auf seinem eigenen Gerät im Member-Bereich.
+          Wählt zuerst die Spieler, dann 10 Fragen aus ~15 generierten.
         </p>
         <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">Wer spielt mit?</div>
-        <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:1rem" id="quiz-spieler-auswahl">
+        <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.5rem" id="quiz-spieler-auswahl">
           ${state.mitglieder.map(m => `<button class="kg-auswahl-chip aktiv" data-name="${m.name}" onclick="this.classList.toggle('aktiv');this.textContent=(this.classList.contains('aktiv')?'✓ ':'✗ ')+'${m.name}'">✓ ${m.name}</button>`).join('')}
         </div>
-        <div style="display:flex;gap:.5rem;margin-bottom:1rem">
+        <div style="display:flex;gap:.5rem;margin-bottom:1.25rem">
           <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip').forEach(c=>{c.classList.add('aktiv');c.textContent='✓ '+c.dataset.name})">Alle</button>
           <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip').forEach(c=>{c.classList.remove('aktiv');c.textContent='✗ '+c.dataset.name})">Keiner</button>
         </div>
-        <button class="btn btn-primary btn-full" onclick="starteQuiz()">🧠 Quiz starten</button>
+        <button class="btn btn-primary btn-full" onclick="zeigeFragenAuswahl()">➡ Fragen auswählen</button>
       </div>
       <div class="card" style="margin-top:1rem">
         <div class="card-title">💡 Fun Facts</div>
         <div id="quiz-funfacts-container"></div>
       </div>`;
     renderFunFacts();
+    return;
+  }
+
+  if (q.phase === 'fragenauswahl') {
+    const kandidaten = q.fragenKandidaten || [];
+    const ausgewaehlt = q.fragenAusgewaehlt || [];
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <div class="card-title" style="margin:0">Fragen auswählen</div>
+          <span class="tag ${ausgewaehlt.length===10?'tag-green':'tag-yellow'}">${ausgewaehlt.length} / 10 gewählt</span>
+        </div>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe auf eine Frage um sie aus- oder abzuwählen. Wähle genau 10.</p>
+        ${kandidaten.map((f, i) => {
+          const sel = ausgewaehlt.includes(i);
+          return `<div onclick="toggleFrageAuswahl(${i})" style="display:flex;align-items:start;gap:.75rem;padding:.75rem;border-radius:10px;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'#eff6ff':'white'};margin-bottom:.4rem;cursor:pointer">
+            <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.75rem;font-weight:800;color:white">${sel?ausgewaehlt.indexOf(i)+1:''}</div>
+            <div style="flex:1">
+              <div style="font-size:.78rem;font-weight:700;color:${sel?'var(--primary)':'var(--text-muted)'};margin-bottom:.15rem">${f.typ==='mc'?'🔤 Multiple Choice':'🔢 Schätzfrage'}</div>
+              <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        <div style="display:flex;gap:.75rem;margin-top:1rem">
+          <button class="btn btn-ghost" onclick="quizZurueck()">← Zurück</button>
+          <button class="btn btn-primary" style="flex:1" onclick="starteQuizMitAuswahl()"
+            ${ausgewaehlt.length!==10?'disabled style="opacity:.5"':''}>
+            🧠 Quiz starten (${ausgewaehlt.length}/10)
+          </button>
+        </div>
+      </div>`;
     return;
   }
 
@@ -4271,15 +4300,43 @@ function memberSchaetzungAbgeben(name) {
   db.collection('quiz').doc('aktiv').update({ [`antworten.${name}`]: val });
 }
 
-function starteQuiz() {
+function zeigeFragenAuswahl() {
   const spieler = [...document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
   if (spieler.length < 2) { alert('Mindestens 2 Spieler auswählen!'); return; }
-  const fragen = generiereQuizFragen();
-  if (fragen.length < 3) { alert('Nicht genug Daten für ein Quiz. Spielt erst ein paar Kegel-Abende!'); return; }
+  // ~15 Kandidaten generieren (shuffle erzeugt Variation)
+  const kandidaten = generiereQuizFragen(15);
+  if (kandidaten.length < 5) { alert('Nicht genug Daten für ein Quiz. Spielt erst ein paar Kegel-Abende!'); return; }
   db.collection('quiz').doc('aktiv').set({
-    phase: 'frage', spieler, fragen, aktuelleQ: 0,
-    antworten: {}, scores: Object.fromEntries(spieler.map(p=>[p,0])),
-    startedAt: Date.now()
+    phase: 'fragenauswahl', spieler,
+    fragenKandidaten: kandidaten,
+    fragenAusgewaehlt: [],
+    scores: Object.fromEntries(spieler.map(p=>[p,0]))
+  });
+}
+
+function toggleFrageAuswahl(idx) {
+  const q = state.quiz;
+  let ausgewaehlt = [...(q.fragenAusgewaehlt || [])];
+  if (ausgewaehlt.includes(idx)) {
+    ausgewaehlt = ausgewaehlt.filter(i => i !== idx);
+  } else {
+    if (ausgewaehlt.length >= 10) return; // max 10
+    ausgewaehlt.push(idx);
+  }
+  db.collection('quiz').doc('aktiv').update({ fragenAusgewaehlt: ausgewaehlt });
+}
+
+function quizZurueck() {
+  db.collection('quiz').doc('aktiv').update({ phase: 'setup' });
+}
+
+function starteQuizMitAuswahl() {
+  const q = state.quiz;
+  if ((q.fragenAusgewaehlt||[]).length !== 10) { alert('Genau 10 Fragen auswählen!'); return; }
+  const fragen = q.fragenAusgewaehlt.map(i => q.fragenKandidaten[i]);
+  db.collection('quiz').doc('aktiv').update({
+    phase: 'frage', fragen, aktuelleQ: 0,
+    antworten: {}, startedAt: Date.now()
   });
 }
 

@@ -4045,11 +4045,6 @@ function generiereQuizFragen(anzahl = 10) {
     fragen.push({ typ:'schaetzung', frage:`Wie viel ist aktuell in der Vereinskasse?`, richtig: Math.round(kassenstand * 100) / 100, einheit:'€', erklaerung:`Kassenstand: ${formatEur(kassenstand)}.` });
   }
 
-  // MC: Wer hat die meisten 9er geworfen
-  if (alle9Ranking[0]?.val > 0) {
-    const antworten = pick4(alle9Ranking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer hat diese Saison am häufigsten die Alle-9 geworfen?`, antworten, richtig: alle9Ranking[0].name, erklaerung:`${alle9Ranking[0].name} mit ${alle9Ranking[0].val}× Alle-9.` });
-  }
 
   // Schätzung: Anzahl Sessions
   if (sessions.length > 0) {
@@ -4059,13 +4054,221 @@ function generiereQuizFragen(anzahl = 10) {
   // MC: Lieblingsfehler Pumpe vs Verl. Spiel
   if (pumpenGesamt > 0 && verlSpielGesamt > 0) {
     const mehr = pumpenGesamt > verlSpielGesamt ? 'Pumpe' : 'Verl. Spiel';
-    const antworten = shuffle(['Pumpe', 'Verl. Spiel', 'Klingel', 'Behinderung']);
+    const antworten = shuffle(['Pumpe', 'Verl. Spiel', 'Klingel', 'Lustwurf']);
     fragen.push({ typ:'mc', frage:`Welche Strafe gab es diese Saison am häufigsten?`, antworten, richtig: mehr, erklaerung:`${mehr}: ${Math.max(pumpenGesamt, verlSpielGesamt)}× — die häufigste Strafe!` });
   }
 
   // Schätzung: Verl. Spiele
   if (verlSpielGesamt > 0) {
     fragen.push({ typ:'schaetzung', frage:`Wie viele Verl. Spiele gab es diese Saison insgesamt?`, richtig: verlSpielGesamt, einheit:'×', erklaerung:`${verlSpielGesamt}× Verl. Spiel in allen Sessions.` });
+  }
+
+  // MC: Sauberster Kegler
+  if (strafRanking.length > 1 && strafRanking[strafRanking.length-1].val === 0) {
+    const sauber = strafRanking.filter(m => m.val === 0).map(m => m.name);
+    if (sauber.length === 1) {
+      const antworten = pick4(sauber[0], mitglieder);
+      fragen.push({ typ:'mc', frage:`Wer hat diese Saison KEINE einzige Strafe bekommen?`, antworten, richtig: sauber[0], erklaerung:`${sauber[0]} — eine weiße Weste!` });
+    }
+  }
+
+  // Schätzung: Anzahl verschiedene Strafkategorien
+  const kategorienImEinsatz = new Set(alle.map(e => e.kategorie)).size;
+  if (kategorienImEinsatz > 0) {
+    fragen.push({ typ:'schaetzung', frage:`Wie viele verschiedene Strafkategorien wurden diese Saison vergeben?`, richtig: kategorienImEinsatz, einheit:'×', erklaerung:`${kategorienImEinsatz} verschiedene Kategorien.` });
+  }
+
+  // MC: Wer hat die meisten Klingeln
+  const klingelRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Klingel']||0})).sort((a,b)=>b.val-a.val);
+  if (klingelRanking[0]?.val > 0) {
+    const antworten = pick4(klingelRanking[0].name, mitglieder);
+    fragen.push({ typ:'mc', frage:`Wer hat diese Saison am meisten die Klingel getroffen?`, antworten, richtig: klingelRanking[0].name, erklaerung:`${klingelRanking[0].name} mit ${klingelRanking[0].val}× Klingel.` });
+  }
+
+  // Schätzung: Gesamtanzahl Strafen (Anzahl, nicht Betrag)
+  if (strafen.length > 0) {
+    fragen.push({ typ:'schaetzung', frage:`Wie viele Strafen wurden diese Saison insgesamt eingetragen?`, richtig: strafen.length, einheit:'×', erklaerung:`${strafen.length} Strafeinträge insgesamt.` });
+  }
+
+  // MC: Wer hat die meisten Behinderungen
+  const behRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Behinderung']||0})).sort((a,b)=>b.val-a.val);
+  if (behRanking[0]?.val > 0) {
+    const antworten = pick4(behRanking[0].name, mitglieder);
+    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten Behinderungen verursacht?`, antworten, richtig: behRanking[0].name, erklaerung:`${behRanking[0].name} mit ${behRanking[0].val}× Behinderung.` });
+  }
+
+  // MC: Wer hat die meisten Lustwürfe
+  const lustRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Lustwurf']||0})).sort((a,b)=>b.val-a.val);
+  if (lustRanking[0]?.val > 0) {
+    const antworten = pick4(lustRanking[0].name, mitglieder);
+    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten Lustwürfe gemacht?`, antworten, richtig: lustRanking[0].name, erklaerung:`${lustRanking[0].name} mit ${lustRanking[0].val}× Lustwurf.` });
+  }
+
+  // Schätzung: Kasseneinnahmen aus Strafen
+  const strafenEinnahmen = state.kassenbuch.filter(b=>b.kat==='Strafen'&&b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
+  if (strafenEinnahmen > 0) {
+    fragen.push({ typ:'schaetzung', frage:`Wie viel wurde diese Saison aus Strafen in die Kasse eingezahlt?`, richtig: Math.round(strafenEinnahmen*100)/100, einheit:'€', erklaerung:`${formatEur(strafenEinnahmen)} Strafenzahlungen in die Kasse.` });
+  }
+
+  // MC: Wer war am wenigsten dabei
+  if (anwRanking.length > 0 && anwRanking[anwRanking.length-1].val < anwRanking[0].val) {
+    const selten = anwRanking[anwRanking.length-1];
+    const antworten = pick4(selten.name, mitglieder);
+    fragen.push({ typ:'mc', frage:`Wer war diese Saison am seltensten beim Kegeln?`, antworten, richtig: selten.name, erklaerung:`${selten.name} war nur bei ${selten.val} von ${sessions.length} Abenden.` });
+  }
+
+  // MC: Wer hat die meisten verl. Spiele
+  const verlRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Verl. Spiel']||0})).sort((a,b)=>b.val-a.val);
+  if (verlRanking[0]?.val > 0) {
+    const antworten = pick4(verlRanking[0].name, mitglieder);
+    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten verlängerten Spiele?`, antworten, richtig: verlRanking[0].name, erklaerung:`${verlRanking[0].name} mit ${verlRanking[0].val}× Verl. Spiel.` });
+  }
+
+  // Schätzung: Strafen-Platz 2
+  if (strafRanking[1]?.val > 0) {
+    fragen.push({ typ:'schaetzung', frage:`Wie viel hat ${strafRanking[1].name} diese Saison an Strafen insgesamt?`, richtig: Math.round(strafRanking[1].val*100)/100, einheit:'€', erklaerung:`${strafRanking[1].name}: ${formatEur(strafRanking[1].val)}.` });
+  }
+
+  // Pro-Spieler-Fragen: Pumpen für jeden Spieler mit >0 Pumpen
+  const KATEGORIEN_FRAGEN = [
+    { kat: 'Pumpe', label: 'Pumpen', einheit: '×' },
+    { kat: 'Verl. Spiel', label: 'verlängerte Spiele', einheit: '×' },
+    { kat: 'Klingel', label: 'Klingeln', einheit: '×' },
+    { kat: 'Behinderung', label: 'Behinderungen', einheit: '×' },
+    { kat: 'Lustwurf', label: 'Lustwürfe', einheit: '×' },
+    { kat: 'Schnapszahl', label: 'Schnapszahlen', einheit: '×' },
+  ];
+
+  KATEGORIEN_FRAGEN.forEach(({ kat, label, einheit, fallback }) => {
+    // Spieler mit Einträgen in dieser Kategorie
+    const spielerMitKat = mitglieder
+      .map(n => ({ name: n, val: perSpielerKat[n]?.[kat] || (fallback ? perSpielerKat[n]?.[fallback] : 0) || 0 }))
+      .filter(m => m.val > 0)
+      .sort((a, b) => b.val - a.val);
+
+    if (spielerMitKat.length < 2) return;
+
+    // Schätzfrage für Top-Spieler (zufällig aus Top 3)
+    const kandidatenSpieler = shuffle(spielerMitKat.slice(0, Math.min(4, spielerMitKat.length)));
+    kandidatenSpieler.slice(0, 2).forEach(sp => {
+      fragen.push({
+        typ: 'schaetzung',
+        frage: `Wie viele ${label} hat ${sp.name} diese Saison?`,
+        richtig: sp.val, einheit,
+        erklaerung: `${sp.name}: ${sp.val}${einheit} ${label}.`
+      });
+    });
+
+    // MC: Wer hat GENAU X [Kategorie] — wähle einen Spieler, andere sind Ablenkung
+    const zufallsSpieler = shuffle(spielerMitKat)[0];
+    const antwortNames = pick4(zufallsSpieler.name, mitglieder);
+    fragen.push({
+      typ: 'mc',
+      frage: `Wer hat diese Saison genau ${zufallsSpieler.val}${einheit} ${label}?`,
+      antworten: antwortNames, richtig: zufallsSpieler.name,
+      erklaerung: `${zufallsSpieler.name} hat ${zufallsSpieler.val}${einheit} ${label}.`
+    });
+  });
+
+  // Durchschnitt pro Kegeln für häufige Kategorien
+  const DURCHSCHNITT_KATS = [
+    { kat: 'Pumpe', label: 'Pumpen' },
+    { kat: 'Verl. Spiel', label: 'verlängerte Spiele' },
+    { kat: 'Klingel', label: 'Klingeln' },
+    { kat: 'Behinderung', label: 'Behinderungen' },
+    { kat: 'Lustwurf', label: 'Lustwürfe' },
+  ];
+  DURCHSCHNITT_KATS.forEach(({ kat, label }) => {
+    const gesamt = alle.filter(e => e.kategorie === kat).reduce((s,e) => s+(e.anzahl||1), 0);
+    if (gesamt > 0 && sessions.length > 0) {
+      const schnitt = Math.round((gesamt / sessions.length) * 10) / 10;
+      fragen.push({
+        typ: 'schaetzung',
+        frage: `Wie viele ${label} gab es durchschnittlich pro Kegel-Abend?`,
+        richtig: schnitt, einheit: '×',
+        erklaerung: `Ø ${schnitt}× ${label} pro Abend (${gesamt} gesamt / ${sessions.length} Abende).`
+      });
+    }
+  });
+
+  // Pro-Spieler Gesamt für alle Spieler mit genug Daten
+  const SPIELER_KATS = [
+    { kat: 'Pumpe', label: 'Pumpen' },
+    { kat: 'Verl. Spiel', label: 'verlängerte Spiele' },
+    { kat: 'Klingel', label: 'Klingeln' },
+    { kat: 'Behinderung', label: 'Behinderungen' },
+    { kat: 'Lustwurf', label: 'Lustwürfe' },
+  ];
+  SPIELER_KATS.forEach(({ kat, label }) => {
+    const spielerMit = mitglieder
+      .map(n => ({ name: n, val: perSpielerKat[n]?.[kat] || 0 }))
+      .filter(m => m.val > 0);
+    // Zufällig 2-3 Spieler auswählen für Fragen
+    shuffle(spielerMit).slice(0, 3).forEach(sp => {
+      fragen.push({
+        typ: 'schaetzung',
+        frage: `Wie viele ${label} hatte ${sp.name} diese Saison insgesamt?`,
+        richtig: sp.val, einheit: '×',
+        erklaerung: `${sp.name}: ${sp.val}× ${label} insgesamt.`
+      });
+    });
+  });
+
+  // Pro-Spieler Durchschnitt pro Kegeln (nur bei Spielern mit vielen Abenden)
+  SPIELER_KATS.forEach(({ kat, label }) => {
+    const spielerMit = mitglieder
+      .map(n => {
+        const sessAnzahl = sessions.filter(s => (s.angemeldet||[]).includes(n)).length;
+        const total = perSpielerKat[n]?.[kat] || 0;
+        return { name: n, val: total, sess: sessAnzahl, schnitt: sessAnzahl > 0 ? Math.round(total/sessAnzahl*10)/10 : 0 };
+      })
+      .filter(m => m.val > 0 && m.sess >= 2);
+    shuffle(spielerMit).slice(0, 2).forEach(sp => {
+      fragen.push({
+        typ: 'schaetzung',
+        frage: `Wie viele ${label} hatte ${sp.name} durchschnittlich pro Kegeln bei dem er dabei war?`,
+        richtig: sp.schnitt, einheit: '×',
+        erklaerung: `${sp.name}: Ø ${sp.schnitt}× pro Abend (${sp.val} gesamt / ${sp.sess} Abende).`
+      });
+    });
+  });
+
+  // Schätzfragen pro Spieler: Gesamtstrafen (€) für zufällige Spieler
+  shuffle(strafRanking.filter(m => m.val > 0)).slice(0, 4).forEach(sp => {
+    fragen.push({
+      typ: 'schaetzung',
+      frage: `Wie viel hat ${sp.name} diese Saison insgesamt an Strafen?`,
+      richtig: Math.round(sp.val * 100) / 100, einheit: '€',
+      erklaerung: `${sp.name}: ${formatEur(sp.val)} Strafen insgesamt.`
+    });
+  });
+
+  // Schätzfragen pro Session: Pumpen in bestimmter Session
+  sessions.slice(0, 3).forEach(sess => {
+    const pumpenSession = (sess.eintraege||[]).filter(e=>e.kategorie==='Pumpe').reduce((s,e)=>s+(e.anzahl||1),0);
+    if (pumpenSession > 0) {
+      fragen.push({
+        typ: 'schaetzung',
+        frage: `Wie viele Pumpen gab es beim ${sess.name}?`,
+        richtig: pumpenSession, einheit: '×',
+        erklaerung: `${pumpenSession} Pumpen beim ${sess.name}.`
+      });
+    }
+  });
+
+  // MC: In welcher Session gab es die meisten Pumpen?
+  const sessionsPumpen = sessions.map(s => ({
+    name: s.name,
+    pumpen: (s.eintraege||[]).filter(e=>e.kategorie==='Pumpe').reduce((sum,e)=>sum+(e.anzahl||1),0)
+  })).filter(s=>s.pumpen>0).sort((a,b)=>b.pumpen-a.pumpen);
+  if (sessionsPumpen.length >= 3) {
+    const antworten = pick4(sessionsPumpen[0].name, sessionsPumpen.map(s=>s.name));
+    fragen.push({
+      typ: 'mc',
+      frage: `Bei welchem Kegel-Abend gab es die meisten Pumpen?`,
+      antworten, richtig: sessionsPumpen[0].name,
+      erklaerung: `${sessionsPumpen[0].name}: ${sessionsPumpen[0].pumpen} Pumpen.`
+    });
   }
 
   const basis = shuffle(fragen).slice(0, anzahl);

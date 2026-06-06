@@ -395,13 +395,12 @@
   <div style="display:flex;align-items:center;gap:.5rem">
     <div class="nav-tabs">
       <button class="nav-tab active" onclick="showPage('termine',this)">📅 Termine</button>
-      <button class="nav-tab" onclick="showPage('kegeln',this)">🎳 Live</button>
-      <button class="nav-tab" onclick="showPage('strafen',this)">⚠️ Strafen <span id="zahlung-badge" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.65rem;padding:1px 6px;font-weight:800;margin-left:2px"></span></button>
-      <button class="nav-tab" onclick="showPage('statistiken',this)">📊 Statistiken</button>
-      <button class="nav-tab" onclick="showPage('kassenbuch',this)">💰 Kasse</button>
+      <button class="nav-tab" onclick="showPage('kegeln',this)">🎳 Kegelbuch</button>
       <button class="nav-tab" onclick="showPage('spiele',this)">🎮 Spiele</button>
+      <button class="nav-tab" onclick="showPage('kassenbuch',this)">💰 Kasse</button>
+      <button class="nav-tab" onclick="showPage('statistiken',this)">📊 Statistiken</button>
       <button class="nav-tab" onclick="showPage('quiz',this)">🧠 Quiz</button>
-      <button class="nav-tab" onclick="showPage('mitglieder',this)">👥 Mitglieder</button>
+      <button class="nav-tab" onclick="showPage('mitglieder',this)">⚙️ Einstellungen</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Abmelden</button>
   </div>
@@ -411,12 +410,12 @@
 <div id="bottom-nav" style="display:none">
   <div class="bnav-inner">
     <button class="bnav-tab active" onclick="showPage('termine',this)" data-page="termine"><span class="icon">📅</span>Termine</button>
-    <button class="bnav-tab" onclick="showPage('kegeln',this)" data-page="kegeln"><span class="icon">🎳</span>Live</button>
-    <button class="bnav-tab" onclick="showPage('strafen',this)" data-page="strafen"><span class="icon">⚠️</span>Strafen<span id="zahlung-badge-m" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.6rem;padding:0 5px;font-weight:800;margin-left:2px;line-height:1.4"></span></button>
-    <button class="bnav-tab" onclick="showPage('kassenbuch',this)" data-page="kassenbuch"><span class="icon">💰</span>Kasse</button>
+    <button class="bnav-tab" onclick="showPage('kegeln',this)" data-page="kegeln"><span class="icon">🎳</span>Kegelbuch</button>
     <button class="bnav-tab" onclick="showPage('spiele',this)" data-page="spiele"><span class="icon">🎮</span>Spiele</button>
+    <button class="bnav-tab" onclick="showPage('kassenbuch',this)" data-page="kassenbuch"><span class="icon">💰</span>Kasse</button>
+    <button class="bnav-tab" onclick="showPage('statistiken',this)" data-page="statistiken"><span class="icon">📊</span>Stats</button>
     <button class="bnav-tab" onclick="showPage('quiz',this)" data-page="quiz"><span class="icon">🧠</span>Quiz</button>
-    <button class="bnav-tab" onclick="showPage('mitglieder',this)" data-page="mitglieder"><span class="icon">👥</span>Mehr</button>
+    <button class="bnav-tab" onclick="showPage('mitglieder',this)" data-page="mitglieder"><span class="icon">⚙️</span>Einst.</button>
   </div>
 </div>
 

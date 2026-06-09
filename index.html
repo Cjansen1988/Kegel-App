@@ -683,6 +683,39 @@
       <span id="offene-strafen-kasse-detail" style="color:#b91c1c;font-size:.9rem"></span>
     </div>
   </div>
+  <!-- Strafe schnell eintragen -->
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">⚡ Strafe eintragen</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Person</label>
+        <select id="ks-mitglied"></select>
+      </div>
+      <div class="form-group">
+        <label>Kategorie</label>
+        <select id="ks-kategorie" onchange="ksKatChanged()">
+          <option value="">– auswählen –</option>
+        </select>
+      </div>
+      <div class="form-group" style="max-width:110px">
+        <label>Betrag (€)</label>
+        <input type="number" id="ks-betrag" step="0.50" placeholder="0.00">
+      </div>
+    </div>
+    <div class="form-row" style="margin-bottom:.5rem">
+      <div class="form-group">
+        <label>Notiz (optional)</label>
+        <input type="text" id="ks-notiz" placeholder="z.B. Kein Kegelshirt, verspätet, …">
+      </div>
+      <div class="form-group" style="max-width:160px;justify-content:flex-end">
+        <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+          <input type="checkbox" id="ks-bezahlt" style="width:16px;height:16px"> Bereits bezahlt
+        </label>
+        <button class="btn btn-primary" onclick="addKasseStrafe()">Strafe eintragen</button>
+      </div>
+    </div>
+  </div>
+
   <div class="grid-2">
     <div class="card">
       <div class="card-title">➕ Buchung eintragen</div>
@@ -2125,7 +2158,7 @@ function renderMitglieder() {
 
 function updateSelects() {
   const opts = state.mitglieder.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
-  ['s-mitglied','stats-mitglied-sel'].forEach(id => {
+  ['s-mitglied','stats-mitglied-sel','ks-mitglied'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { const cur = el.value; el.innerHTML = opts; if (cur) el.value = cur; }
   });
@@ -2155,15 +2188,53 @@ function renderStrafKategorien() {
 }
 
 function updateStrafKatSelect() {
-  const sel = document.getElementById('s-kategorie');
-  sel.innerHTML = '<option value="">– auswählen –</option>' +
+  const katOpts = '<option value="">– auswählen –</option>' +
     state.strafKategorien.map(k => `<option value="${k.name}" data-betrag="${k.betrag}">${k.name} (${formatEur(k.betrag)})</option>`).join('');
+  ['s-kategorie', 'ks-kategorie'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const cur = el.value; el.innerHTML = katOpts; if (cur) el.value = cur; }
+  });
 }
 
 function updateStrafBetrag() {
   const sel = document.getElementById('s-kategorie');
   const opt = sel.selectedOptions[0];
   if (opt?.dataset.betrag) document.getElementById('s-betrag').value = opt.dataset.betrag;
+}
+
+// Kasse quick-Strafe
+function ksKatChanged() {
+  const sel = document.getElementById('ks-kategorie');
+  const opt = sel.selectedOptions[0];
+  if (opt?.dataset.betrag) document.getElementById('ks-betrag').value = opt.dataset.betrag;
+}
+
+function addKasseStrafe() {
+  const mitglied = document.getElementById('ks-mitglied').value;
+  const kategorie = document.getElementById('ks-kategorie').value;
+  const betrag = parseFloat(document.getElementById('ks-betrag').value);
+  const notiz = document.getElementById('ks-notiz').value.trim();
+  const bezahlt = document.getElementById('ks-bezahlt').checked;
+  const datum = today();
+  if (!mitglied) { alert('Person auswählen!'); return; }
+  if (!kategorie) { alert('Kategorie auswählen!'); return; }
+  if (isNaN(betrag) || betrag <= 0) { alert('Gültigen Betrag eingeben!'); return; }
+  db.collection('strafen').add({ mitglied, kategorie, betrag, datum, notiz, bezahlt, ...saisonMeta(), createdAt: Date.now() }).then(ref => {
+    if (bezahlt) {
+      db.collection('kassenbuch').add({
+        typ: 'einnahme',
+        beschr: `Strafe: ${mitglied} – ${kategorie}${notiz ? ' ('+notiz+')' : ''}`,
+        betrag, datum, kat: 'Strafen', strafId: ref.id, createdAt: Date.now()
+      });
+    }
+  });
+  document.getElementById('ks-kategorie').value = '';
+  document.getElementById('ks-betrag').value = '';
+  document.getElementById('ks-notiz').value = '';
+  document.getElementById('ks-bezahlt').checked = false;
+  // Short confirmation feedback
+  const btn = document.querySelector('[onclick="addKasseStrafe()"]');
+  if (btn) { const orig = btn.textContent; btn.textContent = '✓ Eingetragen!'; btn.disabled = true; setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500); }
 }
 
 function addStrafe() {

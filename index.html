@@ -2414,98 +2414,120 @@ function renderFunFacts() {
     perKat[e.kategorie][e.mitglied] = (perKat[e.kategorie][e.mitglied]||0) + (e.anzahl||1);
   });
 
-  const gesamtAnzahl = Object.entries(perSpielerKat).map(([n,k])=>({name:n,total:Object.values(k).reduce((s,v)=>s+v,0)})).sort((a,b)=>b.total-a.total);
+  const gesamtAnzahl = Object.entries(perSpielerKat).map(([n,k])=>({name:n,total:Object.values(k).filter((_,i)=>!Object.keys(k)[i].includes('geworfen')).reduce((s,v)=>s+v,0)})).sort((a,b)=>b.total-a.total);
   const sauberste = [...gesamtAnzahl].sort((a,b)=>a.total-b.total);
   const pumpenKing = Object.entries(perKat['Pumpe']||{}).sort((a,b)=>b[1]-a[1])[0];
-  // Alle 9 (geworfen) = wer hat die 9 am häufigsten geworfen (korrekte Statistik)
-  const alle9WurfData = perKat['Alle 9 (geworfen)'] || {};
-  const alle9King = Object.entries(Object.keys(alle9WurfData).length ? alle9WurfData : {}).sort((a,b)=>b[1]-a[1])[0];
+  const klingelKing = Object.entries(perKat['Klingel']||{}).sort((a,b)=>b[1]-a[1])[0];
   const lustKing = Object.entries(perKat['Lustwurf']||{}).sort((a,b)=>b[1]-a[1])[0];
-  const strasseKing = Object.entries(perKat['Straße']||{}).sort((a,b)=>b[1]-a[1])[0];
   const schnappKing = Object.entries(perKat['Schnapszahl']||{}).sort((a,b)=>b[1]-a[1])[0];
+  const behKing = Object.entries(perKat['Behinderung']||{}).sort((a,b)=>b[1]-a[1])[0];
+  const verlKing = Object.entries(perKat['Verl. Spiel']||{}).sort((a,b)=>b[1]-a[1])[0];
 
-  // Session-Rekorde
-  const sessionTotals = sessions.map(s => {
-    const t = (s.eintraege||[]).reduce((sum,e)=>sum+(e.anzahl||1),0);
-    return { name: s.name, datum: s.datum, total: t };
-  }).sort((a,b)=>b.total-a.total);
+  const sessionTotals = sessions.map(s => ({
+    name: s.name, datum: s.datum,
+    total: (s.eintraege||[]).reduce((sum,e)=>sum+(e.anzahl||1),0)
+  })).sort((a,b)=>b.total-a.total);
 
-  // Verspätungs-Minuten
+  const pumpenGesamt = alle.filter(e=>e.kategorie==='Pumpe').reduce((s,e)=>s+(e.anzahl||1),0);
+  const verlGesamt = alle.filter(e=>e.kategorie==='Verl. Spiel').reduce((s,e)=>s+(e.anzahl||1),0);
+  const avgStriche = sessions.length > 0 ? Math.round(alle.reduce((s,e)=>s+(e.anzahl||1),0)/sessions.length) : 0;
+
   const versp = perKat['Verspätung/15Min'] || perKat['Verspätung pro 15 Min'] || {};
   const verspKing = Object.entries(versp).sort((a,b)=>b[1]-a[1])[0];
   const verspMins = verspKing ? verspKing[1] * 15 : 0;
 
+  // Lieblingsfehler je Spieler
+  const lieblingsMap = {};
+  Object.entries(perSpielerKat).forEach(([name, kats]) => {
+    const top = Object.entries(kats).filter(([k])=>!k.includes('geworfen')).sort((a,b)=>b[1]-a[1])[0];
+    if (top) lieblingsMap[name] = { kat: top[0], anzahl: top[1] };
+  });
+
+  const strafRanking = state.mitglieder.map(m=>({
+    name:m.name, val: state.strafen.filter(s=>s.mitglied===m.name).reduce((s,x)=>s+Number(x.betrag),0)
+  })).sort((a,b)=>b.val-a.val);
+
   const facts = [];
 
-  // Fun Facts
-  if (gesamtAnzahl[0]) facts.push({ emoji:'🏆', color:'red', fact:`${gesamtAnzahl[0].name} ist der ungekrönte Strafen-König`, detail:`Mit ${gesamtAnzahl[0].total} Strichen über alle Sessions führt er/sie die Gesamtwertung an. Die Konkurrenz liegt bei ${gesamtAnzahl[1]?.total||0} Strichen.` });
-  if (sauberste[0]) facts.push({ emoji:'😇', color:'green', fact:`${sauberste[0].name} ist der sauberste Kegler im Club`, detail:`Nur ${sauberste[0].total} Striche insgesamt — ein Vorbild für alle. ${sauberste[1] ? `${sauberste[1].name} folgt mit ${sauberste[1].total} Strichen.` : ''}` });
-  if (pumpenKing) facts.push({ emoji:'🎳', color:'', fact:`${pumpenKing[0]} ist der Pumpen-Weltmeister`, detail:`${pumpenKing[1]}× die Kugel in die Rinne — macht ${formatEur(pumpenKing[1]*0.30)} allein für Pumpen.` });
-  if (alle9King) facts.push({ emoji:'9️⃣', color:'yellow', fact:`${alle9King[0]} sorgt am häufigsten für kollektive Freude`, detail:`${alle9King[1]}× hat ${alle9King[0]} die Alle-9 geworfen und damit alle anderen zur Kasse gebeten.` });
-  if (lustKing) facts.push({ emoji:'😂', color:'yellow', fact:`${lustKing[0]} kann es einfach nicht lassen`, detail:`${lustKing[1]}× Lustwurf — das ist kein Fehler, das ist Methode.` });
-  if (strasseKing) facts.push({ emoji:'🛣️', color:'', fact:`${strasseKing[0]} kennt nur eine Richtung: die Straße`, detail:`${strasseKing[1]}× in die Straße — entweder Pech oder Talent.` });
-  if (schnappKing) facts.push({ emoji:'🔢', color:'', fact:`${schnappKing[0]} hat ein Faible für Schnapszahlen`, detail:`${schnappKing[1]}× hat ${schnappKing[0]} eine Schnapszahl getroffen. Zufall? Wohl kaum.` });
-  if (verspKing && verspMins >= 15) facts.push({ emoji:'⏰', color:'red', fact:`${verspKing[0]} hat insgesamt ${verspMins} Minuten Verspätung angesammelt`, detail:`Das sind ${Math.floor(verspMins/60)} Stunden und ${verspMins%60} Minuten. Für dieses Geld könnte man ${Math.floor(verspKing[1]*2/10)} Runden ausgeben.` });
-  if (sessionTotals[0]) facts.push({ emoji:'💀', color:'red', fact:`Der schlimmste Abend war "${sessionTotals[0].name}"`, detail:`${sessionTotals[0].total} Striche an einem einzigen Abend — ${formatDate(sessionTotals[0].datum)}. Ein Tag der in die Geschichte eingeht.` });
-  if (sessions.length >= 3) {
-    const avg = Math.round(alle.reduce((s,e)=>s+(e.anzahl||1),0) / sessions.length);
-    facts.push({ emoji:'📊', color:'', fact:`Im Schnitt gibt es ${avg} Striche pro Kegel-Abend`, detail:`Über ${sessions.length} Sessions ausgewertet. Tendenz: ${sessionTotals[0].total > avg*1.5 ? 'es wird schlimmer 📈' : 'stabil 📊'}.` });
-  }
+  if (gesamtAnzahl[0]) facts.push({ emoji:'🏆', color:'red',
+    fact:`${gesamtAnzahl[0].name} ist der Strafen-König dieser Saison`,
+    detail:`${gesamtAnzahl[0].total} Striche insgesamt — ${gesamtAnzahl[1] ? `${gesamtAnzahl[0].total - gesamtAnzahl[1].total} mehr als ${gesamtAnzahl[1].name} auf Platz 2.` : 'unangefochten.'}`
+  });
 
-  // Quiz-Fragen generieren
-  const spielerNamen = state.mitglieder.map(m=>m.name);
-  function randomOthers(correct, pool, count=3) {
-    const others = pool.filter(n=>n!==correct);
-    const shuffled = others.sort(()=>Math.random()-.5).slice(0,count);
-    return [...shuffled, correct].sort(()=>Math.random()-.5);
-  }
+  if (sauberste[0] && sauberste[0].total < gesamtAnzahl[0].total) facts.push({ emoji:'😇', color:'green',
+    fact:`${sauberste[0].name} hat die sauberste Weste`,
+    detail:`Nur ${sauberste[0].total} Striche diese Saison. ${sauberste[1] ? `${sauberste[1].name} folgt mit ${sauberste[1].total}.` : ''}`
+  });
 
-  const quizFragen = [];
-  if (pumpenKing && spielerNamen.length >= 4) {
-    const answers = randomOthers(pumpenKing[0], spielerNamen);
-    quizFragen.push({ frage: 'Wer hat die meisten Pumpen geworfen?', antworten: answers, richtig: pumpenKing[0], hint: `${pumpenKing[1]}×` });
-  }
-  if (gesamtAnzahl[0] && spielerNamen.length >= 4) {
-    const answers = randomOthers(gesamtAnzahl[0].name, spielerNamen);
-    quizFragen.push({ frage: 'Wer hat die meisten Strafen insgesamt gesammelt?', antworten: answers, richtig: gesamtAnzahl[0].name, hint: `${gesamtAnzahl[0].total} Striche` });
-  }
-  if (sauberste[0] && spielerNamen.length >= 4) {
-    const answers = randomOthers(sauberste[0].name, spielerNamen);
-    quizFragen.push({ frage: 'Wer ist der sauberste Kegler des Clubs?', antworten: answers, richtig: sauberste[0].name, hint: `Nur ${sauberste[0].total} Striche` });
-  }
-  if (sessionTotals[0] && sessions.length >= 3) {
-    const sessionNamen = sessions.map(s=>s.name);
-    const answers = randomOthers(sessionTotals[0].name, sessionNamen);
-    quizFragen.push({ frage: 'Welcher Abend hatte die meisten Strafen?', antworten: answers, richtig: sessionTotals[0].name, hint: `${sessionTotals[0].total} Striche` });
-  }
-  if (lustKing && spielerNamen.length >= 4) {
-    const answers = randomOthers(lustKing[0], spielerNamen);
-    quizFragen.push({ frage: 'Wer hat am meisten Lustwürfe verursacht?', antworten: answers, richtig: lustKing[0], hint: `${lustKing[1]}×` });
-  }
+  if (pumpenKing) facts.push({ emoji:'🎳', color:'',
+    fact:`${pumpenKing[0]} ist der Pumpen-Weltmeister`,
+    detail:`${pumpenKing[1]}× die Kugel in den Kanal — macht ${formatEur(pumpenKing[1]*0.30)} allein für Pumpen. Das ist ${Math.round(pumpenKing[1]/pumpenGesamt*100)}% aller ${pumpenGesamt} Pumpen dieser Saison.`
+  });
+
+  if (verlKing) facts.push({ emoji:'⏳', color:'yellow',
+    fact:`${verlKing[0]} liebt das verlängerte Spiel`,
+    detail:`${verlKing[1]}× Verl. Spiel — ${Math.round(verlKing[1]/verlGesamt*100)}% aller ${verlGesamt} Verlängerungen gehen auf sein/ihr Konto.`
+  });
+
+  if (lustKing) facts.push({ emoji:'😂', color:'yellow',
+    fact:`${lustKing[0]} kann den Lustwurf nicht lassen`,
+    detail:`${lustKing[1]}× — das ist kein Versehen, das ist Charakterstärke.`
+  });
+
+  if (klingelKing) facts.push({ emoji:'🔔', color:'',
+    fact:`${klingelKing[0]} klingelt am lautesten`,
+    detail:`${klingelKing[1]}× die Klingel getroffen diese Saison.`
+  });
+
+  if (schnappKing) facts.push({ emoji:'🔢', color:'',
+    fact:`${schnappKing[0]} trifft Schnapszahlen wie kein Zweiter`,
+    detail:`${schnappKing[1]}× Schnapszahl — Zufall oder Talent?`
+  });
+
+  if (behKing) facts.push({ emoji:'🚧', color:'',
+    fact:`${behKing[0]} ist die größte Verkehrsbehinderung`,
+    detail:`${behKing[1]}× Behinderung — im Straßenverkehr wäre das ein Punkt in Flensburg.`
+  });
+
+  if (verspKing && verspMins >= 15) facts.push({ emoji:'⏰', color:'red',
+    fact:`${verspKing[0]} sammelt Verspätungsminuten wie Briefmarken`,
+    detail:`${verspMins} Minuten Verspätung — das sind ${Math.floor(verspMins/60)} Stunden und ${verspMins%60} Minuten.`
+  });
+
+  if (sessionTotals[0]) facts.push({ emoji:'💀', color:'red',
+    fact:`Der Horrorabend der Saison: "${sessionTotals[0].name}"`,
+    detail:`${sessionTotals[0].total} Striche an einem einzigen Abend (${formatDate(sessionTotals[0].datum)}). ${sessionTotals[1] ? `Zum Vergleich: der zweitschlimmste Abend hatte ${sessionTotals[1].total} Striche.` : ''}`
+  });
+
+  if (sessions.length >= 2 && avgStriche > 0) facts.push({ emoji:'📊', color:'',
+    fact:`Im Schnitt ${avgStriche} Striche pro Kegel-Abend`,
+    detail:`Über ${sessions.length} Sessions — der ruhigste Abend hatte ${sessionTotals[sessionTotals.length-1]?.total||0} Striche, der wildeste ${sessionTotals[0]?.total||0}.`
+  });
+
+  if (strafRanking[0]?.val > 0) facts.push({ emoji:'💸', color:'red',
+    fact:`${strafRanking[0].name} hat die meisten Strafen bezahlt`,
+    detail:`${formatEur(strafRanking[0].val)} diese Saison — ${formatEur(strafRanking[strafRanking.length-1]?.val||0)} war das Minimum.`
+  });
+
+  // Lieblingsfehler-Highlights
+  const ungewöhnlich = Object.entries(lieblingsMap)
+    .filter(([,v]) => !['Pumpe','Verl. Spiel'].includes(v.kat) && v.anzahl >= 3)
+    .sort((a,b) => b[1].anzahl - a[1].anzahl).slice(0, 2);
+  ungewöhnlich.forEach(([name, {kat, anzahl}]) => {
+    facts.push({ emoji:'🎯', color:'',
+      fact:`${name}s Spezialität: ${kat}`,
+      detail:`${anzahl}× diese Saison — eine echte Marke.`
+    });
+  });
 
   container.innerHTML = `
-    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:1.25rem">Basierend auf ${sessions.length} Sessions · Tippe auf Quiz-Fragen um die Antwort aufzudecken</p>
-
-    <div class="section-title">💡 Fun Facts</div>
+    <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Basierend auf ${sessions.length} Sessions dieser Saison</p>
     ${facts.map(f => `
       <div class="fun-fact ${f.color}">
         <div class="ff-emoji">${f.emoji}</div>
         <div class="ff-fact">${f.fact}</div>
         <div class="ff-detail">${f.detail}</div>
       </div>`).join('')}
-
-    ${quizFragen.length ? `
-    <div class="section-title" style="margin-top:1.5rem">🎯 Quiz-Fragen fürs Jahresende</div>
-    <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:.75rem">Antippen = Antwort aufdecken</p>
-    ${quizFragen.map((q,i) => `
-      <div class="quiz-card" onclick="toggleQuizAntwort(this)">
-        <div class="q-label">Frage ${i+1}</div>
-        <div class="q-text">${q.frage}</div>
-        <div class="q-answers">
-          ${q.antworten.map(a => `<div class="q-answer" data-richtig="${a===q.richtig}">${a}</div>`).join('')}
-        </div>
-        <div class="q-reveal">👆 Antippen für Antwort · Lösung: ${q.hint}</div>
-      </div>`).join('')}` : ''}
   `;
 }
 
@@ -3045,6 +3067,62 @@ const SPIELE_KATALOG = [
     erklaerung: `Teilt die Spieler auf 2 Teams auf. Nach jedem Wurf tippt ihr die geworfene Zahl (1–9) — die Münze eures Teams fällt in die entsprechende Spalte.\n\nWer zuerst 4 Münzen in einer Reihe verbindet (horizontal, vertikal oder diagonal) gewinnt!\n\nBei einer Pumpe fällt keine Münze und das andere Team ist dran.`,
     typ: 'team',
     strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: '6tagerennen',
+    name: '6-Tage-Rennen',
+    emoji: '🚴',
+    erklaerung: `Je 2 Spieler werden per Los als Team zusammengelost.\n\nAn 6 Tagen (Mo–Sa) wirft jeder Partner zweimal im Abräumen-Bild.\n\nPunkte = Hölzer × Tagesmultiplikator (Mo=1 … Sa=6).\n\nDas Team mit den meisten Tagespunkten erhält als Tagessieger Bonuspunkte: +2 × Tagesmultiplikator (⭕).\n\n🏆 Das Team mit den meisten Gesamtpunkten nach 6 Tagen gewinnt — die anderen zahlen.`,
+    typ: 'rennen',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'busbauen',
+    name: 'Bus bauen',
+    emoji: '🚌',
+    erklaerung: `Runde 1 — Busbesetzung: Jeder wirft einmal. Die geworfene Zahl ist seine Busnummer (mehrere können im selben Bus sein).\n\nDanach wirft jeder der Reihe nach. Egal wer wirft — der Bus mit der geworfenen Zahl bekommt einen Reifen.\n\n🏆 Wer zuerst 6 Reifen hat, gewinnt! Die anderen bekommen ein Verl. Spiel.`,
+    typ: 'busbauen',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'miteinander',
+    name: 'Miteinander',
+    emoji: '🤝',
+    erklaerung: `Die Reihenfolge wird ausgelost — so viele Runden wie Teilnehmer.\n\nJeder Spieler wirft der Reihe nach und tippt seine Zahl.\n\nNach jeder Runde:\n• Wer dieselbe Zahl geworfen hat wie ein anderer, werden Partner — beide bekommen die Summe gutgeschrieben (z.B. 2× Sechser = je 12 Punkte, 3× Sechser = je 18 Punkte)\n• Wer alleine steht, bekommt den Nennwert\n• Pumpe = 0 Punkte\n\n🏆 Sieger hat am Ende die meisten Punkte.`,
+    typ: 'miteinander',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'bis100',
+    name: 'Bis 100',
+    emoji: '💯',
+    erklaerung: `Teilt euch auf 2 Teams auf.\n\nDie Teams wechseln sich ab: Ein Spieler wirft und tippt die geworfene Zahl — diese wird zum Punktestand addiert.\n\nEine Pumpe zählt 0 Punkte.\n\n⚠️ Trifft ein Team genau eine Schnapszahl (11, 22, 33, 44, 55, 66, 77, 88, 99), wird der Punktestand auf 0 zurückgesetzt!\n\n🏆 Das Team, das zuerst genau 100 Punkte erreicht, gewinnt — das andere zahlt.`,
+    typ: 'team',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'bergtal',
+    name: 'Berg & Tal',
+    emoji: '⛰️',
+    erklaerung: `Jeder Spieler wirft 10 Mal in Folge.\n\n⛰️ Würfe 1–5 (Berg): Punkte werden addiert — so hoch wie möglich werfen! Pumpe = +0.\n\n🏔️ Würfe 6–10 (Tal): Punkte werden abgezogen — so niedrig wie möglich werfen! Pumpe = −10 ⚠️\n\nZiel: am Ende möglichst viele Punkte.\n\n💀 Die Spieler mit der geringsten Punktzahl verlieren.`,
+    typ: 'bergtal',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'russischroulette',
+    name: 'Russisch Roulette',
+    emoji: '🔫',
+    erklaerung: `Alle Spieler im Kreis. Startspieler und Reihenfolge werden per Los bestimmt.\n\nDer aktuelle Spieler wirft und trägt die Zahl ein. Diese Zahl gibt an, wie viele Schritte im Kreis weitergegangen wird — der getroffene Spieler verliert ein Leben und ist als nächstes dran.\n\n⚠️ Trifft man sich selbst: Leben verlieren, nochmal werfen.\n\n💀 Wer kein Leben mehr hat scheidet aus — der nächste Lebende in der Reihenfolge wirft weiter.\n\n🏆 Der letzte Überlebende gewinnt. Alle anderen zahlen.`,
+    typ: 'russischroulette',
+    strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'wiedumir',
+    name: 'Wie du mir so ich dir',
+    emoji: '🪡',
+    erklaerung: `Alle Spieler stehen im Kreis. Jeder hat einen Vordermann und Hintermann.\n\nJede Runde wirft jeder einmal. Danach werden benachbarte Paare verglichen:\n• Besserer Wurf → der andere bekommt einen Strich\n• Schlechterer Wurf → du bekommst einen Strich\n• Gleichstand → kein Strich\n\n⚠️ Ungültige Würfe werden immer mit einem Strich bestraft (kein Vergleich).\n\nNach allen Runden verlieren die Spieler mit den meisten Strichen.`,
+    typ: 'wiedumir',
+    strafKategorie: 'Verl. Spiel'
   }
 ];
 
@@ -3065,8 +3143,8 @@ function renderSpieleListe() {
 
   const aktiveSpielerListe = getAktiveSpieler();
 
-  const einzelspiele = SPIELE_KATALOG.filter(s => s.typ !== 'team' && s.typ !== 'einzeln_special');
-  const teamspiele = SPIELE_KATALOG.filter(s => s.typ === 'team');
+  const einzelspiele = SPIELE_KATALOG.filter(s => s.typ !== 'team' && s.typ !== 'rennen' && s.typ !== 'einzeln_special');
+  const teamspiele = SPIELE_KATALOG.filter(s => s.typ === 'team' || s.typ === 'rennen');
   const spielerInfo = aktiveSpielerListe.length > 0
     ? `<span style="font-size:.78rem;color:var(--text-muted)">👥 ${aktiveSpielerListe.length} Spieler</span>`
     : `<span style="font-size:.78rem;color:var(--warning)">⚠️ Alle Mitglieder</span>`;
@@ -3078,9 +3156,9 @@ function renderSpieleListe() {
         <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted);font-weight:600">📖 Spielerklärung</summary>
         <div class="spiel-erklaerung" style="margin-top:.5rem;white-space:pre-line">${spiel.erklaerung}</div>
       </details>
-      ${spiel.typ !== 'team' ? `
+      ${((spiel.typ !== 'team' && spiel.typ !== 'busbauen' && spiel.typ !== 'wiedumir' && spiel.typ !== 'russischroulette') || spiel.typ === 'rennen') ? `
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
-        <span style="font-size:.85rem;font-weight:600;color:var(--text-muted)">Verlierer:</span>
+        <span style="font-size:.85rem;font-weight:600;color:var(--text-muted)">${spiel.typ === 'rennen' ? 'Verlierer-Teams:' : 'Verlierer:'}</span>
         ${[1,2,3,4].map(n => `<button id="vl-${spiel.id}-${n}" class="btn btn-sm ${n===1?'btn-primary':'btn-ghost'}"
           onclick="setVorauswahlVerlierer('${spiel.id}',${n})">${n}</button>`).join('')}
       </div>` : ''}
@@ -3113,6 +3191,18 @@ function starteSpiel(spielId) {
     starteTeamSpiel(spielId);
   } else if (spiel.typ === 'einzeln') {
     starteSetzSpiel(spielId);
+  } else if (spiel.typ === 'miteinander') {
+    starteMiteinander(spielId);
+  } else if (spiel.typ === 'rennen') {
+    starteRennen(spielId);
+  } else if (spiel.typ === 'busbauen') {
+    starteBusBauen(spielId);
+  } else if (spiel.typ === 'wiedumir') {
+    starteWieDuMir(spielId);
+  } else if (spiel.typ === 'bergtal') {
+    starteBergTal(spielId);
+  } else if (spiel.typ === 'russischroulette') {
+    starteRussischRoulette(spielId);
   } else {
     const spieler = getAktiveSpieler();
     aktivesSpiel = {
@@ -3182,6 +3272,7 @@ function renderTeamSpiel() {
 
   if (ts.phase === 'tannenbaum') { renderTannenbaum(); return; }
   if (ts.phase === '4gewinnt') { renderVierGewinnt(); return; }
+  if (ts.phase === 'bis100') { renderBis100(); return; }
 
   if (ts.phase === 'spiel') {
     const aktiv = ts.aktivesTeam; // 'A' oder 'B'
@@ -3231,7 +3322,11 @@ function renderTeamSpiel() {
 
   if (ts.phase === 'ergebnis') {
     let gewinnerTeam, verliererSpieler, ergebnisText;
-    if (ts.gewinner) {
+    if (ts.spielId === 'bis100') {
+      gewinnerTeam = ts.gewinner;
+      verliererSpieler = ts.verliererSpieler || (gewinnerTeam === 'A' ? ts.teamB : ts.teamA);
+      ergebnisText = `Team ${gewinnerTeam} hat zuerst 100 Punkte erreicht!`;
+    } else if (ts.gewinner) {
       // Tannenbaum
       gewinnerTeam = ts.gewinner;
       verliererSpieler = ts.verliererSpieler || (gewinnerTeam === 'A' ? ts.teamB : ts.teamA);
@@ -3250,9 +3345,12 @@ function renderTeamSpiel() {
           ${['A','B'].map(t => {
             const d = t === 'A' ? ts.datenA : ts.datenB;
             const istGewinner = gewinnerTeam === t;
+            const scoreLabel = ts.spielId === 'bis100'
+              ? `${ts['punkte'+t] ?? 0} Punkte`
+              : d ? `${d.versuche} Versuche` : '';
             return `<div style="background:${istGewinner?'#dcfce7':'#fee2e2'};border-radius:10px;padding:1rem;text-align:center">
               <div style="font-size:.8rem;font-weight:700;margin-bottom:.25rem">${istGewinner?'🏆':'😬'} Team ${t}</div>
-              ${d ? `<div style="font-weight:800;font-size:1.5rem;color:${istGewinner?'var(--success)':'var(--danger)'}">${d.versuche} Versuche</div>` : ''}
+              <div style="font-weight:800;font-size:1.5rem;color:${istGewinner?'var(--success)':'var(--danger)'}">${scoreLabel}</div>
               <div style="font-size:.75rem;margin-top:.3rem">${(t==='A'?ts.teamA:ts.teamB).join(', ')}</div>
             </div>`;
           }).join('')}
@@ -3367,7 +3465,7 @@ function renderTannenbaum() {
       <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
     </div>
     <div style="background:${aktiv==='A'?'#eff6ff':'#fff5f5'};border-radius:8px;padding:.5rem .75rem;margin-bottom:.75rem;font-size:.9rem;font-weight:700;color:${aktiv==='A'?'var(--primary)':'var(--danger)'}">
-      ${aktiv==='A'?'🔵':'🔴'} Team ${aktiv} wirft${aktivSpieler?' — '+aktivSpieler:''}
+      ${aktiv==='A'?'🔵':'🔴'} Team ${aktiv} wirft
     </div>
     <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
       ${renderBaumDisplay('A')}
@@ -3375,6 +3473,9 @@ function renderTannenbaum() {
     </div>
     <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.35rem">Geworfene Zahl tippen:</div>
     <div style="display:flex;gap:.3rem;flex-wrap:nowrap;overflow-x:auto">${zahlenBtns}</div>
+    <button onclick="tippeBaumPumpe()" style="margin-top:.5rem;width:100%;padding:10px;border-radius:8px;border:2px solid #f59e0b;background:#fef3c7;color:#b45309;font-weight:800;font-size:.95rem;cursor:pointer;">
+      💨 Pumpe (nichts getroffen) — €0,30
+    </button>
     ${ts.letzterZug?`<div style="font-size:.78rem;color:var(--text-muted);margin-top:.5rem;text-align:center;background:var(--bg);border-radius:6px;padding:.3rem">${ts.letzterZug}</div>`:''}`;
 }
 
@@ -3419,6 +3520,1672 @@ function tippeBaum(zahl) {
   renderTeamSpiel();
 }
 
+function tippeBaumPumpe() {
+  const ts = teamSpielState;
+  const aktiv = ts.aktivesTeam;
+  const spieler = aktiv === 'A'
+    ? ts.teamA[ts.aktiverSpielerA % ts.teamA.length]
+    : ts.teamB[ts.aktiverSpielerB % ts.teamB.length];
+
+  ts.letzterZug = `Team ${aktiv}: Pumpe — bitte manuell eintragen`;
+
+  // Spielerwechsel
+  if (aktiv === 'A') {
+    ts.aktiverSpielerA = (ts.aktiverSpielerA || 0) + 1;
+    ts.aktivesTeam = 'B';
+  } else {
+    ts.aktiverSpielerB = (ts.aktiverSpielerB || 0) + 1;
+    ts.aktivesTeam = 'A';
+  }
+  renderTeamSpiel();
+}
+
+
+// ---- 6-TAGE-RENNEN ----
+const RENNEN_TAGE = ['Mo','Di','Mi','Do','Fr','Sa'];
+let rennenState = null;
+
+function starteRennen(spielId) {
+  const spieler = getAktiveSpieler().map(m => m.name).sort(() => Math.random() - .5);
+  // Strikt 2er-Teams, letzter Spieler bei ungerader Anzahl spielt solo
+  const teams = [];
+  for (let i = 0; i < spieler.length; i += 2) {
+    teams.push({ mitglieder: spieler.slice(i, i + 2), gesamtpunkte: 0, tagessiege: 0, tagesergebnisse: {} });
+  }
+  rennenState = {
+    spielId, teams,
+    anzahlVerliererTeams: vorauswahlVerlierer[spielId] || 1,
+    tag: 1,          // aktueller Tag 1-6
+    phase: 'teams',  // teams | wurf | tagesergebnis | ergebnis
+    // Während Würfen:
+    aktTeamIdx: 0,
+    aktWurfIdx: 0,       // 0 oder 1 — 2 Würfe pro Team
+    wurfeHeute: {},      // { teamIdx: [holzer1, holzer2] }
+    pinZustand: Array(9).fill(true),  // true = stehend, false = gefallen
+    pinAuswahl: []       // Indizes der in diesem Wurf ausgewählten Pins
+  };
+  renderRennen();
+}
+
+function renderRennen() {
+  const container = document.getElementById('spiele-liste');
+  const rs = rennenState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === rs.spielId);
+  if (!container) return;
+
+  // ── TEAMS-PHASE (Auslosung anzeigen) ──
+  if (rs.phase === 'teams') {
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} 6-Tage-Rennen — Auslosung</h3>
+        <button class="btn btn-ghost btn-sm" onclick="rennenState=null;renderSpieleListe()">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.75rem;margin-bottom:1rem">
+        ${rs.teams.map((t, i) => `
+          <div style="background:${rennenTeamFarbe(i,'.15')};border:2px solid ${rennenTeamFarbe(i,'1')};border-radius:10px;padding:.75rem;text-align:center">
+            <div style="font-size:.85rem;font-weight:800;color:${rennenTeamFarbe(i,'1')};margin-bottom:.35rem">${rennenTeamLabel(t)}</div>
+            ${t.mitglieder.map(n => `<div style="font-size:.78rem;color:var(--text-muted)">${n}</div>`).join('')}
+          </div>`).join('')}
+      </div>
+      <button class="btn btn-primary btn-full" onclick="rennenStarteTag()">▶ Tag 1 starten (Montag)</button>`;
+    return;
+  }
+
+  // ── WURF-PHASE ──
+  if (rs.phase === 'wurf') {
+    const tag = rs.tag;
+    const multi = tag;
+    const tagName = RENNEN_TAGE[tag - 1];
+    const wurfNr = rs.aktWurfIdx + 1;
+    const aktTeam = rs.teams[rs.aktTeamIdx];
+    const aktTeamName = rennenTeamLabel(aktTeam);
+
+    // Bisherige Würfe heute
+    const bisherige = rs.teams.map((t, ti) => {
+      const w = rs.wurfeHeute[ti];
+      if (!w || w.length === 0) return null;
+      const sum = w.reduce((a,b)=>a+b,0);
+      return { ti, label: rennenTeamLabel(t), würfe: w, sum };
+    }).filter(Boolean);
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Tag ${tag} — ${tagName} (×${multi})</h3>
+        <button class="btn btn-ghost btn-sm" onclick="rennenState=null;renderSpieleListe()">✕</button>
+      </div>
+
+      <!-- Gesamtstand -->
+      <div style="display:flex;gap:.4rem;overflow-x:auto;margin-bottom:.75rem;padding-bottom:.25rem">
+        ${rs.teams.map((t,i) => `
+          <div style="flex:0 0 auto;background:${rennenTeamFarbe(i,'.12')};border:1.5px solid ${rennenTeamFarbe(i,'1')};border-radius:8px;padding:.4rem .6rem;text-align:center;min-width:90px">
+            <div style="font-size:.65rem;font-weight:700;color:${rennenTeamFarbe(i,'1')}">${rennenTeamLabel(t)}</div>
+            <div style="font-weight:800;font-size:1rem">${t.gesamtpunkte}</div>
+            <div style="font-size:.6rem;color:var(--text-muted)">${t.tagessiege}× ⭕</div>
+          </div>`).join('')}
+      </div>
+
+      ${bisherige.length ? `
+      <div style="margin-bottom:.75rem">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Heute bereits geworfen:</div>
+        ${bisherige.map(b => `
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:.83rem;padding:.25rem 0;border-bottom:1px solid var(--border)">
+            <span style="font-weight:600;color:${rennenTeamFarbe(b.ti,'1')}">${b.label}</span>
+            <span>${b.würfe.join(' + ')} = <strong>${b.sum * multi} Pkt</strong> (${b.sum}×${multi})</span>
+          </div>`).join('')}
+      </div>` : ''}
+
+      <!-- Aktives Team -->
+      <div style="background:linear-gradient(135deg,${rennenTeamFarbe(rs.aktTeamIdx,'1')},${rennenTeamFarbe(rs.aktTeamIdx,'.7')});color:white;border-radius:10px;padding:.75rem 1rem;text-align:center;margin-bottom:.75rem">
+        <div style="font-size:.7rem;opacity:.8;margin-bottom:.2rem">JETZT WIRFT — Wurf ${wurfNr}/2</div>
+        <div style="font-size:1.3rem;font-weight:800">${aktTeamName}</div>
+        <div style="font-size:.72rem;opacity:.75;margin-top:.2rem">${tagName} ×${multi} · ${rs.pinAuswahl.length} ausgewählt</div>
+      </div>
+
+      <!-- Kegelfeld -->
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.5rem;text-align:center">
+        ${wurfNr === 1 ? 'Getroffene Pins antippen:' : 'Verbleibende Pins antippen:'}
+      </div>
+      ${renderPinfeld(rs.pinZustand, rs.pinAuswahl, 'rennenTogglePin')}
+
+      <button onclick="rennenBestaetigeWurf()"
+        style="margin-top:.75rem;width:100%;padding:12px;border-radius:8px;border:none;
+               background:${rs.pinAuswahl.length > 0 ? 'var(--success)' : 'var(--border)'};
+               color:${rs.pinAuswahl.length > 0 ? 'white' : 'var(--text-muted)'};
+               font-weight:800;font-size:1rem;cursor:pointer">
+        ${rs.pinAuswahl.length > 0 ? `✅ ${rs.pinAuswahl.length} Pin${rs.pinAuswahl.length>1?'s':''} bestätigen` : '💨 Pumpe (0 Pins)'}
+      </button>`;
+    return;
+  }
+
+  // ── TAGESERGEBNIS ──
+  if (rs.phase === 'tagesergebnis') {
+    const tag = rs.tag;
+    const multi = tag;
+    const tagName = RENNEN_TAGE[tag - 1];
+
+    // Tagespunkte berechnen (2 Würfe pro Team)
+    const tagespunkte = rs.teams.map((t, ti) => {
+      const wh = rs.wurfeHeute[ti] || [];
+      const holzer = wh.reduce((a,b)=>a+b,0);
+      return { teamIdx: ti, holzer, punkte: holzer * multi };
+    });
+    const maxPunkte = Math.max(...tagespunkte.map(tp => tp.punkte));
+    const sieger = tagespunkte.filter(tp => tp.punkte === maxPunkte);
+    const bonus = 2 * multi;
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Tag ${tag} — ${tagName} Ergebnis</h3>
+      </div>
+
+      ${tagespunkte.sort((a,b)=>b.punkte-a.punkte).map(tp => {
+        const t = rs.teams[tp.teamIdx];
+        const istSieger = sieger.some(s => s.teamIdx === tp.teamIdx);
+        return `<div style="background:${istSieger?'#dcfce7':rennenTeamFarbe(tp.teamIdx,'.08')};border:2px solid ${istSieger?'var(--success)':rennenTeamFarbe(tp.teamIdx,'1')};border-radius:10px;padding:.75rem;margin-bottom:.5rem">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <span style="font-weight:800;color:${rennenTeamFarbe(tp.teamIdx,'1')}">${rennenTeamLabel(t)}</span>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:800;font-size:1.2rem">${tp.punkte} Pkt</div>
+              <div style="font-size:.7rem;color:var(--text-muted)">${tp.holzer} Hölzer × ${multi}</div>
+            </div>
+          </div>
+          ${istSieger ? `<div style="margin-top:.4rem;font-size:.82rem;font-weight:700;color:var(--success)">⭕ Tagessieger! +${bonus} Bonuspunkte (2×${multi})</div>` : ''}
+        </div>`;
+      }).join('')}
+
+      <button class="btn btn-primary btn-full" style="margin-top:.75rem" onclick="rennenNaechsterTag()">
+        ${rs.tag >= 6 ? '🏆 Endergebnis' : `▶ Tag ${rs.tag + 1} — ${RENNEN_TAGE[rs.tag]}`}
+      </button>`;
+    return;
+  }
+
+  // ── ENDERGEBNIS ──
+  if (rs.phase === 'ergebnis') {
+    const rangliste = [...rs.teams].map((t,i) => ({...t, idx:i})).sort((a,b)=>b.gesamtpunkte-a.gesamtpunkte);
+    const anzV = Math.min(rs.anzahlVerliererTeams || 1, rangliste.length - 1);
+    const verlierer = rangliste.slice(rangliste.length - anzV).map(t => t.mitglieder).flat();
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} 6-Tage-Rennen — Endergebnis</h3>
+      </div>
+
+      ${rangliste.map((t, rang) => {
+        const istSieger = rang < rangliste.length - anzV;
+        return `<div style="background:${istSieger?'#dcfce7':'#fee2e2'};border-radius:10px;padding:.875rem;margin-bottom:.5rem;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:.8rem;font-weight:700;margin-bottom:.2rem">${istSieger?'🏆':'😬'} Rang ${rang+1}</div>
+            <div style="font-weight:800;font-size:1rem;color:${rennenTeamFarbe(t.idx,'1')}">${rennenTeamLabel(t)}</div>
+            <div style="font-size:.72rem;color:var(--text-muted);margin-top:.15rem">${t.tagessiege}× Tagessieger ⭕</div>
+          </div>
+          <div style="font-weight:800;font-size:1.4rem;color:${istSieger?'var(--success)':'var(--danger)'}">${t.gesamtpunkte}</div>
+        </div>`;
+      }).join('')}
+
+      <!-- Tagesübersicht -->
+      <details style="margin-top:.75rem">
+        <summary style="cursor:pointer;font-size:.82rem;font-weight:600;color:var(--text-muted)">📊 Tagesübersicht</summary>
+        <div style="margin-top:.5rem;font-size:.8rem">
+          ${rs.teams.map((t,ti) => `
+            <div style="margin-bottom:.5rem">
+              <div style="font-weight:700;margin-bottom:.25rem;color:${rennenTeamFarbe(ti,'1')}">Team ${ti+1} — ${t.mitglieder.join(' & ')}</div>
+              ${Object.entries(t.tagesergebnisse).map(([d, tp]) =>
+                `<div style="display:flex;justify-content:space-between;padding:.15rem 0;border-bottom:1px solid var(--border)">
+                  <span>${RENNEN_TAGE[d-1]} (×${d})</span>
+                  <span>${tp.punkte} Pkt ${tp.sieger?'⭕':''}</span>
+                </div>`
+              ).join('')}
+            </div>`).join('')}
+        </div>
+      </details>
+
+      <div style="background:#fee2e2;border-radius:8px;padding:.75rem;margin:1rem 0;font-size:.875rem">
+        <strong>${verlierer.join(', ')} bekommen je 1× Verl. Spiel</strong>
+      </div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="bestaetigeRennenErgebnis()">✅ Strafen eintragen</button>
+        <button class="btn btn-ghost" onclick="rennenState=null;renderSpieleListe()">Fertig</button>
+      </div>`;
+  }
+}
+
+// Diamant-Layout: Reihen von oben (hinten) nach unten (vorne)
+// Pin-Nummern 1-9, Indizes 0-8
+// Reihe 1: Pin 9 (idx 8)
+// Reihe 2: Pin 7 (idx 6), Pin 8 (idx 7)
+// Reihe 3: Pin 4 (idx 3), Pin 5 (idx 4), Pin 6 (idx 5)
+// Reihe 4: Pin 2 (idx 1), Pin 3 (idx 2)
+// Reihe 5: Pin 1 (idx 0)
+const KEGEL_REIHEN = [[8], [6,7], [3,4,5], [1,2], [0]];
+
+function renderPinfeld(pinZustand, pinAuswahl, callbackFn) {
+  const PIN_SIZE = 52;
+  const GAP = 10;
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:${GAP}px;padding:.5rem 0;user-select:none">
+    ${KEGEL_REIHEN.map(reihe => `
+      <div style="display:flex;gap:${GAP}px;justify-content:center">
+        ${reihe.map(idx => {
+          const stehend = pinZustand[idx];
+          const ausgewaehlt = pinAuswahl.includes(idx);
+          const num = idx + 1;
+          let bg, border, color, opacity, cursor;
+          if (!stehend) {
+            // Gefallen — grau durchgestrichen
+            bg = '#e2e8f0'; border = '#cbd5e1'; color = '#94a3b8'; opacity = '.5'; cursor = 'default';
+          } else if (ausgewaehlt) {
+            // Ausgewählt (wird getroffen)
+            bg = '#dc2626'; border = '#b91c1c'; color = 'white'; opacity = '1'; cursor = 'pointer';
+          } else {
+            // Stehend, nicht ausgewählt
+            bg = 'white'; border = '#3b82f6'; color = '#1d4ed8'; opacity = '1'; cursor = 'pointer';
+          }
+          return `<button
+            onclick="${callbackFn}(${idx})"
+            ${!stehend ? 'disabled' : ''}
+            style="width:${PIN_SIZE}px;height:${PIN_SIZE}px;border-radius:50%;border:3px solid ${border};
+                   background:${bg};color:${color};font-weight:800;font-size:1.1rem;
+                   opacity:${opacity};cursor:${cursor};position:relative;
+                   display:flex;align-items:center;justify-content:center;
+                   box-shadow:${ausgewaehlt?'0 0 0 3px rgba(220,38,38,.3)':stehend?'0 2px 4px rgba(0,0,0,.12)':'none'};
+                   transition:all .1s;-webkit-tap-highlight-color:transparent">
+            ${!stehend ? `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.4rem;color:#94a3b8">✕</span>` : num}
+          </button>`;
+        }).join('')}
+      </div>`).join('')}
+  </div>`;
+}
+
+function rennenTeamLabel(team) {
+  // "Nachname/Nachname" — letztes Wort jedes Namens
+  return team.mitglieder.map(n => n.split(' ').pop()).join('/');
+}
+
+function rennenTeamFarbe(idx, alpha) {
+  const farben = ['#2563eb','#dc2626','#16a34a','#d97706','#7c3aed','#0891b2'];
+  const hex = farben[idx % farben.length];
+  if (alpha === '1') return hex;
+  // Approximate rgba via hex with opacity in background
+  const map = {'.15':'26','.12':'1f','.08':'14','.7':'b3'};
+  return hex + (map[alpha] || '26');
+}
+
+function rennenStarteTag() {
+  const rs = rennenState;
+  rs.phase = 'wurf';
+  rs.aktTeamIdx = 0;
+  rs.aktWurfIdx = 0;
+  rs.wurfeHeute = {};
+  rs.pinZustand = Array(9).fill(true);
+  rs.pinAuswahl = [];
+  renderRennen();
+}
+
+function rennenTogglePin(idx) {
+  const rs = rennenState;
+  if (!rs.pinZustand[idx]) return; // bereits gefallen → nicht anklickbar
+  const pos = rs.pinAuswahl.indexOf(idx);
+  if (pos === -1) rs.pinAuswahl.push(idx);
+  else rs.pinAuswahl.splice(pos, 1);
+  renderRennen();
+}
+
+function rennenBestaetigeWurf() {
+  const rs = rennenState;
+  const teamIdx = rs.aktTeamIdx;
+  const holzer = rs.pinAuswahl.length;
+
+  if (!rs.wurfeHeute[teamIdx]) rs.wurfeHeute[teamIdx] = [];
+  rs.wurfeHeute[teamIdx].push(holzer);
+
+  // Ausgewählte Pins fallen lassen
+  rs.pinAuswahl.forEach(idx => { rs.pinZustand[idx] = false; });
+  rs.pinAuswahl = [];
+
+  if (rs.aktWurfIdx < 1) {
+    rs.aktWurfIdx++;
+  } else {
+    // Team fertig → nächstes Team
+    rs.aktWurfIdx = 0;
+    rs.pinZustand = Array(9).fill(true); // frische Pins für nächstes Team
+    if (rs.aktTeamIdx < rs.teams.length - 1) {
+      rs.aktTeamIdx++;
+    } else {
+      rs.phase = 'tagesergebnis';
+    }
+  }
+  renderRennen();
+}
+
+function rennenNaechsterTag() {
+  const rs = rennenState;
+  const tag = rs.tag;
+  const multi = tag;
+
+  // Tagespunkte verbuchen
+  const tagespunkte = rs.teams.map((t, ti) => {
+    const wh = rs.wurfeHeute[ti] || {};
+    const holzer = (wh || []).reduce((a,b)=>a+b,0);
+    return { teamIdx: ti, holzer, punkte: holzer * multi };
+  });
+  const maxPunkte = Math.max(...tagespunkte.map(tp => tp.punkte));
+  const bonus = 2 * multi;
+
+  tagespunkte.forEach(tp => {
+    const t = rs.teams[tp.teamIdx];
+    const istSieger = tp.punkte === maxPunkte;
+    const gesamtHeute = tp.punkte + (istSieger ? bonus : 0);
+    t.gesamtpunkte += gesamtHeute;
+    if (istSieger) t.tagessiege++;
+    t.tagesergebnisse[tag] = { punkte: gesamtHeute, sieger: istSieger };
+  });
+
+  if (rs.tag >= 6) {
+    rs.phase = 'ergebnis';
+  } else {
+    rs.tag++;
+    rennenStarteTag();
+    return;
+  }
+  renderRennen();
+}
+
+function bestaetigeRennenErgebnis() {
+  const rs = rennenState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === rs.spielId);
+  const rangliste = [...rs.teams].map((t,i) => ({...t,idx:i})).sort((a,b)=>b.gesamtpunkte-a.gesamtpunkte);
+  const anzV = Math.min(rs.anzahlVerliererTeams || 1, rangliste.length - 1);
+  const verlierer = rangliste.slice(rangliste.length - anzV).map(t => t.mitglieder).flat();
+  if (!verlierer.length) return;
+
+  if (aktiveSession) {
+    verlierer.forEach(name => addSpieleStrafe(name, 1.00, `Verl. Spiel (${spiel.name})`));
+    saveLiveSession();
+    if (document.getElementById('page-kegeln').classList.contains('active')) renderKgMatrix();
+  } else {
+    const batch = db.batch();
+    verlierer.forEach(name => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: name, kategorie: 'Verl. Spiel',
+        notiz: `${spiel.name}`, betrag: 1.00, datum: today(), bezahlt: false, createdAt: Date.now()
+      });
+    });
+    batch.commit();
+  }
+  db.collection('spielergebnisse').add({
+    spiel: spiel.name, datum: today(),
+    teams: rs.teams.map(t => ({ mitglieder: t.mitglieder, punkte: t.gesamtpunkte })),
+    verlierer, createdAt: Date.now()
+  });
+  rennenState = null;
+  renderSpieleListe();
+  alert(`✅ ${verlierer.join(', ')} bekommen je 1× Verl. Spiel${aktiveSession ? ' in der Live-Session' : ''}.`);
+}
+
+
+// ---- BUS BAUEN ----
+let busBauenState = null;
+
+function busFarbe(zahl) {
+  const f = ['#2563eb','#dc2626','#16a34a','#d97706','#7c3aed','#0891b2','#be185d','#0d9488','#ea580c'];
+  return f[(zahl - 1) % f.length];
+}
+
+function starteBusBauen(spielId) {
+  const spieler = getAktiveSpieler().map(m => m.name);
+  busBauenState = {
+    spielId, spieler,
+    phase: 'zuweisung',
+    zuweisung: {},       // spielerName → busnummer
+    reifen: {},          // busnummer → count
+    zuweisungsIdx: 0,
+    aktWurferIdx: 0,
+    letzterWurf: null,
+    gewinnerBus: null
+  };
+  renderBusBauen();
+}
+
+function renderBusBauen() {
+  const container = document.getElementById('spiele-liste');
+  const bs = busBauenState;
+  if (!bs || !container) return;
+  const spiel = SPIELE_KATALOG.find(s => s.id === bs.spielId);
+
+  // Busse (nur belegte) sortiert
+  const busNummern = [...new Set(Object.values(bs.zuweisung))].sort((a,b)=>a-b);
+
+  const cols = busNummern.length <= 4 ? busNummern.length : Math.min(5, Math.ceil(busNummern.length / 2));
+
+  const renderBusGrid = (highlight) => `
+    <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:.5rem">
+      ${busNummern.map(n => {
+        const sp = bs.spieler.filter(p => bs.zuweisung[p] === n);
+        const reifen = bs.reifen[n] || 0;
+        const istWinner = highlight && bs.gewinnerBus === n;
+        const farbe = busFarbe(n);
+        const namen = sp.map(p => p.split(' ').pop()).join(' · ') || '—';
+        const tires = Array.from({length:6},(_,i) =>
+          `<div style="aspect-ratio:1;border-radius:50%;background:${i<reifen?farbe:'white'};border:2px solid ${i<reifen?farbe:'#cbd5e1'}"></div>`
+        ).join('');
+        return `<div style="border-radius:12px;overflow:hidden;border:2.5px solid ${farbe};background:${istWinner?'#f0fdf4':'white'};${istWinner?'box-shadow:0 0 0 3px rgba(22,163,74,.4)':''}">
+          <div style="background:${farbe};padding:.4rem .3rem;text-align:center">
+            <div style="font-size:.7rem;opacity:.8;color:white;margin-bottom:.1rem">🚌</div>
+            <div style="font-weight:900;font-size:1.4rem;color:white;line-height:1">${n}</div>
+          </div>
+          <div style="padding:.35rem .3rem;text-align:center;font-size:.68rem;color:var(--text-muted);min-height:1.8rem;line-height:1.35;word-break:break-word">${namen}</div>
+          <div style="padding:.3rem .4rem;background:#f8fafc;display:grid;grid-template-columns:repeat(3,1fr);gap:3px">
+            ${tires}
+          </div>
+          <div style="text-align:center;padding:.25rem .3rem;font-size:.8rem;font-weight:800;color:${istWinner?'var(--success)':farbe};background:#f8fafc">
+            ${istWinner ? '🏆' : `${reifen}/6`}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // ── ZUWEISUNG ──
+  if (bs.phase === 'zuweisung') {
+    const spieler = bs.spieler[bs.zuweisungsIdx];
+    const zugewiesene = bs.spieler.slice(0, bs.zuweisungsIdx);
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Bus bauen — Busbesetzung</h3>
+        <button class="btn btn-ghost btn-sm" onclick="busBauenState=null;renderSpieleListe()">✕</button>
+      </div>
+      <div style="background:var(--bg);border-radius:8px;padding:.4rem .75rem;font-size:.82rem;margin-bottom:.75rem;display:flex;justify-content:space-between">
+        <span>Spieler ${bs.zuweisungsIdx+1} / ${bs.spieler.length}</span>
+        <span style="color:var(--text-muted)">Zahl = Busnummer</span>
+      </div>
+
+      ${zugewiesene.length > 0 && busNummern.length > 0 ? `
+      <div style="margin-bottom:.75rem">${renderBusGrid(false)}</div>` : ''}
+
+      <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:white;border-radius:10px;padding:.75rem 1rem;text-align:center;margin-bottom:.75rem">
+        <div style="font-size:.7rem;opacity:.8;margin-bottom:.15rem">JETZT WIRFT</div>
+        <div style="font-size:1.3rem;font-weight:800">${spieler}</div>
+      </div>
+
+      <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.4rem">Geworfene Zahl → Busnummer:</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.3rem">
+        ${[1,2,3,4,5,6,7,8,9].map(n =>
+          `<button onclick="busBauenZuweisen(${n})"
+            style="padding:14px;border-radius:8px;border:2.5px solid ${busFarbe(n)};
+                   background:white;color:${busFarbe(n)};font-weight:800;font-size:1.2rem;cursor:pointer">${n}</button>`
+        ).join('')}
+      </div>`;
+    return;
+  }
+
+  // ── SPIEL ──
+  if (bs.phase === 'spiel') {
+    const werfer = bs.spieler[bs.aktWurferIdx % bs.spieler.length];
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Bus bauen</h3>
+        <button class="btn btn-ghost btn-sm" onclick="busBauenState=null;renderSpieleListe()">✕</button>
+      </div>
+
+      <!-- Busse -->
+      <div style="margin-bottom:.75rem">${renderBusGrid(false)}</div>
+
+      ${bs.letzterWurf !== null ? `
+      <div style="background:var(--bg);border-radius:8px;padding:.35rem .75rem;font-size:.82rem;text-align:center;margin-bottom:.5rem;color:var(--text-muted)">
+        ${bs.letzterWurf.text}
+      </div>` : ''}
+
+      <!-- Aktueller Werfer -->
+      <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:white;border-radius:10px;padding:.75rem 1rem;text-align:center;margin-bottom:.75rem">
+        <div style="font-size:.7rem;opacity:.8;margin-bottom:.15rem">JETZT WIRFT</div>
+        <div style="font-size:1.3rem;font-weight:800">${werfer}</div>
+      </div>
+
+      <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.4rem">Geworfene Zahl tippen:</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.3rem">
+        ${[1,2,3,4,5,6,7,8,9].map(n => {
+          const hatBus = bs.reifen[n] !== undefined;
+          return `<button onclick="busBauenWurf(${n})"
+            style="padding:14px;border-radius:8px;border:2.5px solid ${hatBus?busFarbe(n):'var(--border)'};
+                   background:${hatBus?'white':'var(--bg)'};color:${hatBus?busFarbe(n):'var(--text-muted)'};
+                   font-weight:800;font-size:1.2rem;cursor:pointer;
+                   ${hatBus?'':'opacity:.5'}">${n}</button>`;
+        }).join('')}
+      </div>
+      <button onclick="busBauenWurf(0)" style="margin-top:.5rem;width:100%;padding:10px;border-radius:8px;border:2px solid #f59e0b;background:#fef3c7;color:#b45309;font-weight:800;font-size:.95rem;cursor:pointer;">
+        💨 Pumpe — kein Reifen
+      </button>`;
+    return;
+  }
+
+  // ── ERGEBNIS ──
+  if (bs.phase === 'ergebnis') {
+    const gewinnerSpieler = bs.spieler.filter(p => bs.zuweisung[p] === bs.gewinnerBus);
+    const verlierer = bs.spieler.filter(p => bs.zuweisung[p] !== bs.gewinnerBus);
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Bus bauen — Ergebnis</h3>
+      </div>
+
+      <div style="margin-bottom:1rem">${renderBusGrid(true)}</div>
+
+      <div style="background:#dcfce7;border-radius:8px;padding:.75rem;margin-bottom:.5rem">
+        <div style="font-size:.9rem;font-weight:800;color:var(--success)">🏆 Bus ${bs.gewinnerBus} gewinnt!</div>
+        <div style="font-size:.85rem;margin-top:.2rem">${gewinnerSpieler.join(', ')}</div>
+      </div>
+      ${verlierer.length ? `
+      <div style="background:#fee2e2;border-radius:8px;padding:.75rem;margin-bottom:1rem">
+        <strong>${verlierer.join(', ')} bekommen je 1× Verl. Spiel</strong>
+      </div>` : ''}
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+        ${verlierer.length ? `<button class="btn btn-primary" onclick="bestaetigeBusBauen()">✅ Strafen eintragen</button>` : ''}
+        <button class="btn btn-ghost" onclick="busBauenState=null;renderSpieleListe()">Fertig</button>
+      </div>`;
+  }
+}
+
+function busBauenZuweisen(zahl) {
+  const bs = busBauenState;
+  const spieler = bs.spieler[bs.zuweisungsIdx];
+  bs.zuweisung[spieler] = zahl;
+  if (bs.reifen[zahl] === undefined) bs.reifen[zahl] = 0;
+  bs.zuweisungsIdx++;
+  if (bs.zuweisungsIdx >= bs.spieler.length) {
+    bs.phase = 'spiel';
+  }
+  renderBusBauen();
+}
+
+function busBauenWurf(zahl) {
+  const bs = busBauenState;
+  if (zahl === 0) {
+    bs.letzterWurf = { text: '💨 Pumpe — kein Reifen' };
+  } else if (bs.reifen[zahl] !== undefined) {
+    bs.reifen[zahl]++;
+    bs.letzterWurf = { text: `🚌 Bus ${zahl} bekommt Reifen Nr. ${bs.reifen[zahl]}!` };
+    if (bs.reifen[zahl] >= 6) {
+      bs.gewinnerBus = zahl;
+      bs.phase = 'ergebnis';
+      renderBusBauen();
+      return;
+    }
+  } else {
+    bs.letzterWurf = { text: `${zahl} — kein Bus mit dieser Nummer` };
+  }
+  bs.aktWurferIdx++;
+  renderBusBauen();
+}
+
+function bestaetigeBusBauen() {
+  const bs = busBauenState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === bs.spielId);
+  const verlierer = bs.spieler.filter(p => bs.zuweisung[p] !== bs.gewinnerBus);
+  if (!verlierer.length) return;
+
+  if (aktiveSession) {
+    verlierer.forEach(name => addSpieleStrafe(name, 1.00, `Verl. Spiel (${spiel.name})`));
+    saveLiveSession();
+    if (document.getElementById('page-kegeln').classList.contains('active')) renderKgMatrix();
+  } else {
+    const batch = db.batch();
+    verlierer.forEach(name => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: name, kategorie: 'Verl. Spiel',
+        notiz: `${spiel.name} (Bus ${bs.gewinnerBus} gewann)`,
+        betrag: 1.00, datum: today(), bezahlt: false, createdAt: Date.now()
+      });
+    });
+    batch.commit();
+  }
+  db.collection('spielergebnisse').add({
+    spiel: spiel.name, datum: today(),
+    gewinnerBus: bs.gewinnerBus,
+    zuweisung: bs.zuweisung, verlierer, createdAt: Date.now()
+  });
+  busBauenState = null;
+  renderSpieleListe();
+  alert(`✅ ${verlierer.join(', ')} bekommen je 1× Verl. Spiel${aktiveSession?' in der Live-Session':''}.`);
+}
+
+
+// ---- MITEINANDER ----
+let miteinanderState = null;
+
+function starteMiteinander(spielId) {
+  const spieler = getAktiveSpieler().map(m => m.name);
+  // Shuffle
+  const gemischt = [...spieler].sort(() => Math.random() - .5);
+  miteinanderState = {
+    spielId,
+    spieler: gemischt,
+    anzahlVerlierer: vorauswahlVerlierer[spielId] || 1,
+    runden: gemischt.length,
+    aktuelleRunde: 1,
+    aktuellerIdx: 0,
+    wurfeProRunde: {},
+    punkte: Object.fromEntries(gemischt.map(n => [n, 0])),
+    phase: 'wurf'
+  };
+  const container = document.getElementById('spiele-liste');
+  renderMiteinander(container);
+}
+
+function renderMiteinander(container) {
+  if (!container) container = document.getElementById('spiele-liste');
+  const ms = miteinanderState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === ms.spielId);
+
+  if (ms.phase === 'wurf') {
+    const spieler = ms.spieler[ms.aktuellerIdx];
+    const rundeWuerfe = ms.wurfeProRunde[ms.aktuelleRunde] || {};
+    const geworfenVon = Object.entries(rundeWuerfe);
+
+    const zahlenBtns = [1,2,3,4,5,6,7,8,9].map(n =>
+      `<button onclick="miteinanderWurf(${n})"
+        style="padding:10px 4px;border-radius:8px;border:2px solid var(--primary);background:#dbeafe;
+               color:#1d4ed8;font-weight:800;font-size:1rem;flex:1;cursor:pointer">${n}</button>`
+    ).join('');
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+        <button class="btn btn-ghost btn-sm" onclick="miteinanderState=null;renderSpieleListe()">✕</button>
+      </div>
+      <div style="background:var(--bg);border-radius:8px;padding:.5rem .75rem;margin-bottom:.75rem;display:flex;justify-content:space-between;font-size:.82rem;font-weight:600">
+        <span>Runde ${ms.aktuelleRunde} / ${ms.runden}</span>
+        <span>Spieler ${ms.aktuellerIdx + 1} / ${ms.spieler.length}</span>
+      </div>
+
+      <!-- Bisherige Würfe dieser Runde -->
+      ${geworfenVon.length > 0 ? `
+      <div style="margin-bottom:.75rem">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.35rem">Bereits geworfen:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.3rem">
+          ${geworfenVon.map(([name, zahl]) =>
+            `<span style="background:${zahl===0?'var(--bg)':'#dbeafe'};border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:.82rem;font-weight:600">${name}: ${zahl===0?'💨':zahl}</span>`
+          ).join('')}
+        </div>
+      </div>` : ''}
+
+      <!-- Aktueller Spieler -->
+      <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:white;border-radius:10px;padding:1rem;text-align:center;margin-bottom:.75rem">
+        <div style="font-size:.72rem;opacity:.8;margin-bottom:.25rem">JETZT WIRFT</div>
+        <div style="font-size:1.4rem;font-weight:800">${spieler}</div>
+      </div>
+
+      <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.35rem">Geworfene Zahl tippen:</div>
+      <div style="display:flex;gap:.3rem">${zahlenBtns}</div>
+      <button onclick="miteinanderWurf(0)" style="margin-top:.5rem;width:100%;padding:10px;border-radius:8px;border:2px solid #f59e0b;background:#fef3c7;color:#b45309;font-weight:800;font-size:.95rem;cursor:pointer;">
+        💨 Pumpe (0 Punkte)
+      </button>`;
+  }
+
+  if (ms.phase === 'rundenauswertung') {
+    const rundeWuerfe = ms.wurfeProRunde[ms.aktuelleRunde];
+    // Gruppiere nach Zahl
+    const gruppen = {};
+    Object.entries(rundeWuerfe).forEach(([name, zahl]) => {
+      if (!gruppen[zahl]) gruppen[zahl] = [];
+      gruppen[zahl].push(name);
+    });
+
+    const rundenPunkte = {};
+    Object.entries(gruppen).forEach(([zahl, spieler]) => {
+      const z = parseInt(zahl);
+      const punkte = z === 0 ? 0 : z * spieler.length;
+      spieler.forEach(n => { rundenPunkte[n] = punkte; });
+    });
+
+    const auswertungRows = Object.entries(gruppen).map(([zahl, spieler]) => {
+      const z = parseInt(zahl);
+      const punkte = z === 0 ? 0 : z * spieler.length;
+      const istPartner = spieler.length > 1;
+      return `<div style="background:${istPartner?'#dcfce7':z===0?'var(--bg)':'#eff6ff'};border-radius:8px;padding:.5rem .75rem;margin-bottom:.35rem;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:600;font-size:.9rem">${spieler.join(' + ')} ${istPartner?'🤝':z===0?'💨':''}</span>
+        <span style="font-weight:800;color:${z===0?'var(--text-muted)':'var(--success)'}">${z===0?'—':'+'+punkte}</span>
+      </div>`;
+    }).join('');
+
+    const istLetzteRunde = ms.aktuelleRunde >= ms.runden;
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Runde ${ms.aktuelleRunde} Ergebnis</h3>
+        <button class="btn btn-ghost btn-sm" onclick="miteinanderState=null;renderSpieleListe()">✕</button>
+      </div>
+      <div style="margin-bottom:.75rem">${auswertungRows}</div>
+
+      <!-- Zwischenstand -->
+      <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.35rem">Zwischenstand:</div>
+      ${ms.spieler.slice().sort((a,b) => ms.punkte[b]-ms.punkte[a]).map((name, i) =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem .5rem;border-bottom:1px solid var(--border)">
+          <span style="font-weight:600;font-size:.88rem">${i+1}. ${name}</span>
+          <span style="font-weight:800;color:var(--primary)">${ms.punkte[name]} Pkt</span>
+        </div>`
+      ).join('')}
+
+      <button class="btn btn-primary btn-full" style="margin-top:1rem" onclick="miteinanderNaechsteRunde()">
+        ${istLetzteRunde ? '🏆 Ergebnis anzeigen' : '▶ Nächste Runde'}
+      </button>`;
+
+    // Punkte werden in miteinanderNaechsteRunde eingetragen (nicht hier, um Doppelzählung zu vermeiden)
+    ms._rundenPunkteAusstehend = rundenPunkte;
+  }
+
+  if (ms.phase === 'ergebnis') {
+    const rangliste = ms.spieler.slice().sort((a,b) => ms.punkte[b]-ms.punkte[a]);
+    const anzahl = ms.anzahlVerlierer;
+    const verlierer = rangliste.slice(rangliste.length - anzahl);
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Endergebnis</h3>
+        <button class="btn btn-ghost btn-sm" onclick="miteinanderState=null;renderSpieleListe()">✕</button>
+      </div>
+      ${rangliste.map((name, i) => {
+        const istSieger = i === 0;
+        const istVerlierer = verlierer.includes(name);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem .75rem;border-radius:8px;margin-bottom:.35rem;background:${istSieger?'#dcfce7':istVerlierer?'#fee2e2':'var(--bg)'}">
+          <span style="font-weight:700">${istSieger?'🏆':istVerlierer?'😬':'  '} ${i+1}. ${name}</span>
+          <span style="font-weight:800;font-size:1.1rem;color:${istSieger?'var(--success)':istVerlierer?'var(--danger)':'var(--text)'}">${ms.punkte[name]} Pkt</span>
+        </div>`;
+      }).join('')}
+      <div style="background:#fee2e2;border-radius:8px;padding:.75rem;margin:1rem 0;font-size:.875rem">
+        <strong>${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel</strong>
+      </div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="bestaetigeMiteinanderErgebnis()">✅ Strafen eintragen</button>
+        <button class="btn btn-ghost" onclick="miteinanderState=null;renderSpieleListe()">Fertig</button>
+      </div>`;
+  }
+}
+
+function miteinanderWurf(zahl) {
+  const ms = miteinanderState;
+  if (!ms.wurfeProRunde[ms.aktuelleRunde]) ms.wurfeProRunde[ms.aktuelleRunde] = {};
+  ms.wurfeProRunde[ms.aktuelleRunde][ms.spieler[ms.aktuellerIdx]] = zahl;
+  ms.aktuellerIdx++;
+
+  if (ms.aktuellerIdx >= ms.spieler.length) {
+    // Alle haben geworfen → Rundenauswertung
+    ms.phase = 'rundenauswertung';
+  }
+  renderMiteinander();
+}
+
+function miteinanderNaechsteRunde() {
+  const ms = miteinanderState;
+  // Ausstehende Punkte eintragen
+  if (ms._rundenPunkteAusstehend) {
+    Object.entries(ms._rundenPunkteAusstehend).forEach(([name, p]) => { ms.punkte[name] += p; });
+    ms._rundenPunkteAusstehend = null;
+  }
+  if (ms.aktuelleRunde >= ms.runden) {
+    ms.phase = 'ergebnis';
+  } else {
+    ms.aktuelleRunde++;
+    ms.aktuellerIdx = 0;
+    ms.phase = 'wurf';
+  }
+  renderMiteinander();
+}
+
+function bestaetigeMiteinanderErgebnis() {
+  const ms = miteinanderState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === ms.spielId);
+  const rangliste = ms.spieler.slice().sort((a,b) => ms.punkte[b]-ms.punkte[a]);
+  const verlierer = rangliste.slice(rangliste.length - ms.anzahlVerlierer);
+  if (!verlierer.length) return;
+
+  if (aktiveSession) {
+    verlierer.forEach(name => addSpieleStrafe(name, 1.00, `Verl. Spiel (${spiel.name})`));
+    saveLiveSession();
+    if (document.getElementById('page-kegeln').classList.contains('active')) renderKgMatrix();
+  } else {
+    const batch = db.batch();
+    verlierer.forEach(name => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: name, kategorie: 'Verl. Spiel',
+        notiz: `${spiel.name} (${ms.punkte[name]} Pkt)`,
+        betrag: 1.00, datum: today(), bezahlt: false, createdAt: Date.now()
+      });
+    });
+    batch.commit();
+  }
+
+  db.collection('spielergebnisse').add({
+    spiel: spiel.name, datum: today(),
+    spieler: ms.spieler, punkte: ms.punkte,
+    verlierer, createdAt: Date.now()
+  });
+
+  miteinanderState = null;
+  renderSpieleListe();
+  alert(`✅ ${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel${aktiveSession ? ' in der Live-Session' : ''}.`);
+}
+
+
+// ---- BIS 100 ----
+const B100_SCHNAPSZAHLEN = new Set([11,22,33,44,55,66,77,88,99]);
+
+function starteBis100() {
+  const ts = teamSpielState;
+  ts.phase = 'bis100';
+  ts.aktivesTeam = 'A';
+  ts.punkteA = 0;
+  ts.punkteB = 0;
+  ts.letzterZug = null;
+  renderTeamSpiel();
+}
+
+function renderBis100() {
+  const ts = teamSpielState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === ts.spielId);
+  const container = document.getElementById('spiele-liste');
+  const aktiv = ts.aktivesTeam;
+
+  const zahlenBtns = [1,2,3,4,5,6,7,8,9].map(n =>
+    `<button onclick="bis100Wurf(${n})"
+      style="padding:10px 4px;border-radius:8px;border:2px solid ${aktiv==='A'?'#3b82f6':'#ef4444'};
+             background:${aktiv==='A'?'#dbeafe':'#fee2e2'};
+             color:${aktiv==='A'?'#1d4ed8':'#b91c1c'};
+             font-weight:800;font-size:1rem;flex:1;cursor:pointer">${n}</button>`
+  ).join('');
+
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+      <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+    </div>
+
+    <!-- Scoreboard -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+      ${['A','B'].map(t => {
+        const punkte = ts['punkte'+t];
+        const istAktiv = aktiv === t;
+        const progress = Math.min(punkte / 100 * 100, 100);
+        return `<div style="background:${istAktiv?`linear-gradient(135deg,${t==='A'?'#1e3a5f,#2563eb':'#7f1d1d,#dc2626'})`:'var(--bg)'};color:${istAktiv?'white':'var(--text)'};border-radius:10px;padding:.75rem;text-align:center">
+          <div style="font-size:.72rem;font-weight:700;opacity:${istAktiv?'.8':'1'};margin-bottom:.25rem">TEAM ${t} ${istAktiv?'▶':''}</div>
+          <div style="font-weight:800;font-size:2rem;line-height:1">${punkte}</div>
+          <div style="font-size:.65rem;margin-bottom:.3rem;opacity:.75">Punkte</div>
+          <div style="background:rgba(0,0,0,.15);border-radius:4px;height:6px;overflow:hidden">
+            <div style="background:${istAktiv?'rgba(255,255,255,.7)':'var(--primary)'};width:${progress}%;height:100%;border-radius:4px;transition:width .3s"></div>
+          </div>
+          <div style="font-size:.65rem;margin-top:.25rem;opacity:.7">${ts['team'+t].join(', ')}</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div style="background:${aktiv==='A'?'#eff6ff':'#fff5f5'};border-radius:8px;padding:.5rem .75rem;margin-bottom:.75rem;font-size:.9rem;font-weight:700;color:${aktiv==='A'?'var(--primary)':'var(--danger)'}">
+      ${aktiv==='A'?'🔵':'🔴'} Team ${aktiv} wirft
+    </div>
+
+    <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.35rem">Geworfene Zahl tippen:</div>
+    <div style="display:flex;gap:.3rem">${zahlenBtns}</div>
+    <button onclick="bis100Pumpe()" style="margin-top:.5rem;width:100%;padding:10px;border-radius:8px;border:2px solid #f59e0b;background:#fef3c7;color:#b45309;font-weight:800;font-size:.95rem;cursor:pointer;">
+      💨 Pumpe (0 Punkte)
+    </button>
+    ${ts.letzterZug ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.5rem;text-align:center;background:var(--bg);border-radius:6px;padding:.3rem">${ts.letzterZug}</div>` : ''}`;
+}
+
+function bis100Wurf(zahl) {
+  const ts = teamSpielState;
+  const aktiv = ts.aktivesTeam;
+  const key = 'punkte' + aktiv;
+  const neu = ts[key] + zahl;
+
+  if (B100_SCHNAPSZAHLEN.has(neu)) {
+    ts[key] = 0;
+    ts.letzterZug = `Team ${aktiv}: ${neu} — Schnapszahl! Zurück auf 0 💥`;
+  } else if (neu >= 100) {
+    ts[key] = neu;
+    ts.phase = 'ergebnis';
+    ts.gewinner = aktiv;
+    ts.verliererSpieler = aktiv === 'A' ? ts.teamB : ts.teamA;
+    renderTeamSpiel();
+    return;
+  } else {
+    ts[key] = neu;
+    ts.letzterZug = `Team ${aktiv}: +${zahl} → ${neu} Punkte`;
+  }
+
+  ts.aktivesTeam = aktiv === 'A' ? 'B' : 'A';
+  renderTeamSpiel();
+}
+
+function bis100Pumpe() {
+  const ts = teamSpielState;
+  const aktiv = ts.aktivesTeam;
+  ts.letzterZug = `Team ${aktiv}: Pumpe — 0 Punkte`;
+  ts.aktivesTeam = aktiv === 'A' ? 'B' : 'A';
+  renderTeamSpiel();
+}
+
+
+// ---- BERG & TAL ----
+let btState = null;
+
+function starteBergTal(spielId) {
+  const spieler = getAktiveSpieler().map(m => m.name);
+  const gemischt = [...spieler].sort(() => Math.random() - .5);
+  btState = {
+    spielId,
+    anzahlVerlierer: vorauswahlVerlierer[spielId] || 1,
+    spieler: gemischt,
+    wuerfe: Object.fromEntries(gemischt.map(n => [n, []])),
+    aktuellerIdx: 0,
+    aktuelleRunde: 1,  // throw round 1–10
+    phase: 'reihenfolge'
+  };
+  renderBergTal();
+}
+
+function btWurf(zahl) {
+  const bs = btState;
+  const spieler = bs.spieler[bs.aktuellerIdx];
+  bs.wuerfe[spieler].push(zahl);
+
+  bs.aktuellerIdx++;
+  if (bs.aktuellerIdx >= bs.spieler.length) {
+    bs.aktuellerIdx = 0;
+    bs.aktuelleRunde++;
+    if (bs.aktuelleRunde > 10) bs.phase = 'ergebnis';
+  }
+  renderBergTal();
+}
+
+function btPunkte(spielerName) {
+  const wuerfe = (btState.wuerfe[spielerName] || []);
+  return wuerfe.reduce((sum, w, i) => {
+    if (i < 5) return sum + (w === 'pumpe' ? 0 : w);   // Berg: add
+    else        return sum - (w === 'pumpe' ? 10 : w);  // Tal: subtract (Pumpe = -10)
+  }, 0);
+}
+
+function btWurfLabel(w) { return w === 'pumpe' ? '0' : w; }
+
+function btStrafenEintragen() {
+  const bs = btState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === bs.spielId);
+  const sorted = [...bs.spieler].sort((a, b) => btPunkte(a) - btPunkte(b));
+  sorted.slice(0, bs.anzahlVerlierer).forEach(v => {
+    const pts = btPunkte(v);
+    addSpieleStrafe(v, 0, `${spiel.name} — ${pts >= 0 ? '+' : ''}${pts} Punkte`);
+  });
+  btState = null;
+  renderSpieleListe();
+}
+
+function renderBergTal() {
+  const container = document.getElementById('spiele-liste');
+  if (!container) return;
+  const bs = btState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === bs.spielId);
+
+  // ── REIHENFOLGE ────────────────────────────────────────────────
+  if (bs.phase === 'reihenfolge') {
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+          <button class="btn btn-ghost btn-sm" onclick="btState=null;renderSpieleListe()">← Zurück</button>
+        </div>
+        <div style="font-size:.85rem;font-weight:700;color:var(--text-muted);margin-bottom:.6rem">🎲 Zufällige Reihenfolge</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem;margin-bottom:1.5rem">
+          ${bs.spieler.map((name, i) => `
+            <div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;background:var(--bg-page);border-radius:8px">
+              <span style="font-weight:800;font-size:.85rem;color:var(--primary);min-width:1.5rem">${i+1}.</span>
+              <span style="font-weight:600">${name}</span>
+            </div>
+          `).join('')}
+        </div>
+        <button class="btn btn-primary" onclick="btState.phase='spiel';renderBergTal()">▶ Los geht's</button>
+      </div>`;
+    return;
+  }
+
+  // ── SPIEL ──────────────────────────────────────────────────────
+  if (bs.phase === 'spiel') {
+    const spieler = bs.spieler[bs.aktuellerIdx];
+    const runde = bs.aktuelleRunde;         // 1–10
+    const istBerg = runde <= 5;
+    const wurfImAbschnitt = istBerg ? runde : runde - 5;  // 1–5 within Berg or Tal
+    const meineWuerfe = bs.wuerfe[spieler];
+    const bergWuerfe = meineWuerfe.slice(0, 5);
+    const talWuerfe  = meineWuerfe.slice(5, 10);
+    const aktuellePunkte = btPunkte(spieler);
+    const ptsColor = aktuellePunkte < 0 ? 'var(--danger)' : aktuellePunkte > 0 ? '#16a34a' : 'var(--text-muted)';
+
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.875rem">
+          <h3 style="font-size:.9rem;font-weight:800">${spiel.emoji} ${spiel.name} — ${istBerg?'⛰️ Berg':'🏔️ Tal'} ${wurfImAbschnitt}/5</h3>
+          <button class="btn btn-ghost btn-sm" onclick="btState=null;renderSpieleListe()">✕</button>
+        </div>
+
+        <!-- Player chips: show who already threw this round vs still to go -->
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.875rem">
+          ${bs.spieler.map((name, i) => {
+            const isActive = i === bs.aktuellerIdx;
+            const threwThisRound = bs.wuerfe[name].length >= runde; // already threw in this round
+            const lastW = threwThisRound ? bs.wuerfe[name][runde-1] : null;
+            return `<div style="padding:3px 8px;border-radius:16px;font-size:.78rem;font-weight:${isActive?'800':'600'};
+              background:${isActive?'var(--primary)':threwThisRound?'#d1fae5':'var(--bg-page)'};
+              color:${isActive?'white':threwThisRound?'#065f46':'var(--text-secondary)'};
+              border:1px solid ${isActive?'var(--primary)':threwThisRound?'#6ee7b7':'var(--border)'}">${name.split(' ').pop()}${threwThisRound?' '+btWurfLabel(lastW):''}</div>`;
+          }).join('')}
+        </div>
+
+        <!-- Phase banner -->
+        <div style="padding:.8rem .9rem;border-radius:10px;margin-bottom:.875rem;
+          background:${istBerg?'#eff6ff':'#fff7ed'};border:2px solid ${istBerg?'var(--primary)':'#f97316'}">
+          <div style="font-size:.7rem;font-weight:700;letter-spacing:.05em;color:${istBerg?'var(--primary)':'#ea580c'};margin-bottom:.3rem">
+            ${istBerg ? '⛰️ BERG — so hoch wie möglich!' : '🏔️ TAL — so niedrig wie möglich!'}
+          </div>
+          <div style="font-size:1.4rem;font-weight:900;margin-bottom:.2rem">${spieler}</div>
+          <div style="font-size:.83rem;font-weight:700;color:${ptsColor}">
+            Punkte bisher: ${aktuellePunkte >= 0 ? '+' : ''}${aktuellePunkte}
+          </div>
+        </div>
+
+        <!-- Throw history grid (previous rounds) -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.875rem">
+          <div style="background:#eff6ff;border-radius:8px;padding:.5rem .6rem">
+            <div style="font-size:.7rem;font-weight:700;color:var(--primary);margin-bottom:.35rem">⛰️ BERG +</div>
+            <div style="display:flex;gap:.25rem">
+              ${[0,1,2,3,4].map(i => {
+                const w = bergWuerfe[i];
+                return `<span style="width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;
+                  font-size:.82rem;font-weight:700;
+                  background:${w!==undefined?'var(--primary)':'var(--bg-page)'};
+                  color:${w!==undefined?'white':'var(--text-muted)'}">
+                  ${w!==undefined ? btWurfLabel(w) : '·'}
+                </span>`;
+              }).join('')}
+            </div>
+          </div>
+          <div style="background:#fff7ed;border-radius:8px;padding:.5rem .6rem">
+            <div style="font-size:.7rem;font-weight:700;color:#ea580c;margin-bottom:.35rem">🏔️ TAL −</div>
+            <div style="display:flex;gap:.25rem">
+              ${[0,1,2,3,4].map(i => {
+                const w = talWuerfe[i];
+                return `<span style="width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;
+                  font-size:.82rem;font-weight:700;
+                  background:${w!==undefined?'#f97316':'var(--bg-page)'};
+                  color:${w!==undefined?'white':'var(--text-muted)'}">
+                  ${w!==undefined ? btWurfLabel(w) : '·'}
+                </span>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+
+        <!-- Throw buttons -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.35rem">
+          ${[1,2,3,4,5,6,7,8,9].map(n => {
+            const bg = istBerg ? 'var(--primary)' : '#f97316';
+            return `<button style="background:${bg};color:white;border:none;border-radius:8px;font-size:1.15rem;padding:.55rem 0;font-weight:800;cursor:pointer" onclick="btWurf(${n})">${n}</button>`;
+          }).join('')}
+          <button class="btn btn-ghost" style="grid-column:span 5;font-weight:700;color:var(--text-secondary)" onclick="btWurf('pumpe')">
+            0 — Pumpe &nbsp;${istBerg ? '<span style="color:var(--text-muted)">(+0)</span>' : '<span style="color:var(--danger);font-weight:800">(−10 ⚠️)</span>'}
+          </button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── ERGEBNIS ───────────────────────────────────────────────────
+  if (bs.phase === 'ergebnis') {
+    const sorted = [...bs.spieler].sort((a, b) => btPunkte(a) - btPunkte(b)); // lowest first = losers
+    const verlierer = sorted.slice(0, bs.anzahlVerlierer);
+
+    container.innerHTML = `
+      <div class="card">
+        <h3 style="font-size:.95rem;font-weight:800;margin-bottom:1rem">${spiel.emoji} ${spiel.name} — Ergebnis</h3>
+
+        <div style="margin-bottom:1.25rem">
+          ${sorted.map((p, i) => {
+            const pts = btPunkte(p);
+            const isVerlierer = i < bs.anzahlVerlierer;
+            const isGewinner = i === sorted.length - 1 && sorted.length > 1;
+            return `<div style="display:flex;align-items:center;gap:.75rem;padding:.55rem .75rem;margin-bottom:.35rem;border-radius:8px;background:${isVerlierer?'#fff1f2':'var(--bg-page)'}">
+              <span style="font-weight:800;font-size:.8rem;color:var(--text-muted);min-width:1.5rem">#${i+1}</span>
+              <span style="flex:1;font-weight:700">${p}</span>
+              <span style="font-size:.95rem;font-weight:800;color:${pts<0?'var(--danger)':pts>0?'#16a34a':'var(--text-muted)'}">${pts>=0?'+':''}${pts}</span>
+              <span>${isVerlierer?'💀':isGewinner?'🏆':''}</span>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <details style="margin-bottom:1.25rem">
+          <summary style="cursor:pointer;font-size:.8rem;font-weight:700;color:var(--text-muted)">📊 Detailauswertung</summary>
+          <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.4rem">
+            ${bs.spieler.map(p => {
+              const bW = bs.wuerfe[p].slice(0,5);
+              const tW = bs.wuerfe[p].slice(5,10);
+              const bSum = bW.reduce((s,w) => s+(w==='pumpe'?0:w), 0);
+              const tSum = -tW.reduce((s,w) => s+(w==='pumpe'?10:w), 0);
+              return `<div style="background:var(--bg-page);border-radius:8px;padding:.5rem .65rem">
+                <div style="font-weight:700;font-size:.85rem;margin-bottom:.25rem">${p}</div>
+                <div style="font-size:.78rem;color:var(--text-muted)">
+                  ⛰️ ${bW.map(w=>btWurfLabel(w)).join(' · ')} = <b style="color:var(--primary)">+${bSum}</b>
+                  &nbsp;·&nbsp;
+                  🏔️ ${tW.map(w=>btWurfLabel(w)).join(' · ')} = <b style="color:#ea580c">${tSum}</b>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </details>
+
+        <div style="background:#fff1f2;border-radius:8px;padding:.75rem;margin-bottom:1.25rem">
+          <div style="font-size:.78rem;font-weight:700;color:var(--danger);margin-bottom:.4rem">💀 Verlierer — ${spiel.strafKategorie}</div>
+          ${verlierer.map(v => { const pts=btPunkte(v); return `<div style="font-size:.88rem;font-weight:600;margin-bottom:.2rem">${v} (${pts>=0?'+':''}${pts} Punkte)</div>`; }).join('')}
+        </div>
+
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-ghost" style="flex:1" onclick="btState=null;renderSpieleListe()">← Zurück</button>
+          <button class="btn btn-primary" style="flex:1" onclick="btStrafenEintragen()">💶 Strafe eintragen</button>
+        </div>
+      </div>`;
+    return;
+  }
+}
+
+// ---- RUSSISCH ROULETTE ----
+let rrState = null;
+
+function starteRussischRoulette(spielId) {
+  rrState = { spielId, phase: 'setup', lebenAnzahl: 3 };
+  renderRussischRoulette();
+}
+
+function rrSetLeben(n) {
+  rrState.lebenAnzahl = n;
+  document.querySelectorAll('[id^="rr-leben-"]').forEach(btn => {
+    btn.className = `btn btn-sm ${parseInt(btn.id.replace('rr-leben-', '')) === n ? 'btn-primary' : 'btn-ghost'}`;
+  });
+}
+
+function rrStartGame() {
+  const rs = rrState;
+  const spieler = getAktiveSpieler().map(m => m.name);
+  const gemischt = [...spieler].sort(() => Math.random() - .5);
+  rs.spieler = gemischt;
+  rs.lebenStand = Object.fromEntries(gemischt.map(n => [n, rs.lebenAnzahl]));
+  rs.aktuellerWerfer = gemischt[Math.floor(Math.random() * gemischt.length)];
+  rs.letzterWurf = null;
+  rs.letzterGetroffen = null;
+  rs.phase = 'spiel';
+  renderRussischRoulette();
+}
+
+function rrWurf(zahl) {
+  const rs = rrState;
+  const alive = rs.spieler.filter(p => rs.lebenStand[p] > 0);
+  const werferIdx = alive.indexOf(rs.aktuellerWerfer);
+  const hitIdx = (werferIdx + zahl) % alive.length;
+  const hitPlayer = alive[hitIdx];
+
+  rs.letzterWurf = zahl;
+  rs.letzterGetroffen = hitPlayer;
+  rs.lebenStand[hitPlayer]--;
+
+  const newAlive = rs.spieler.filter(p => rs.lebenStand[p] > 0);
+
+  if (newAlive.length <= 1) {
+    rs.phase = 'ergebnis';
+  } else if (rs.lebenStand[hitPlayer] <= 0) {
+    // Player just died → next alive in circle order after their position
+    const deadIdx = rs.spieler.indexOf(hitPlayer);
+    for (let i = 1; i <= rs.spieler.length; i++) {
+      const candidate = rs.spieler[(deadIdx + i) % rs.spieler.length];
+      if (rs.lebenStand[candidate] > 0) { rs.aktuellerWerfer = candidate; break; }
+    }
+  } else {
+    // Hit player still alive → they throw next
+    rs.aktuellerWerfer = hitPlayer;
+  }
+
+  renderRussischRoulette();
+}
+
+function rrLebenDots(current, max) {
+  let s = '';
+  for (let i = 0; i < max; i++) {
+    s += `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:2px;background:${i < current ? '#ef4444' : '#e5e7eb'}"></span>`;
+  }
+  return s;
+}
+
+function rrStrafenEintragen() {
+  const rs = rrState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === rs.spielId);
+  const gewinner = rs.spieler.find(p => rs.lebenStand[p] > 0);
+  rs.spieler.filter(p => p !== gewinner).forEach(v => {
+    addSpieleStrafe(v, 0, `${spiel.name} — Ausgeschieden`);
+  });
+  rrState = null;
+  renderSpieleListe();
+}
+
+function renderRussischRoulette() {
+  const container = document.getElementById('spiele-liste');
+  if (!container) return;
+  const rs = rrState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === rs.spielId);
+
+  // ── SETUP ──────────────────────────────────────────────────────
+  if (rs.phase === 'setup') {
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+          <button class="btn btn-ghost btn-sm" onclick="rrState=null;renderSpieleListe()">← Zurück</button>
+        </div>
+        <div style="margin-bottom:1.75rem">
+          <div style="font-size:.85rem;font-weight:700;color:var(--text-muted);margin-bottom:.6rem">❤️ Leben pro Spieler</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            ${[1,2,3,4,5].map(n => `<button id="rr-leben-${n}" class="btn btn-sm ${n===rs.lebenAnzahl?'btn-primary':'btn-ghost'}" onclick="rrSetLeben(${n})">${n}</button>`).join('')}
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="rrStartGame()">🎲 Los auslosen &amp; starten</button>
+      </div>`;
+    return;
+  }
+
+  // ── SPIEL ──────────────────────────────────────────────────────
+  if (rs.phase === 'spiel') {
+    const alive = rs.spieler.filter(p => rs.lebenStand[p] > 0);
+    const max = rs.lebenAnzahl;
+
+    const hitInfo = rs.letzterGetroffen !== null ? (() => {
+      const tot = rs.lebenStand[rs.letzterGetroffen] <= 0;
+      return `<div style="background:${tot?'#fff1f2':'#fef9c3'};border-radius:8px;padding:.45rem .7rem;margin-bottom:.875rem;font-size:.83rem">
+        <b>${rs.letzterGetroffen.split(' ').pop()}</b> getroffen (${rs.letzterWurf === 0 ? 'Pumpe' : rs.letzterWurf + ' Schritte'})
+        ${tot ? ' — <span style="color:var(--danger);font-weight:700">💀 Ausgeschieden!</span>' : ` — noch ${rs.lebenStand[rs.letzterGetroffen]} Leben`}
+      </div>`;
+    })() : '';
+
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.875rem">
+          <h3 style="font-size:.9rem;font-weight:800">${spiel.emoji} ${spiel.name} — ${alive.length} am Leben</h3>
+          <button class="btn btn-ghost btn-sm" onclick="rrState=null;renderSpieleListe()">✕</button>
+        </div>
+
+        ${hitInfo}
+
+        <!-- Player circle -->
+        <div style="margin-bottom:1rem">
+          ${rs.spieler.map(p => {
+            const dead = rs.lebenStand[p] <= 0;
+            const isWerfer = p === rs.aktuellerWerfer;
+            return `<div style="display:flex;align-items:center;gap:.6rem;padding:.45rem .65rem;margin-bottom:.3rem;border-radius:8px;
+              background:${dead?'var(--bg-page)':isWerfer?'#eff6ff':'var(--bg-page)'};
+              border:${isWerfer?'2px solid var(--primary)':'1px solid var(--border)'};
+              opacity:${dead?'.45':'1'}">
+              <span style="font-size:.85rem;width:1.2rem">${dead?'💀':'🔴'}</span>
+              <span style="flex:1;font-weight:${isWerfer?'800':'600'};font-size:.87rem">${p}</span>
+              <span style="display:flex;align-items:center">${rrLebenDots(rs.lebenStand[p], max)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <!-- Current thrower -->
+        <div style="text-align:center;padding:.8rem;background:#eff6ff;border-radius:10px;margin-bottom:.875rem">
+          <div style="font-size:.7rem;color:var(--primary);font-weight:700;letter-spacing:.05em;margin-bottom:.25rem">WIRFT JETZT</div>
+          <div style="font-size:1.4rem;font-weight:900">${rs.aktuellerWerfer}</div>
+        </div>
+
+        <!-- Throw buttons -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.35rem">
+          ${[1,2,3,4,5,6,7,8,9].map(n => `
+            <button class="btn btn-primary" style="font-size:1.15rem;padding:.55rem 0;font-weight:800" onclick="rrWurf(${n})">${n}</button>
+          `).join('')}
+          <button class="btn btn-ghost" style="grid-column:span 5;font-weight:700;color:var(--text-secondary)" onclick="rrWurf(0)">0 (Pumpe)</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── ERGEBNIS ───────────────────────────────────────────────────
+  if (rs.phase === 'ergebnis') {
+    const gewinner = rs.spieler.find(p => rs.lebenStand[p] > 0);
+    const verlierer = rs.spieler.filter(p => p !== gewinner);
+    container.innerHTML = `
+      <div class="card">
+        <h3 style="font-size:.95rem;font-weight:800;margin-bottom:1rem">${spiel.emoji} ${spiel.name} — Ergebnis</h3>
+
+        <div style="text-align:center;padding:1.1rem;background:#f0fdf4;border-radius:10px;margin-bottom:1rem">
+          <div style="font-size:2rem;margin-bottom:.25rem">🏆</div>
+          <div style="font-size:.7rem;color:#065f46;font-weight:700;letter-spacing:.05em;margin-bottom:.3rem">LETZTER ÜBERLEBENDER</div>
+          <div style="font-size:1.3rem;font-weight:900">${gewinner}</div>
+        </div>
+
+        <div style="background:#fff1f2;border-radius:8px;padding:.75rem;margin-bottom:1.25rem">
+          <div style="font-size:.78rem;font-weight:700;color:var(--danger);margin-bottom:.4rem">💀 Ausgeschieden — ${spiel.strafKategorie}</div>
+          ${verlierer.map(v => `<div style="font-size:.88rem;font-weight:600;margin-bottom:.2rem">${v}</div>`).join('')}
+        </div>
+
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-ghost" style="flex:1" onclick="rrState=null;renderSpieleListe()">← Zurück</button>
+          <button class="btn btn-primary" style="flex:1" onclick="rrStrafenEintragen()">💶 Strafen eintragen</button>
+        </div>
+      </div>`;
+    return;
+  }
+}
+
+// ---- WIE DU MIR SO ICH DIR ----
+let wdmState = null;
+
+function starteWieDuMir(spielId) {
+  wdmState = { spielId, phase: 'setup', anzahlRunden: 5, anzahlVerlierer: 1 };
+  renderWieDuMir();
+}
+
+function wdmSetRunden(n) {
+  wdmState.anzahlRunden = n;
+  document.querySelectorAll('[id^="wdm-runden-"]').forEach(btn => {
+    btn.className = `btn btn-sm ${parseInt(btn.id.replace('wdm-runden-','')) === n ? 'btn-primary' : 'btn-ghost'}`;
+  });
+}
+
+function wdmSetVerlierer(n) {
+  wdmState.anzahlVerlierer = n;
+  document.querySelectorAll('[id^="wdm-verl-"]').forEach(btn => {
+    btn.className = `btn btn-sm ${parseInt(btn.id.replace('wdm-verl-','')) === n ? 'btn-primary' : 'btn-ghost'}`;
+  });
+}
+
+function wdmStartGame() {
+  const ws = wdmState;
+  const spieler = getAktiveSpieler().map(m => m.name);
+  const gemischt = [...spieler].sort(() => Math.random() - .5);
+  ws.spieler = gemischt;
+  ws.striche = Object.fromEntries(gemischt.map(n => [n, 0]));
+  ws.aktuelleRunde = 1;
+  ws.aktuellerIdx = 0;
+  ws.wurfeRunde = {};
+  ws.rundenNeu = null;
+  ws.phase = 'wurf';
+  renderWieDuMir();
+}
+
+function wdmWurf(zahl) {
+  const ws = wdmState;
+  const spieler = ws.spieler[ws.aktuellerIdx];
+  ws.wurfeRunde[spieler] = zahl; // number 0–9 or 'ungueltig'
+  if (ws.aktuellerIdx < ws.spieler.length - 1) {
+    ws.aktuellerIdx++;
+    renderWieDuMir();
+  } else {
+    wdmAuswertenRunde();
+  }
+}
+
+function wdmAuswertenRunde() {
+  const ws = wdmState;
+  const n = ws.spieler.length;
+  const rundenNeu = Object.fromEntries(ws.spieler.map(p => [p, 0]));
+
+  // Pairwise circular comparisons — skip any pair where a player is ungültig
+  for (let i = 0; i < n; i++) {
+    const a = ws.spieler[i];
+    const b = ws.spieler[(i + 1) % n];
+    const wa = ws.wurfeRunde[a];
+    const wb = ws.wurfeRunde[b];
+    if (wa === 'ungueltig' || wb === 'ungueltig') continue;
+    if (wa < wb) rundenNeu[a]++;
+    else if (wb < wa) rundenNeu[b]++;
+    // equal → nothing
+  }
+
+  // Auto Strich for each ungültig throw
+  for (const p of ws.spieler) {
+    if (ws.wurfeRunde[p] === 'ungueltig') rundenNeu[p]++;
+  }
+
+  for (const p of ws.spieler) ws.striche[p] += rundenNeu[p];
+  ws.rundenNeu = rundenNeu;
+  ws.phase = 'rundenauswertung';
+  renderWieDuMir();
+}
+
+function wdmNaechsteRunde() {
+  const ws = wdmState;
+  ws.aktuelleRunde++;
+  ws.aktuellerIdx = 0;
+  ws.wurfeRunde = {};
+  ws.rundenNeu = null;
+  ws.spieler = ws.spieler.sort(() => Math.random() - .5); // shuffle order each round
+  ws.phase = 'wurf';
+  renderWieDuMir();
+}
+
+function wdmZeigeErgebnis() {
+  wdmState.phase = 'ergebnis';
+  renderWieDuMir();
+}
+
+function wdmStrafenEintragen() {
+  const ws = wdmState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === ws.spielId);
+  const sorted = [...ws.spieler].sort((a, b) => ws.striche[b] - ws.striche[a]);
+  sorted.slice(0, ws.anzahlVerlierer).forEach(v => {
+    addSpieleStrafe(v, 0, `${spiel.name} — ${ws.striche[v]} Strich${ws.striche[v] !== 1 ? 'e' : ''}`);
+  });
+  wdmState = null;
+  renderSpieleListe();
+}
+
+function wdmThrowLabel(w) {
+  if (w === 'ungueltig') return '✗';
+  if (w === 0) return 'Pumpe';
+  return w;
+}
+
+function renderWieDuMir() {
+  const container = document.getElementById('spiele-liste');
+  if (!container) return;
+  const ws = wdmState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === ws.spielId);
+
+  // ── SETUP ──────────────────────────────────────────────────────
+  if (ws.phase === 'setup') {
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
+          <button class="btn btn-ghost btn-sm" onclick="wdmState=null;renderSpieleListe()">← Zurück</button>
+        </div>
+        <div style="margin-bottom:1.25rem">
+          <div style="font-size:.85rem;font-weight:700;color:var(--text-muted);margin-bottom:.6rem">⏱ Anzahl Runden</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            ${[3,5,7,10].map(n => `<button id="wdm-runden-${n}" class="btn btn-sm ${n===ws.anzahlRunden?'btn-primary':'btn-ghost'}" onclick="wdmSetRunden(${n})">${n}</button>`).join('')}
+          </div>
+        </div>
+        <div style="margin-bottom:1.75rem">
+          <div style="font-size:.85rem;font-weight:700;color:var(--text-muted);margin-bottom:.6rem">💀 Verlierer</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            ${[1,2,3,4].map(n => `<button id="wdm-verl-${n}" class="btn btn-sm ${n===ws.anzahlVerlierer?'btn-primary':'btn-ghost'}" onclick="wdmSetVerlierer(${n})">${n}</button>`).join('')}
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="wdmStartGame()">▶ Spiel starten</button>
+      </div>`;
+    return;
+  }
+
+  // ── WURF ───────────────────────────────────────────────────────
+  if (ws.phase === 'wurf') {
+    const spieler = ws.spieler[ws.aktuellerIdx];
+    const n = ws.spieler.length;
+    const vormann = ws.spieler[(ws.aktuellerIdx - 1 + n) % n];
+    const hintmann = ws.spieler[(ws.aktuellerIdx + 1) % n];
+
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.875rem">
+          <h3 style="font-size:.9rem;font-weight:800">${spiel.emoji} Runde ${ws.aktuelleRunde}/${ws.anzahlRunden}</h3>
+          <button class="btn btn-ghost btn-sm" onclick="wdmState=null;renderSpieleListe()">✕</button>
+        </div>
+
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:1rem">
+          ${ws.spieler.map((name, i) => {
+            const w = ws.wurfeRunde[name];
+            const isActive = i === ws.aktuellerIdx;
+            const hasThrown = w !== undefined;
+            return `<div style="padding:3px 9px;border-radius:16px;font-size:.78rem;font-weight:${isActive?'800':'600'};
+              background:${isActive?'var(--primary)':hasThrown?'#d1fae5':'var(--bg-page)'};
+              color:${isActive?'white':hasThrown?'#065f46':'var(--text-secondary)'};
+              border:1px solid ${isActive?'var(--primary)':hasThrown?'#6ee7b7':'var(--border)'}">${name.split(' ').pop()}${hasThrown?' ✓':''}</div>`;
+          }).join('')}
+        </div>
+
+        <div style="text-align:center;padding:.875rem;background:var(--bg-page);border-radius:10px;margin-bottom:1rem">
+          <div style="font-size:.7rem;color:var(--text-muted);font-weight:700;letter-spacing:.05em;margin-bottom:.3rem">AN DER REIHE</div>
+          <div style="font-size:1.5rem;font-weight:900;margin-bottom:.3rem">${spieler}</div>
+          <div style="font-size:.75rem;color:var(--text-muted)">
+            🔴 ${vormann.split(' ').pop()} &nbsp;·&nbsp; ${hintmann.split(' ').pop()} 🔵
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.35rem;margin-bottom:.5rem">
+          ${[1,2,3,4,5,6,7,8,9].map(n => `
+            <button class="btn btn-primary" style="font-size:1.15rem;padding:.55rem 0;font-weight:800" onclick="wdmWurf(${n})">${n}</button>
+          `).join('')}
+          <button class="btn btn-ghost" style="font-weight:700;color:var(--text-secondary)" onclick="wdmWurf(0)">0</button>
+          <button class="btn btn-ghost" style="grid-column:span 4;font-weight:700;color:var(--danger)" onclick="wdmWurf('ungueltig')">✗ Ungültig</button>
+        </div>
+
+        <div style="margin-top:.75rem">
+          <div style="font-size:.7rem;font-weight:700;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.4rem">STRICHE GESAMT</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.3rem">
+            ${ws.spieler.map(name => `
+              <div style="display:flex;justify-content:space-between;padding:4px 8px;background:var(--bg-page);border-radius:6px">
+                <span style="font-size:.82rem;font-weight:600">${name.split(' ').pop()}</span>
+                <span style="font-size:.82rem;color:${ws.striche[name]>0?'var(--danger)':'var(--text-muted)'};font-weight:700">${ws.striche[name]||'—'}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── RUNDENAUSWERTUNG ───────────────────────────────────────────
+  if (ws.phase === 'rundenauswertung') {
+    const n = ws.spieler.length;
+    const vergleiche = [];
+    for (let i = 0; i < n; i++) {
+      const a = ws.spieler[i];
+      const b = ws.spieler[(i + 1) % n];
+      const wa = ws.wurfeRunde[a];
+      const wb = ws.wurfeRunde[b];
+      const ungA = wa === 'ungueltig', ungB = wb === 'ungueltig';
+      let erg, hatStrich = false;
+      if (ungA || ungB) {
+        erg = `<span style="color:var(--text-muted);font-style:italic">übersprungen (Ungültig)</span>`;
+      } else if (wa === wb) {
+        erg = `<span style="color:var(--text-muted)">Gleichstand</span>`;
+      } else if (wa < wb) {
+        erg = `<span style="color:var(--danger);font-weight:700">${a.split(' ').pop()} +1 ❌</span>`; hatStrich = true;
+      } else {
+        erg = `<span style="color:var(--danger);font-weight:700">${b.split(' ').pop()} +1 ❌</span>`; hatStrich = true;
+      }
+      vergleiche.push({ a, b, wa, wb, erg, hatStrich });
+    }
+    const ungueltige = ws.spieler.filter(p => ws.wurfeRunde[p] === 'ungueltig');
+
+    container.innerHTML = `
+      <div class="card">
+        <h3 style="font-size:.95rem;font-weight:800;margin-bottom:1rem">${spiel.emoji} Runde ${ws.aktuelleRunde} — Auswertung</h3>
+
+        <div style="margin-bottom:.875rem">
+          <div style="font-size:.7rem;font-weight:700;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.4rem">VERGLEICHE</div>
+          ${vergleiche.map(v => `
+            <div style="padding:.45rem .65rem;border-radius:8px;margin-bottom:.3rem;background:${v.hatStrich?'#fff1f2':'#f0fdf4'};font-size:.83rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem">
+              <span style="flex:1;font-weight:600">${v.a.split(' ').pop()} <b>${wdmThrowLabel(v.wa)}</b> · ${v.b.split(' ').pop()} <b>${wdmThrowLabel(v.wb)}</b></span>
+              <span>${v.erg}</span>
+            </div>
+          `).join('')}
+        </div>
+
+        ${ungueltige.length ? `
+        <div style="margin-bottom:.875rem">
+          <div style="font-size:.7rem;font-weight:700;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.4rem">UNGÜLTIGE WÜRFE</div>
+          ${ungueltige.map(p => `
+            <div style="padding:.4rem .65rem;border-radius:8px;background:#fff1f2;font-size:.83rem;margin-bottom:.3rem;display:flex;justify-content:space-between">
+              <span>${p.split(' ').pop()} ✗</span>
+              <span style="color:var(--danger);font-weight:700">+1 Strich</span>
+            </div>
+          `).join('')}
+        </div>` : ''}
+
+        <div style="margin-bottom:.875rem">
+          <div style="font-size:.7rem;font-weight:700;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.4rem">NEUE STRICHE</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.3rem">
+            ${ws.spieler.map(p => `
+              <div style="display:flex;justify-content:space-between;padding:4px 8px;background:${ws.rundenNeu[p]>0?'#fff1f2':'var(--bg-page)'};border-radius:6px">
+                <span style="font-size:.82rem;font-weight:600">${p.split(' ').pop()}</span>
+                <span style="font-size:.82rem;color:${ws.rundenNeu[p]>0?'var(--danger)':'var(--text-muted)'};font-weight:700">${ws.rundenNeu[p]>0?'+'+ws.rundenNeu[p]:'—'}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div style="margin-bottom:1.25rem">
+          <div style="font-size:.7rem;font-weight:700;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.4rem">STRICHE GESAMT</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.3rem">
+            ${[...ws.spieler].sort((a,b)=>ws.striche[b]-ws.striche[a]).map(p => `
+              <div style="display:flex;justify-content:space-between;padding:4px 8px;background:var(--bg-page);border-radius:6px">
+                <span style="font-size:.82rem;font-weight:600">${p.split(' ').pop()}</span>
+                <span style="font-size:.82rem;color:${ws.striche[p]>0?'var(--danger)':'var(--text-muted)'};font-weight:700">${ws.striche[p]||'—'}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        ${ws.aktuelleRunde < ws.anzahlRunden
+          ? `<button class="btn btn-primary" onclick="wdmNaechsteRunde()">▶ Runde ${ws.aktuelleRunde+1} starten</button>`
+          : `<button class="btn btn-primary" onclick="wdmZeigeErgebnis()">🏁 Ergebnis anzeigen</button>`}
+      </div>`;
+    return;
+  }
+
+  // ── ERGEBNIS ───────────────────────────────────────────────────
+  if (ws.phase === 'ergebnis') {
+    const sorted = [...ws.spieler].sort((a,b) => ws.striche[b]-ws.striche[a]);
+    container.innerHTML = `
+      <div class="card">
+        <h3 style="font-size:.95rem;font-weight:800;margin-bottom:1rem">${spiel.emoji} ${spiel.name} — Ergebnis</h3>
+
+        <div style="margin-bottom:1.25rem">
+          ${sorted.map((p, i) => {
+            const isVerlierer = i < ws.anzahlVerlierer;
+            const isGewinner = i === sorted.length - 1 && sorted.length > 1;
+            return `<div style="display:flex;align-items:center;gap:.75rem;padding:.55rem .75rem;margin-bottom:.35rem;border-radius:8px;background:${isVerlierer?'#fff1f2':'var(--bg-page)'}">
+              <span style="font-weight:800;font-size:.8rem;color:var(--text-muted);min-width:1.5rem">#${i+1}</span>
+              <span style="flex:1;font-weight:700">${p}</span>
+              <span style="font-size:.9rem;font-weight:800;color:${ws.striche[p]>0?'var(--danger)':'var(--text-muted)'}">${ws.striche[p]||0}</span>
+              <span>${isVerlierer?'💀':isGewinner?'🏆':''}</span>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <div style="background:#fff1f2;border-radius:8px;padding:.75rem;margin-bottom:1.25rem">
+          <div style="font-size:.78rem;font-weight:700;color:var(--danger);margin-bottom:.4rem">💀 Verlierer — ${spiel.strafKategorie}</div>
+          ${sorted.slice(0,ws.anzahlVerlierer).map(v=>`<div style="font-size:.88rem;font-weight:600;margin-bottom:.2rem">${v} (${ws.striche[v]} Strich${ws.striche[v]!==1?'e':''})</div>`).join('')}
+        </div>
+
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-ghost" style="flex:1" onclick="wdmState=null;renderSpieleListe()">← Zurück</button>
+          <button class="btn btn-primary" style="flex:1" onclick="wdmStrafenEintragen()">💶 Strafe eintragen</button>
+        </div>
+      </div>`;
+    return;
+  }
+}
 
 // ---- 4 GEWINNT ----
 const VG_COLS = 9, VG_ROWS = 7;
@@ -3535,6 +5302,8 @@ function starteTeamSpielPhase() {
     spieleTannenbaum();
   } else if (ts.spielId === '4gewinnt') {
     starteVierGewinnt();
+  } else if (ts.spielId === 'bis100') {
+    starteBis100();
   } else {
     spieleAbraeuumen();
   }
@@ -3893,6 +5662,8 @@ function setzePlatzieren(spalteIdx) {
     }
     setzSpiel.runde = naechsteRunde;
     setzSpiel.spielerIdx = 0;
+    // Reihenfolge für neue Runde mischen
+    setzSpiel.spieler = setzSpiel.spieler.sort(() => Math.random() - .5);
   } else {
     setzSpiel.spielerIdx = naechsterIdx;
   }
@@ -4278,6 +6049,461 @@ function generiereQuizFragen(anzahl = 10) {
   return basis.slice(0, anzahl);
 }
 
+// ---- OFFLINE QUIZ ----
+
+const QUIZ_OFFLINE_FRAGEN = [
+  // ── Multiple Choice ───────────────────────────────────────────
+  { typ:'mc', frage:'Wie viele Kegel stehen beim deutschen Kegeln?',
+    antworten:['7','8','10','9'], richtig:'9',
+    erklaerung:'Beim deutschen Kegeln stehen 9 Kegel in einer Raute — beim Bowling sind es 10!' },
+
+  { typ:'mc', frage:'Was bedeutet "Pumpe" beim Kegeln?',
+    antworten:['Alle 9 getroffen','7 Kegel getroffen','Ungültiger Wurf','Kein einziger Kegel getroffen'],
+    richtig:'Kein einziger Kegel getroffen',
+    erklaerung:'Pumpe = 0 Hölzer — der schlimmste Wurf beim Kegeln!' },
+
+  { typ:'mc', frage:'Was ist "Alle 9" beim Kegeln?',
+    antworten:['9 Würfe in Folge','Nur 9 Punkte','Ein ungültiger Wurf','Alle 9 Kegel mit einem Wurf abräumen'],
+    richtig:'Alle 9 Kegel mit einem Wurf abräumen',
+    erklaerung:'"Alle 9" = alle Kegel mit einem einzigen Wurf abräumen — der Traumwurf!' },
+
+  { typ:'mc', frage:'In welcher Formation stehen die 9 Kegel beim deutschen Kegeln?',
+    antworten:['Dreieck','Linie','Kreis','Raute'],
+    richtig:'Raute',
+    erklaerung:'Die 9 Kegel stehen in einer Raute (Diamant-Formation).' },
+
+  { typ:'mc', frage:'Wie viele Reifen braucht ein Bus beim Spiel "Bus bauen" um zu gewinnen?',
+    antworten:['4 Reifen','8 Reifen','5 Reifen','6 Reifen'],
+    richtig:'6 Reifen',
+    erklaerung:'Ein Bus braucht genau 6 Reifen — dann ist er fertig und gewinnt!' },
+
+  { typ:'mc', frage:'Was passiert bei einer Schnapszahl (z.B. 33) beim Spiel "Bis 100"?',
+    antworten:['Bonuspunkte fürs Team','Der Gegner verliert Punkte','Man darf nochmal werfen','Der Punktestand wird auf 0 zurückgesetzt'],
+    richtig:'Der Punktestand wird auf 0 zurückgesetzt',
+    erklaerung:'Schnapszahlen (11, 22, 33, ..., 99) setzen den Punktestand zurück auf 0 — Aufgepasst!' },
+
+  { typ:'mc', frage:'Was zählt "Pumpe" beim TAL-Abschnitt bei "Berg & Tal"?',
+    antworten:['+0 Punkte','+5 Punkte','−5 Punkte','−10 Punkte'],
+    richtig:'−10 Punkte',
+    erklaerung:'Im Tal-Abschnitt ist Pumpe besonders schlimm: −10 Punkte, schlimmer als eine geworfene 9 (−9)!' },
+
+  { typ:'mc', frage:'Welcher Spieler gewinnt bei "Russisch Roulette"?',
+    antworten:['Wer zuerst stirbt','Wer am meisten wirft','Wer die höchste Zahl wirft','Der letzte Überlebende'],
+    richtig:'Der letzte Überlebende',
+    erklaerung:'Bei Russisch Roulette gewinnt der letzte Spieler, der noch Leben übrig hat!' },
+
+  { typ:'mc', frage:'Was passiert bei "Wie du mir so ich dir" wenn zwei Spieler gleichauf sind?',
+    antworten:['Beide bekommen einen Strich','Der Jüngere bekommt einen Strich','Beide werfen nochmal','Kein Strich für niemanden'],
+    richtig:'Kein Strich für niemanden',
+    erklaerung:'Gleichstand = kein Strich für niemanden.' },
+
+  { typ:'mc', frage:'Was zählt "Pumpe" beim BERG-Abschnitt bei "Berg & Tal"?',
+    antworten:['−5 Punkte','−10 Punkte','+5 Punkte','+0 Punkte'],
+    richtig:'+0 Punkte',
+    erklaerung:'Im Berg-Abschnitt zählt Pumpe +0 — nicht ideal, aber auch keine Strafe wie im Tal!' },
+
+  { typ:'mc', frage:'Was passiert bei "Miteinander" wenn 2 Spieler die gleiche Zahl werfen?',
+    antworten:['Beide bekommen 0','Nur der erste bekommt Punkte','Beide halbieren ihre Punkte','Beide werden Partner und bekommen die Summe'],
+    richtig:'Beide werden Partner und bekommen die Summe',
+    erklaerung:'Gleiche Zahl = Partner! Z.B. 2×6 = je 12 Punkte für beide.' },
+
+  { typ:'mc', frage:'Was ist der Unterschied zwischen deutschem Kegeln und Bowling?',
+    antworten:['Beide haben 9 Pins','Kegeln hat 10 Pins, Bowling 9','Beide haben 10 Pins','Kegeln hat 9 Pins in Raute, Bowling 10 im Dreieck'],
+    richtig:'Kegeln hat 9 Pins in Raute, Bowling 10 im Dreieck',
+    erklaerung:'Deutsches Kegeln: 9 Kegel in Raute. Bowling: 10 Pins im Dreieck.' },
+
+  // ── Schätzfragen ──────────────────────────────────────────────
+  { typ:'schaetzung', frage:'Wie viele Würfe hat jeder Spieler beim Spiel "Berg & Tal" insgesamt?',
+    richtig:10, einheit:'Würfe',
+    erklaerung:'5 Bergwürfe (addieren) + 5 Talwürfe (subtrahieren) = 10 Würfe.' },
+
+  { typ:'schaetzung', frage:'Wie viele Schnapszahlen gibt es zwischen 1 und 100?',
+    richtig:9, einheit:'',
+    erklaerung:'11, 22, 33, 44, 55, 66, 77, 88, 99 — genau 9 Schnapszahlen!' },
+
+  { typ:'schaetzung', frage:'Wie viele Felder hat unser 4-Gewinnt-Spielfeld (Spalten × Reihen)?',
+    richtig:63, einheit:'Felder',
+    erklaerung:'9 Spalten × 7 Reihen = 63 Felder auf dem Spielfeld.' },
+
+  { typ:'schaetzung', frage:'Wie hoch ist der maximale Punktestand aus den 5 Berg-Würfen bei "Berg & Tal"?',
+    richtig:45, einheit:'Punkte',
+    erklaerung:'5 × 9 Hölzer = 45 Punkte — nur mit fünfmal "Alle 9" erreichbar!' },
+
+  { typ:'schaetzung', frage:'Beim 6-Tage-Rennen: Wie hoch ist der Tagesmultiplikator am Samstag (letzter Tag)?',
+    richtig:6, einheit:'',
+    erklaerung:'Mo=1, Di=2, Mi=3, Do=4, Fr=5, Sa=6 — Samstag hat den höchsten Multiplikator!' },
+
+  { typ:'schaetzung', frage:'Wie viele Punkte bekommt jeder Spieler bei "Miteinander" wenn 3 Spieler alle eine 7 werfen?',
+    richtig:21, einheit:'Punkte',
+    erklaerung:'3 Partner × 7 = 21 Punkte für jeden in der Gruppe.' },
+
+  { typ:'schaetzung', frage:'Wie viele Runden werden bei "Wie du mir so ich dir" standardmäßig gespielt?',
+    richtig:5, einheit:'Runden',
+    erklaerung:'Standard-Einstellung sind 5 Runden — aber 3, 7 oder 10 sind wählbar.' },
+
+  { typ:'schaetzung', frage:'Wie viele Leben hat jeder Spieler bei "Russisch Roulette" in der Standardeinstellung?',
+    richtig:3, einheit:'Leben',
+    erklaerung:'Standard sind 3 Leben — aber 1 bis 5 sind im Setup wählbar.' },
+];
+
+let quizOfflineState = null;
+
+function starteOfflineQuiz() {
+  quizOfflineState = {
+    phase: 'setup',
+    spieler: state.mitglieder.map(m => m.name),
+    fragenPool: [...QUIZ_OFFLINE_FRAGEN].sort(() => Math.random() - .5),
+    fragenAusgewaehlt: [],
+    fragen: null,
+    aktuelleQ: 0,
+    scores: {},
+    // per-question interactive answering
+    antwortSubPhase: 'bereit',   // 'bereit' | 'eingabe' | 'bestaetigt'
+    aktuellerAntwortIdx: 0,       // index into reihenfolge
+    reihenfolge: [],              // answer order for current question
+    rundenAntworten: {},          // { name: value }
+    laufendeEingabe: '',          // digits for Schätzung numpad
+    tempAntwort: null,            // selected MC option before confirm
+  };
+  renderOfflineQuiz();
+}
+
+function offlineQuizFragenAuswahl() {
+  const chips = document.querySelectorAll('#oq-spieler-auswahl .kg-auswahl-chip.aktiv');
+  const spieler = [...chips].map(c => c.dataset.name);
+  if (spieler.length < 2) { alert('Mindestens 2 Spieler auswählen!'); return; }
+  quizOfflineState.spieler = spieler;
+  quizOfflineState.scores = Object.fromEntries(spieler.map(p => [p, 0]));
+  quizOfflineState.phase = 'fragenauswahl';
+  renderOfflineQuiz();
+}
+
+function offlineToggleFrage(idx) {
+  const os = quizOfflineState;
+  if (os.fragenAusgewaehlt.includes(idx)) {
+    os.fragenAusgewaehlt = os.fragenAusgewaehlt.filter(i => i !== idx);
+  } else if (os.fragenAusgewaehlt.length < 10) {
+    os.fragenAusgewaehlt = [...os.fragenAusgewaehlt, idx];
+  }
+  renderOfflineQuiz();
+}
+
+function offlineQuizStarten() {
+  const os = quizOfflineState;
+  if (os.fragenAusgewaehlt.length !== 10) return;
+  os.fragen = os.fragenAusgewaehlt.map(i => os.fragenPool[i]);
+  os.aktuelleQ = 0;
+  os.phase = 'antwort';
+  offlineInitFrageRunde();
+  renderOfflineQuiz();
+}
+
+// Set up answer order for the current question (rotates each round)
+function offlineInitFrageRunde() {
+  const os = quizOfflineState;
+  const n = os.spieler.length;
+  os.reihenfolge = os.spieler.map((_, i) => os.spieler[(os.aktuelleQ + i) % n]);
+  os.rundenAntworten = {};
+  os.aktuellerAntwortIdx = 0;
+  os.antwortSubPhase = 'bereit';
+  os.laufendeEingabe = '';
+  os.tempAntwort = null;
+}
+
+// Player pressed "Ich bin bereit" — show answer input
+function offlineZeigeEingabe() {
+  quizOfflineState.antwortSubPhase = 'eingabe';
+  renderOfflineQuiz();
+}
+
+// Numpad input for Schätzung
+function offlineNumpad(val) {
+  const os = quizOfflineState;
+  if (val === 'del') {
+    os.laufendeEingabe = os.laufendeEingabe.slice(0, -1);
+  } else if (val === 'ok') {
+    if (os.laufendeEingabe === '') return;
+    os.tempAntwort = parseInt(os.laufendeEingabe, 10);
+    offlineAntwortBestaetigen();
+    return;
+  } else {
+    if (os.laufendeEingabe.length < 5) os.laufendeEingabe += val;
+  }
+  renderOfflineQuiz();
+}
+
+// MC option selected
+function offlineWaehleOption(option) {
+  quizOfflineState.tempAntwort = option;
+  renderOfflineQuiz();
+}
+
+// Confirm current player's answer and advance
+function offlineAntwortBestaetigen() {
+  const os = quizOfflineState;
+  const spieler = os.reihenfolge[os.aktuellerAntwortIdx];
+  os.rundenAntworten[spieler] = os.tempAntwort;
+  os.aktuellerAntwortIdx++;
+  os.antwortSubPhase = 'bereit';
+  os.laufendeEingabe = '';
+  os.tempAntwort = null;
+  if (os.aktuellerAntwortIdx >= os.reihenfolge.length) {
+    // All answered — show reveal
+    os.phase = 'reveal';
+    berechneRundenPunkte();
+  }
+  renderOfflineQuiz();
+}
+
+// Auto-calculate scores after all answered
+function berechneRundenPunkte() {
+  const os = quizOfflineState;
+  const frage = os.fragen[os.aktuelleQ];
+  os.rundenPunkte = Object.fromEntries(os.spieler.map(p => [p, 0]));
+
+  if (frage.typ === 'mc') {
+    os.spieler.forEach(p => {
+      if (os.rundenAntworten[p] === frage.richtig) os.rundenPunkte[p] = 3;
+    });
+  } else {
+    // Schätzung: rank by abs distance, assign points by rank
+    const ranked = [...os.spieler]
+      .filter(p => os.rundenAntworten[p] !== undefined)
+      .sort((a, b) => Math.abs(os.rundenAntworten[a] - frage.richtig) - Math.abs(os.rundenAntworten[b] - frage.richtig));
+    const rankPts = [5, 3, 2, 1];
+    ranked.forEach((p, i) => {
+      os.rundenPunkte[p] = rankPts[i] || 1;
+      // Bonus for exact answer
+      if (os.rundenAntworten[p] === frage.richtig) os.rundenPunkte[p] += 2;
+    });
+  }
+}
+
+function offlineQuizWeiter() {
+  const os = quizOfflineState;
+  os.spieler.forEach(p => { os.scores[p] = (os.scores[p] || 0) + (os.rundenPunkte[p] || 0); });
+  if (os.aktuelleQ < os.fragen.length - 1) {
+    os.aktuelleQ++;
+    os.phase = 'antwort';
+    offlineInitFrageRunde();
+  } else {
+    os.phase = 'ergebnis';
+  }
+  renderOfflineQuiz();
+}
+
+function renderOfflineQuiz() {
+  const container = document.getElementById('quiz-admin-container');
+  if (!container) return;
+  const os = quizOfflineState;
+
+  // ── SETUP ──────────────────────────────────────────────────────
+  if (os.phase === 'setup') {
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <div class="card-title" style="margin:0">🔌 Offline-Quiz</div>
+          <button class="btn btn-ghost btn-sm" onclick="quizOfflineState=null;renderQuizAdmin()">← Online</button>
+        </div>
+        <p style="font-size:.875rem;color:var(--text-muted);margin-bottom:1rem">Kein Internet nötig — 20 Kegel-Fragen. Jeder Spieler gibt seine Antwort selbst ein — das Gerät wird weitergegeben!</p>
+        <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">Wer spielt mit?</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.5rem" id="oq-spieler-auswahl">
+          ${state.mitglieder.map(m => `<button class="kg-auswahl-chip aktiv" data-name="${m.name}" onclick="this.classList.toggle('aktiv');this.textContent=(this.classList.contains('aktiv')?'✓ ':'✗ ')+'${m.name}'">✓ ${m.name}</button>`).join('')}
+        </div>
+        <div style="display:flex;gap:.5rem;margin-bottom:1.25rem">
+          <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#oq-spieler-auswahl .kg-auswahl-chip').forEach(c=>{c.classList.add('aktiv');c.textContent='✓ '+c.dataset.name})">Alle</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#oq-spieler-auswahl .kg-auswahl-chip').forEach(c=>{c.classList.remove('aktiv');c.textContent='✗ '+c.dataset.name})">Keiner</button>
+        </div>
+        <button class="btn btn-primary btn-full" onclick="offlineQuizFragenAuswahl()">➡ Fragen auswählen</button>
+      </div>`;
+    return;
+  }
+
+  // ── FRAGENAUSWAHL ──────────────────────────────────────────────
+  if (os.phase === 'fragenauswahl') {
+    const pool = os.fragenPool;
+    const sel = os.fragenAusgewaehlt;
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <div class="card-title" style="margin:0">Fragen auswählen</div>
+          <span class="tag ${sel.length===10?'tag-green':'tag-yellow'}">${sel.length} / 10 gewählt</span>
+        </div>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe zum Aus- oder Abwählen. Genau 10 auswählen.</p>
+        ${pool.map((f, i) => {
+          const isSelected = sel.includes(i);
+          return `<div onclick="offlineToggleFrage(${i})" style="display:flex;align-items:start;gap:.75rem;padding:.75rem;border-radius:10px;border:2px solid ${isSelected?'var(--primary)':'var(--border)'};background:${isSelected?'#eff6ff':'white'};margin-bottom:.4rem;cursor:pointer">
+            <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${isSelected?'var(--primary)':'var(--border)'};background:${isSelected?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.75rem;font-weight:800;color:white">${isSelected?sel.indexOf(i)+1:''}</div>
+            <div style="flex:1">
+              <div style="font-size:.78rem;font-weight:700;color:${isSelected?'var(--primary)':'var(--text-muted)'};margin-bottom:.15rem">${f.typ==='mc'?'🔤 Multiple Choice':'🔢 Schätzfrage'}</div>
+              <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        <div style="display:flex;gap:.75rem;margin-top:1rem">
+          <button class="btn btn-ghost" onclick="quizOfflineState.phase='setup';renderOfflineQuiz()">← Zurück</button>
+          <button class="btn btn-primary" style="flex:1" onclick="offlineQuizStarten()" ${sel.length!==10?'disabled style="opacity:.5"':''}>🔌 Quiz starten (${sel.length}/10)</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── ANTWORT-PHASE (interactive per-player) ─────────────────────
+  if (os.phase === 'antwort') {
+    const frage = os.fragen[os.aktuelleQ];
+    const aktSpieler = os.reihenfolge[os.aktuellerAntwortIdx];
+    const bereitsGeantwortet = os.reihenfolge.slice(0, os.aktuellerAntwortIdx);
+    const nochNicht = os.reihenfolge.slice(os.aktuellerAntwortIdx);
+
+    let eingabeHTML = '';
+    if (os.antwortSubPhase === 'bereit') {
+      eingabeHTML = `
+        <div style="text-align:center;padding:1.5rem 1rem">
+          <div style="font-size:1.3rem;font-weight:800;margin-bottom:.5rem">📱 ${aktSpieler}</div>
+          <div style="font-size:.88rem;color:var(--text-muted);margin-bottom:1.25rem">Du bist dran! Tippe unten wenn du bereit bist — die anderen schauen weg.</div>
+          <button class="btn btn-primary" style="min-width:180px" onclick="offlineZeigeEingabe()">Ich bin bereit →</button>
+        </div>`;
+    } else if (os.antwortSubPhase === 'eingabe') {
+      if (frage.typ === 'mc') {
+        const shuffled = frage.antworten;
+        eingabeHTML = `
+          <div style="margin-bottom:.75rem">
+            <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">Deine Antwort — ${aktSpieler}:</div>
+            ${shuffled.map(a => `
+              <button onclick="offlineWaehleOption(${JSON.stringify(a)})"
+                style="display:block;width:100%;text-align:left;padding:.75rem 1rem;border-radius:10px;border:2px solid ${os.tempAntwort===a?'var(--primary)':'var(--border)'};background:${os.tempAntwort===a?'#eff6ff':'white'};margin-bottom:.4rem;cursor:pointer;font-size:.9rem;font-weight:${os.tempAntwort===a?'700':'500'}">
+                ${a}
+              </button>`).join('')}
+          </div>
+          <button class="btn btn-primary btn-full" onclick="offlineAntwortBestaetigen()" ${os.tempAntwort===null?'disabled style="opacity:.5"':''}>✓ Antwort bestätigen</button>`;
+      } else {
+        const display = os.laufendeEingabe || '—';
+        eingabeHTML = `
+          <div style="margin-bottom:.75rem">
+            <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">Deine Schätzung — ${aktSpieler}:</div>
+            <div style="text-align:center;padding:1rem;background:var(--bg-page);border-radius:10px;margin-bottom:.75rem">
+              <div style="font-size:2.5rem;font-weight:900;letter-spacing:.1em">${display}${frage.einheit?' <span style="font-size:1rem;font-weight:500;color:var(--text-muted)">${frage.einheit}</span>':''}</div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;margin-bottom:.4rem">
+              ${['1','2','3','4','5','6','7','8','9','','0','del'].map(k => k===''
+                ? `<div></div>`
+                : `<button onclick="offlineNumpad('${k}')" style="padding:.9rem;font-size:1.1rem;font-weight:700;border:1px solid var(--border);border-radius:8px;background:${k==='del'?'var(--bg-page)':'white'};cursor:pointer">${k==='del'?'⌫':k}</button>`
+              ).join('')}
+            </div>
+            <button class="btn btn-primary btn-full" onclick="offlineNumpad('ok')" ${os.laufendeEingabe===''?'disabled style="opacity:.5"':''}>✓ Antwort bestätigen</button>
+          </div>`;
+      }
+    }
+
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <span class="tag" style="background:var(--bg-page)">Frage ${os.aktuelleQ+1} / ${os.fragen.length}</span>
+          <button class="btn btn-ghost btn-sm" onclick="if(confirm('Quiz beenden?')){quizOfflineState=null;renderQuizAdmin()}">✕</button>
+        </div>
+
+        <div class="quiz-frage">
+          <div class="q-num">Frage ${os.aktuelleQ+1} von ${os.fragen.length}</div>
+          <div class="q-text">${frage.frage}</div>
+          <div class="q-typ">${frage.typ==='mc'?'🔤 Multiple Choice':'🔢 Schätzfrage'}</div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:1rem">
+          ${bereitsGeantwortet.map(p => `<span style="font-size:.78rem;font-weight:700;padding:3px 10px;background:#dcfce7;border-radius:99px;color:#16a34a">✓ ${p}</span>`).join('')}
+          ${nochNicht.map((p, i) => `<span style="font-size:.78rem;font-weight:700;padding:3px 10px;background:${i===0?'var(--primary)':'var(--bg-page)'};border-radius:99px;color:${i===0?'white':'var(--text-muted)'}">${i===0?'▶ ':''} ${p}</span>`).join('')}
+        </div>
+
+        ${eingabeHTML}
+      </div>`;
+    return;
+  }
+
+  // ── REVEAL ─────────────────────────────────────────────────────
+  if (os.phase === 'reveal') {
+    const frage = os.fragen[os.aktuelleQ];
+    container.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <span class="tag" style="background:var(--bg-page)">Frage ${os.aktuelleQ+1} / ${os.fragen.length}</span>
+          <button class="btn btn-ghost btn-sm" onclick="if(confirm('Quiz beenden?')){quizOfflineState=null;renderQuizAdmin()}">✕</button>
+        </div>
+
+        <div class="quiz-frage">
+          <div class="q-num">Auflösung</div>
+          <div class="q-text">${frage.frage}</div>
+        </div>
+
+        ${frage.typ === 'mc' ? `
+          <div style="margin-bottom:1rem">
+            ${frage.antworten.map(a => {
+              const isRichtig = a === frage.richtig;
+              return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.65rem 1rem;border-radius:10px;border:2px solid ${isRichtig?'#16a34a':'var(--border)'};background:${isRichtig?'#dcfce7':'var(--bg-page)'};margin-bottom:.4rem">
+                <span style="font-weight:${isRichtig?'800':'500'};color:${isRichtig?'#15803d':'var(--text-secondary)'}">${a}</span>
+                ${isRichtig?'<span style="font-weight:800;color:#16a34a">✓ Richtig!</span>':''}
+              </div>`;
+            }).join('')}
+          </div>
+        ` : `
+          <div style="text-align:center;padding:1rem;background:#dcfce7;border-radius:10px;margin-bottom:1rem">
+            <div style="font-size:.72rem;color:#166534;font-weight:700;margin-bottom:.25rem">RICHTIGE ANTWORT</div>
+            <div style="font-size:2.2rem;font-weight:900;color:#15803d">${frage.richtig}${frage.einheit?' '+frage.einheit:''}</div>
+          </div>
+        `}
+
+        <div style="background:#f0fdf4;border-radius:8px;padding:.6rem .75rem;margin-bottom:1rem;font-size:.83rem;color:#15803d">💡 ${frage.erklaerung}</div>
+
+        <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">Antworten & Punkte</div>
+        ${os.reihenfolge.map(p => {
+          const antwort = os.rundenAntworten[p];
+          const pts = os.rundenPunkte[p] || 0;
+          const korrekt = frage.typ==='mc' ? antwort===frage.richtig : null;
+          const dist = frage.typ==='schaetzung' ? Math.abs(antwort - frage.richtig) : null;
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.4rem .65rem;background:${pts>0?'#dcfce7':'var(--bg-page)'};border-radius:8px;margin-bottom:.3rem">
+            <div>
+              <span style="font-weight:600;font-size:.88rem">${p}</span>
+              <span style="font-size:.78rem;color:var(--text-muted);margin-left:.5rem">${antwort !== undefined ? (frage.typ==='mc'?antwort:antwort+(frage.einheit?' '+frage.einheit:'')) : '—'}${dist!==null?' (Δ'+dist+')':''}</span>
+            </div>
+            <span style="font-weight:800;font-size:.9rem;color:${pts>0?'#16a34a':'var(--text-muted)'}">+${pts} Pkt</span>
+          </div>`;
+        }).join('')}
+
+        <div style="margin:.75rem 0;padding:.6rem .75rem;background:var(--bg-page);border-radius:8px">
+          <div style="font-size:.7rem;font-weight:700;color:var(--text-muted);margin-bottom:.4rem">GESAMTSTAND</div>
+          <div style="display:flex;flex-wrap:wrap;gap:.35rem">
+            ${[...os.spieler].sort((a,b)=>(os.scores[b]||0)-(os.scores[a]||0)).map(p =>
+              `<div style="font-size:.8rem;font-weight:700;padding:2px 8px;background:white;border-radius:99px;border:1px solid var(--border)">${p.split(' ').pop()} <b style="color:var(--primary)">${os.scores[p]||0}</b></div>`
+            ).join('')}
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-full" onclick="offlineQuizWeiter()">
+          ${os.aktuelleQ < os.fragen.length - 1 ? '▶ Nächste Frage' : '🏁 Ergebnis anzeigen'}
+        </button>
+      </div>`;
+    return;
+  }
+
+  // ── ERGEBNIS ───────────────────────────────────────────────────
+  if (os.phase === 'ergebnis') {
+    const sorted = [...os.spieler].sort((a,b) => (os.scores[b]||0)-(os.scores[a]||0));
+    container.innerHTML = `
+      <div class="card">
+        <div class="card-title">🏆 Offline-Quiz — Ergebnis</div>
+        ${sorted.map((p, i) => `
+          <div class="quiz-score-row">
+            <div style="display:flex;align-items:center;gap:.75rem">
+              <span style="font-size:1.1rem">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'  '}</span>
+              <span style="font-weight:${i===0?'800':'600'}">${p}</span>
+            </div>
+            <span style="font-weight:800;color:var(--primary)">${os.scores[p]||0} Pkt</span>
+          </div>
+        `).join('')}
+        <button class="btn btn-primary btn-full" style="margin-top:1.25rem" onclick="quizOfflineState=null;renderQuizAdmin()">✓ Fertig</button>
+      </div>`;
+    return;
+  }
+}
+
 // ---- ADMIN ----
 function renderQuizAdmin() {
   const container = document.getElementById('quiz-admin-container');
@@ -4300,6 +6526,8 @@ function renderQuizAdmin() {
           <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip').forEach(c=>{c.classList.remove('aktiv');c.textContent='✗ '+c.dataset.name})">Keiner</button>
         </div>
         <button class="btn btn-primary btn-full" onclick="zeigeFragenAuswahl()">➡ Fragen auswählen</button>
+        <div style="margin:.75rem 0;text-align:center;font-size:.8rem;color:var(--text-muted)">— oder —</div>
+        <button class="btn btn-ghost btn-full" onclick="starteOfflineQuiz()">🔌 Offline-Modus (kein Internet nötig)</button>
       </div>
       <div class="card" style="margin-top:1rem">
         <div class="card-title">💡 Fun Facts</div>

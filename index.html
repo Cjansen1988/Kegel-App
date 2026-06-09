@@ -624,6 +624,12 @@
     <div id="mitglied-stats-detail"></div>
   </div>
 
+  <!-- Spielverluste -->
+  <div class="card">
+    <div class="card-title">🎮 Spiel-Verluste</div>
+    <div id="spiel-verluste-container"><div class="empty-state">Noch keine Spiel-Verluste erfasst.</div></div>
+  </div>
+
   <!-- Kegelbuch-Statistiken -->
   <div class="card">
     <div class="card-title">
@@ -992,6 +998,17 @@ function subscribeAll() {
     loaded.kassenbuch = true; checkAllLoaded();
     renderKassenbuch(); renderMemberKasse();
   }, () => { loaded.kassenbuch = true; checkAllLoaded(); }));
+
+  // Spielverluste
+  unsubscribers.push(db.collection('spielverluste').orderBy('createdAt','desc').onSnapshot(snap => {
+    const alle = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const saisonId = state.aktiveSaison?.id || null;
+    state.spielverluste = saisonId
+      ? alle.filter(v => v.saisonId === saisonId)
+      : alle.filter(v => !v.saisonId);
+    state.alleSpieldverluste = alle;
+    renderSpielVerluste();
+  }, () => {}));
 }
 
 // ========== LOGIN ==========
@@ -1572,6 +1589,21 @@ function addSpieleStrafe(spieler, betrag, beschreibung) {
   aktiveSession.spieleDetail[spieler].push({ beschreibung, betrag });
   saveLiveSession();
   renderKgMatrix();
+
+  // Spielverlust-Statistik loggen
+  let spielName = null;
+  const m1 = beschreibung.match(/^Verl\. Spiel \((.+)\)$/);
+  const m2 = beschreibung.match(/^(.+?) —/);
+  const m3 = beschreibung.match(/^Setzen (.+?) \(/);
+  if (m1) spielName = m1[1];
+  else if (m2) spielName = m2[1];
+  else if (m3) spielName = 'Setzen';
+  if (spielName) {
+    db.collection('spielverluste').add({
+      spieler, spielName, betrag,
+      datum: today(), ...saisonMeta(), createdAt: Date.now()
+    }).catch(() => {});
+  }
 }
 
 function renderKgMatrix() {
@@ -2893,6 +2925,75 @@ function renderKgStatistiken() {
 }
 
 // ========== STATISTIKEN ==========
+function renderSpielVerluste() {
+  const container = document.getElementById('spiel-verluste-container');
+  if (!container) return;
+  const verluste = state.spielverluste || [];
+
+  if (verluste.length === 0) {
+    container.innerHTML = '<div class="empty-state">Noch keine Spiel-Verluste erfasst — spielt ein paar Runden!</div>';
+    return;
+  }
+
+  // All unique game names sorted
+  const spielNamen = [...new Set(verluste.map(v => v.spielName))].sort();
+  const spielerNamen = state.mitglieder.map(m => m.name);
+
+  // Build matrix
+  const matrix = {};
+  spielerNamen.forEach(p => {
+    matrix[p] = { _total: 0 };
+    spielNamen.forEach(s => {
+      matrix[p][s] = verluste.filter(v => v.spieler === p && v.spielName === s).length;
+      matrix[p]._total += matrix[p][s];
+    });
+  });
+
+  // Only show players with at least 1 loss, sorted by total desc
+  const sorted = spielerNamen
+    .filter(p => matrix[p]._total > 0)
+    .sort((a, b) => matrix[b]._total - matrix[a]._total);
+
+  if (sorted.length === 0) {
+    container.innerHTML = '<div class="empty-state">Keine Verluste in dieser Saison.</div>';
+    return;
+  }
+
+  // Game totals for header badges
+  const spielTotals = {};
+  spielNamen.forEach(s => { spielTotals[s] = verluste.filter(v => v.spielName === s).length; });
+
+  container.innerHTML = `
+    <div class="table-wrap" style="overflow-x:auto">
+      <table style="min-width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:.4rem .5rem;font-size:.75rem;color:var(--text-muted);white-space:nowrap">Spieler</th>
+            ${spielNamen.map(s => `
+              <th style="text-align:center;padding:.4rem .35rem;font-size:.7rem;color:var(--text-muted);white-space:nowrap;min-width:52px">
+                ${s}<br><span style="font-weight:400">(${spielTotals[s]}×)</span>
+              </th>`).join('')}
+            <th style="text-align:center;padding:.4rem .5rem;font-size:.75rem;color:var(--text-muted)">Ges.</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sorted.map((p, i) => `
+            <tr style="border-top:1px solid var(--border);background:${i % 2 === 0 ? 'white' : 'var(--bg-page)'}">
+              <td style="padding:.45rem .5rem;font-weight:700;font-size:.875rem;white-space:nowrap">${p}</td>
+              ${spielNamen.map(s => {
+                const n = matrix[p][s];
+                const max = Math.max(...sorted.map(x => matrix[x][s]));
+                const isMax = n > 0 && n === max;
+                return `<td style="text-align:center;padding:.45rem .35rem;font-size:.875rem;font-weight:${n>0?'800':'400'};color:${isMax?'#dc2626':n>0?'var(--primary)':'var(--text-muted)'}">${n > 0 ? n : '—'}</td>`;
+              }).join('')}
+              <td style="text-align:center;padding:.45rem .5rem;font-weight:800;font-size:.9rem;color:var(--primary)">${matrix[p]._total}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:.73rem;color:var(--text-muted);margin-top:.5rem">🔴 = meiste Verluste in diesem Spiel · Zeigt aktive Saison</div>`;
+}
+
 function renderStatistiken() {
   const gesamtStrafen = state.strafen.reduce((s,x) => s+Number(x.betrag), 0);
   const offeneStrafen = state.strafen.filter(s => !s.bezahlt).reduce((s,x) => s+Number(x.betrag), 0);
@@ -2944,6 +3045,7 @@ function renderStatistiken() {
   renderMitgliedStats();
   renderKgStatistiken();
   renderFunFacts();
+  renderSpielVerluste();
 }
 
 function renderMitgliedStats() {
@@ -3194,6 +3296,14 @@ const SPIELE_KATALOG = [
     erklaerung: `Alle Spieler stehen im Kreis. Jeder hat einen Vordermann und Hintermann.\n\nJede Runde wirft jeder einmal. Danach werden benachbarte Paare verglichen:\n• Besserer Wurf → der andere bekommt einen Strich\n• Schlechterer Wurf → du bekommst einen Strich\n• Gleichstand → kein Strich\n\n⚠️ Ungültige Würfe werden immer mit einem Strich bestraft (kein Vergleich).\n\nNach allen Runden verlieren die Spieler mit den meisten Strichen.`,
     typ: 'wiedumir',
     strafKategorie: 'Verl. Spiel'
+  },
+  {
+    id: 'blackjack',
+    name: 'Blackjack',
+    emoji: '🃏',
+    erklaerung: `Jeder Spieler zieht heimlich eine Karte (J=2, D=3, K=4, Ass=1 oder 11).\n\nDann kegelt jeder so viele Würfe wie er will — Karte + Würfe = Punktestand. Wer über 21 ist, hat verloren (überwurfen). Wer genau 21 hat, gewinnt automatisch.\n\nIhr könnt mit dem Aufdecken bis zum Schluss warten — das erhöht die Spannung! Am Ende entscheidet ihr, wie viele der verbleibenden Spieler (ohne Überwurfene) noch verlieren.`,
+    typ: 'blackjack',
+    strafKategorie: 'Verl. Spiel'
   }
 ];
 
@@ -3227,7 +3337,7 @@ function renderSpieleListe() {
         <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted);font-weight:600">📖 Spielerklärung</summary>
         <div class="spiel-erklaerung" style="margin-top:.5rem;white-space:pre-line">${spiel.erklaerung}</div>
       </details>
-      ${((spiel.typ !== 'team' && spiel.typ !== 'busbauen' && spiel.typ !== 'wiedumir' && spiel.typ !== 'russischroulette') || spiel.typ === 'rennen') ? `
+      ${((spiel.typ !== 'team' && spiel.typ !== 'busbauen' && spiel.typ !== 'wiedumir' && spiel.typ !== 'russischroulette' && spiel.typ !== 'blackjack') || spiel.typ === 'rennen') ? `
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
         <span style="font-size:.85rem;font-weight:600;color:var(--text-muted)">${spiel.typ === 'rennen' ? 'Verlierer-Teams:' : 'Verlierer:'}</span>
         ${[1,2,3,4].map(n => `<button id="vl-${spiel.id}-${n}" class="btn btn-sm ${n===1?'btn-primary':'btn-ghost'}"
@@ -3274,6 +3384,8 @@ function starteSpiel(spielId) {
     starteBergTal(spielId);
   } else if (spiel.typ === 'russischroulette') {
     starteRussischRoulette(spielId);
+  } else if (spiel.typ === 'blackjack') {
+    starteBlackjack(spielId);
   } else {
     const spieler = getAktiveSpieler();
     aktivesSpiel = {
@@ -6118,6 +6230,308 @@ function generiereQuizFragen(anzahl = 10) {
     basis.push({ typ:'mc', frage:`Wer hat die wenigsten Strafen diese Saison?`, antworten: pick4(strafRanking[strafRanking.length-1]?.name || mitglieder[0], mitglieder), richtig: strafRanking[strafRanking.length-1]?.name || mitglieder[0], erklaerung:'Die sauberste Person der Saison!' });
   }
   return basis.slice(0, anzahl);
+}
+
+// ---- BLACKJACK ----
+
+// Card values available for selection (simplified: one of each value)
+const BJ_KARTEN = [
+  { wert:'2',  anzeige:'2',    punkte:2  },
+  { wert:'3',  anzeige:'3',    punkte:3  },
+  { wert:'4',  anzeige:'4',    punkte:4  },
+  { wert:'5',  anzeige:'5',    punkte:5  },
+  { wert:'6',  anzeige:'6',    punkte:6  },
+  { wert:'7',  anzeige:'7',    punkte:7  },
+  { wert:'8',  anzeige:'8',    punkte:8  },
+  { wert:'9',  anzeige:'9',    punkte:9  },
+  { wert:'10', anzeige:'10',   punkte:10 },
+  { wert:'B',  anzeige:'B',    punkte:2, sub:'= 2' },
+  { wert:'D',  anzeige:'D',    punkte:3, sub:'= 3' },
+  { wert:'K',  anzeige:'K',    punkte:4, sub:'= 4' },
+  { wert:'A',  anzeige:'A',    punkte:null, sub:'1 / 11' },
+];
+
+function bjKartenWert(wert, assWert11) {
+  if (wert === 'B') return 2;
+  if (wert === 'D') return 3;
+  if (wert === 'K') return 4;
+  if (wert === 'A') return assWert11 ? 11 : 1;
+  return parseInt(wert);
+}
+
+function bjSumme(name) {
+  const bj = bjState;
+  const karte = bj.karten[name];
+  if (!karte) return '?';
+  const karteWert = bjKartenWert(karte, bj.assWert11[name] !== false);
+  const wurfeSum = (bj.wuerfe[name] || []).reduce((s,x) => s+x, 0);
+  return karteWert + wurfeSum;
+}
+
+let bjState = null;
+
+function starteBlackjack(spielId) {
+  const spieler = getAktiveSpieler().map(m => m.name);
+  bjState = {
+    spielId, spieler,
+    anzahlVerlierer: 1,
+    karten: {},
+    wuerfe: Object.fromEntries(spieler.map(n => [n, []])),
+    gestanden: Object.fromEntries(spieler.map(n => [n, false])),
+    assWert11: Object.fromEntries(spieler.map(n => [n, true])),
+    phase: 'spiel',   // spiel → aufdecken → ergebnis
+    aktuellerWurf: null, // name of player currently entering a throw
+    laufendeEingabe: '',
+    aufgedeckt: false,
+  };
+  renderBlackjack();
+}
+
+function bjVerliererChange(delta) {
+  const bj = bjState;
+  const max = Math.max(1, bj.spieler.length - 1);
+  bj.anzahlVerlierer = Math.min(max, Math.max(1, bj.anzahlVerlierer + delta));
+  renderBlackjack();
+}
+
+function bjWaehleKarte(name, wert) {
+  const esc = name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  bjState.karten[name] = wert;
+  renderBlackjack();
+}
+
+function bjRemoveSpieler(name) {
+  bjState.spieler = bjState.spieler.filter(p => p !== name);
+  renderBlackjack();
+}
+
+function bjAddWurf(name, n) {
+  bjState.wuerfe[name].push(n);
+  bjState.aktuellerWurf = null;
+  bjState.laufendeEingabe = '';
+  renderBlackjack();
+}
+
+function bjUndoWurf(name) {
+  bjState.wuerfe[name].pop();
+  renderBlackjack();
+}
+
+function bjToggleStehen(name) {
+  bjState.gestanden[name] = !bjState.gestanden[name];
+  renderBlackjack();
+}
+
+function bjToggleAss(name) {
+  bjState.assWert11[name] = !bjState.assWert11[name];
+  renderBlackjack();
+}
+
+function bjOpenWurf(name) {
+  bjState.aktuellerWurf = bjState.aktuellerWurf === name ? null : name;
+  bjState.laufendeEingabe = '';
+  renderBlackjack();
+}
+
+function bjNumpadBJ(val) {
+  if (val === 'del') {
+    bjState.laufendeEingabe = bjState.laufendeEingabe.slice(0,-1);
+  } else {
+    bjState.laufendeEingabe = val; // single digit
+    const n = parseInt(val, 10);
+    bjAddWurf(bjState.aktuellerWurf, n);
+    return;
+  }
+  renderBlackjack();
+}
+
+function bjAufdecken() {
+  bjState.phase = 'aufdecken';
+  renderBlackjack();
+}
+
+function bjErgebnis() {
+  bjState.phase = 'ergebnis';
+  const spiel = SPIELE_KATALOG.find(s => s.id === bjState.spielId);
+  const bj = bjState;
+  const summen = {};
+  bj.spieler.forEach(p => { summen[p] = bjSumme(p); });
+  const ueberwurfen = bj.spieler.filter(p => summen[p] > 21);
+  const verbleibend = bj.spieler.filter(p => summen[p] <= 21);
+  const sortiert = [...verbleibend].sort((a,b) => summen[a] - summen[b]);
+  const verlierer = [...ueberwurfen, ...sortiert.slice(0, bj.anzahlVerlierer)];
+  verlierer.forEach(name => addSpieleStrafe(name, 1.00, `Verl. Spiel (${spiel?.name||'Blackjack'})`));
+  renderBlackjack();
+}
+
+function renderBlackjack() {
+  const container = document.getElementById('spiele-liste');
+  if (!container) return;
+  const bj = bjState;
+  const spiel = SPIELE_KATALOG.find(s => s.id === bj.spielId);
+
+  // ── SPIEL (Karten + Würfe — alles auf einem Screen) ────────────
+  if (bj.phase === 'spiel') {
+    const alleGestanden = bj.spieler.every(p => bj.gestanden[p] || Object.keys(bj.karten).includes(p) && bjSumme(p) > 21);
+
+    container.innerHTML = `
+      <div class="card" style="padding-bottom:.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.25rem">
+          <div>
+            <div style="font-weight:800;font-size:1rem">🃏 ${spiel.name}</div>
+            <div style="font-size:.75rem;color:var(--text-muted);margin-top:.1rem">${bj.spieler.length} Spieler — Karte wählen, werfen, aufdecken</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="if(confirm('Spiel beenden?')){bjState=null;renderSpieleListe()}">✕</button>
+        </div>
+
+        <div style="background:#dbeafe;border-left:3px solid #2563eb;border-radius:6px;padding:.6rem .75rem;margin:.75rem 0;font-size:.8rem;color:#1e40af">
+          Ein Einzelspiel. Jeder Spieler zieht eine Spielkarte. Bube = 2, Dame = 3, König = 4. Ein <strong>Ass zählt 1 oder 11</strong> — ihr entscheidet beim Aufdecken.<br><br>
+          Der erste Spieler kommt zum Tablet und tippt seine Karte an. Die Karte bleibt <strong>verdeckt</strong>. Dann kegelt ihr so viele Würfe wie ihr wollt und tragt die Zahlen ein. Wenn ihr genug habt, klickt auf <strong>„Stehen"</strong>.<br><br>
+          Ihr könnt mit dem Aufdecken bis zum Schluss warten — das erhöht die Spannung! Wer nach dem Aufdecken <strong>über 21</strong> ist, hat automatisch verloren. Wer <strong>genau 21</strong> hat, hat automatisch gewonnen.<br><br>
+          Über den Button unten legt ihr fest, wie viele der verbleibenden Spieler (ohne Überworfene) noch verlieren.
+        </div>
+
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+          <span style="font-size:.85rem;font-weight:600;color:var(--text-muted)">Verlierer (außer Überworfene)</span>
+          <div style="display:flex;align-items:center;gap:.5rem;margin-left:auto">
+            <button class="btn btn-ghost btn-sm" style="width:32px;height:32px;padding:0;font-size:1.1rem;display:flex;align-items:center;justify-content:center" onclick="bjVerliererChange(-1)">−</button>
+            <span style="font-size:1.1rem;font-weight:800;min-width:24px;text-align:center">${bj.anzahlVerlierer}</span>
+            <button class="btn btn-ghost btn-sm" style="width:32px;height:32px;padding:0;font-size:1.1rem;display:flex;align-items:center;justify-content:center" onclick="bjVerliererChange(1)">+</button>
+          </div>
+        </div>
+
+        ${bj.spieler.map(name => {
+          const esc = name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const karte = bj.karten[name];
+          const gestanden = bj.gestanden[name];
+          const wuerfe = bj.wuerfe[name] || [];
+          const summe = karte ? bjSumme(name) : null;
+          const ueber = summe > 21;
+          const genau21 = summe === 21;
+          const isAktiv = bj.aktuellerWurf === name;
+          const initials = name.slice(0,1).toUpperCase();
+          const col = avatarColor ? avatarColor(name) : '#2563eb';
+
+          return `<div style="border-bottom:1px solid var(--border);padding:.75rem 0">
+            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
+              <div style="width:28px;height:28px;border-radius:50%;background:${col};color:white;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0">${initials}</div>
+              <span style="font-weight:700;flex:1">${name}</span>
+              ${karte && summe !== null ? `<span style="font-size:1rem;font-weight:900;color:${ueber?'#dc2626':genau21?'#16a34a':'var(--primary)'}">${summe}${ueber?' 💥':genau21?' 🎉':''}</span>` : ''}
+              <button onclick="bjRemoveSpieler('${esc}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.1rem;padding:2px 6px">−</button>
+            </div>
+
+            <!-- Karte wählen -->
+            <div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.4rem">
+              ${BJ_KARTEN.map(k => {
+                const selected = karte === k.wert;
+                return `<button onclick="bjWaehleKarte('${esc}','${k.wert}')"
+                  style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:38px;height:48px;border-radius:8px;border:2px solid ${selected?'var(--primary)':'var(--border)'};background:${selected?'#eff6ff':'white'};cursor:pointer;padding:2px 6px;gap:1px">
+                  <span style="font-size:.85rem;font-weight:800;color:${selected?'var(--primary)':'var(--text)'};line-height:1">${k.anzeige}</span>
+                  ${k.sub ? `<span style="font-size:.6rem;color:${selected?'var(--primary)':'var(--text-muted)'};line-height:1">${k.sub}</span>` : `<span style="font-size:.6rem;color:transparent;line-height:1">.</span>`}
+                </button>`;
+              }).join('')}
+            </div>
+
+            <!-- Würfe -->
+            ${karte ? `
+              <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-top:.25rem">
+                ${wuerfe.length > 0 ? `<span style="font-size:.78rem;color:var(--text-muted)">Würfe: ${wuerfe.join(', ')}</span>
+                  <button onclick="bjUndoWurf('${esc}')" style="font-size:.7rem;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:white;cursor:pointer;color:var(--text-muted)">↩</button>` : ''}
+                ${!gestanden && !ueber ? `
+                  <button onclick="bjOpenWurf('${esc}')" style="padding:3px 10px;border-radius:6px;border:1px solid ${isAktiv?'var(--primary)':'var(--border)'};background:${isAktiv?'#eff6ff':'white'};cursor:pointer;font-size:.78rem;font-weight:600;color:${isAktiv?'var(--primary)':'var(--text)'}">+ Wurf</button>
+                  <button onclick="bjToggleStehen('${esc}')" style="padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:white;cursor:pointer;font-size:.78rem;font-weight:600;color:var(--text-muted)">Stehen 🛑</button>
+                ` : gestanden ? `<span style="font-size:.78rem;font-weight:700;color:#16a34a">✓ Steht</span>
+                  <button onclick="bjToggleStehen('${esc}')" style="font-size:.7rem;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:white;cursor:pointer;color:var(--text-muted)">↩</button>` : ''}
+              </div>
+
+              ${isAktiv ? `
+                <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.5rem">
+                  ${[0,1,2,3,4,5,6,7,8,9].map(n =>
+                    `<button onclick="bjNumpadBJ('${n}')"
+                      style="width:38px;height:38px;border-radius:8px;border:1px solid var(--border);background:white;font-size:.9rem;font-weight:700;cursor:pointer">${n}</button>`
+                  ).join('')}
+                </div>` : ''}
+            ` : `<div style="font-size:.75rem;color:var(--text-muted)">↑ Karte wählen</div>`}
+          </div>`;
+        }).join('')}
+
+        <button class="btn btn-primary btn-full" style="margin-top:.75rem" onclick="bjAufdecken()">
+          🔍 Aufdecken
+        </button>
+      </div>`;
+    return;
+  }
+
+  // ── AUFDECKEN ──────────────────────────────────────────────────
+  if (bj.phase === 'aufdecken') {
+    const summen = {};
+    bj.spieler.forEach(p => { summen[p] = bjSumme(p); });
+    const sorted = [...bj.spieler].sort((a,b) => (summen[b]||0) - (summen[a]||0));
+
+    container.innerHTML = `
+      <div class="card">
+        <div class="card-title">🃏 Aufdecken</div>
+        <div style="margin-bottom:1rem">
+          ${sorted.map(p => {
+            const wert = bj.karten[p];
+            const summe = summen[p];
+            const ueber = summe > 21;
+            const genau = summe === 21;
+            const karteWert = bjKartenWert(wert, bj.assWert11[p] !== false);
+            const esc = p.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.65rem .75rem;border-radius:10px;border:2px solid ${ueber?'#fecaca':genau?'#bbf7d0':'var(--border)'};background:${ueber?'#fef2f2':genau?'#f0fdf4':'white'};margin-bottom:.4rem;gap:.5rem;flex-wrap:wrap">
+              <div>
+                <div style="font-weight:700">${p}</div>
+                <div style="font-size:.78rem;color:var(--text-muted)">
+                  Karte: <strong>${wert||'?'}</strong> = ${karteWert} Pkt
+                  ${wert==='A'?`<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:.7rem;margin-left:.3rem" onclick="bjToggleAss('${esc}');renderBlackjack()">Ass = ${bj.assWert11[p]!==false?'11':'1'}</button>`:''}
+                  · Würfe: ${bj.wuerfe[p].join(', ')||'—'} (=${bj.wuerfe[p].reduce((s,x)=>s+x,0)})
+                </div>
+              </div>
+              <div style="font-size:1.6rem;font-weight:900;color:${ueber?'#dc2626':genau?'#16a34a':'var(--primary)'}">${summe}${ueber?' 💥':genau?' 🎉':''}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.75rem">
+          Überwurfene verlieren automatisch. Von den verbleibenden verlieren die unteren <strong>${bj.anzahlVerlierer}</strong>.
+        </div>
+        <button class="btn btn-danger btn-full" onclick="bjErgebnis()">💀 Ergebnis & Strafen vergeben</button>
+      </div>`;
+    return;
+  }
+
+  // ── ERGEBNIS ───────────────────────────────────────────────────
+  if (bj.phase === 'ergebnis') {
+    const summen = {};
+    bj.spieler.forEach(p => { summen[p] = bjSumme(p); });
+    const ueberwurfen = bj.spieler.filter(p => summen[p] > 21);
+    const verbleibend = bj.spieler.filter(p => summen[p] <= 21);
+    const sortiert = [...verbleibend].sort((a,b) => summen[a] - summen[b]);
+    const verlierer = new Set([...ueberwurfen, ...sortiert.slice(0, bj.anzahlVerlierer)]);
+    const sorted = [...bj.spieler].sort((a,b) => (summen[b]||0) - (summen[a]||0));
+
+    container.innerHTML = `
+      <div class="card">
+        <div class="card-title">🃏 Ergebnis</div>
+        ${sorted.map(p => {
+          const s = summen[p];
+          const verliert = verlierer.has(p);
+          const gewinnt = s === 21;
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .65rem;border-radius:8px;background:${verliert?'#fef2f2':gewinnt?'#f0fdf4':'var(--bg-page)'};margin-bottom:.3rem">
+            <div>
+              <span style="font-weight:700">${p}</span>
+              <span style="font-size:.78rem;color:var(--text-muted);margin-left:.5rem">Karte: ${bj.karten[p]||'?'} · Würfe: ${bj.wuerfe[p].join(',')||'—'}</span>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:1.2rem;font-weight:900;color:${s>21?'#dc2626':s===21?'#16a34a':'var(--primary)'}">${s}</div>
+              <div style="font-size:.72rem;font-weight:700;color:${verliert?'#dc2626':'#16a34a'}">${verliert?'💀 Verloren':gewinnt?'🎉 Blackjack!':'✓ Safe'}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        <button class="btn btn-primary btn-full" style="margin-top:1rem" onclick="bjState=null;renderSpieleListe()">✓ Fertig</button>
+      </div>`;
+    return;
+  }
 }
 
 // ---- OFFLINE QUIZ ----

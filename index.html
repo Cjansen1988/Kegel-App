@@ -5168,25 +5168,41 @@ function rrLebenDots(current, max) {
 }
 
 function rrStrafenEintragen() {
-  const rs = rrState;
-  const spiel = SPIELE_KATALOG.find(s => s.id === rs.spielId);
-  const gewinner = rs.spieler.find(p => rs.lebenStand[p] > 0);
-  const verlierer = rs.spieler.filter(p => p !== gewinner);
-  verlierer.forEach(v => {
-    addSpieleStrafe(v, 1.00, `Verl. Spiel (${spiel.name})`);
-  });
-  if (!aktiveSession) {
-    verlierer.forEach(name => {
-      db.collection('strafen').add({
-        mitglied: name, kategorie: 'Verl. Spiel',
-        notiz: `Verl. Spiel (${spiel.name})`, betrag: 1.00,
-        datum: today(), bezahlt: false, createdAt: Date.now(), ...saisonMeta()
+  try {
+    if (!rrState) { alert('Fehler: Spielstatus nicht gefunden. Bitte neu starten.'); return; }
+    const rs = rrState;
+    const spiel = SPIELE_KATALOG.find(s => s.id === rs.spielId);
+    if (!spiel) { alert('Fehler: Spiel nicht gefunden.'); return; }
+    const gewinner = (rs.spieler || []).find(p => (rs.lebenStand || {})[p] > 0);
+    const verlierer = (rs.spieler || []).filter(p => p !== gewinner);
+    if (!verlierer.length) { alert('Keine Verlierer gefunden.'); rrState = null; renderSpieleListe(); return; }
+
+    if (aktiveSession) {
+      verlierer.forEach(v => addSpieleStrafe(v, 1.00, `Verl. Spiel (${spiel.name})`));
+    } else {
+      const batch = db.batch();
+      verlierer.forEach(name => {
+        batch.set(db.collection('strafen').doc(), {
+          mitglied: name, kategorie: 'Verl. Spiel',
+          notiz: `Verl. Spiel (${spiel.name})`, betrag: 1.00,
+          datum: today(), bezahlt: false, createdAt: Date.now(), ...saisonMeta()
+        });
       });
-    });
+      batch.commit();
+      verlierer.forEach(name => {
+        db.collection('spielverluste').add({
+          spieler: name, spielName: spiel.name, betrag: 1.00,
+          datum: today(), ...saisonMeta(), createdAt: Date.now()
+        }).catch(() => {});
+      });
+    }
+
+    alert(`✅ ${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel${aktiveSession ? ' in der Live-Session' : ''}.`);
+    rrState = null;
+    renderSpieleListe();
+  } catch(e) {
+    alert('Fehler beim Eintragen: ' + e.message);
   }
-  alert(`✅ ${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel${aktiveSession ? ' in der Live-Session' : ''}.`);
-  rrState = null;
-  renderSpieleListe();
 }
 
 function renderRussischRoulette() {

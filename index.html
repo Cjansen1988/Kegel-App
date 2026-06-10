@@ -3576,7 +3576,7 @@ function renderSpieleListe() {
         <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted);font-weight:600">📖 Spielerklärung</summary>
         <div class="spiel-erklaerung" style="margin-top:.5rem;white-space:pre-line">${spiel.erklaerung}</div>
       </details>
-      ${((spiel.typ !== 'team' && spiel.typ !== 'busbauen' && spiel.typ !== 'wiedumir' && spiel.typ !== 'russischroulette' && spiel.typ !== 'blackjack') || spiel.typ === 'rennen') ? `
+      ${((spiel.typ !== 'team' && spiel.typ !== 'busbauen' && spiel.typ !== 'wiedumir' && spiel.typ !== 'russischroulette' && spiel.typ !== 'blackjack' && spiel.typ !== 'einzeln') || spiel.typ === 'rennen') ? `
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
         <span style="font-size:.85rem;font-weight:600;color:var(--text-muted)">${spiel.typ === 'rennen' ? 'Verlierer-Teams:' : 'Verlierer:'}</span>
         ${[1,2,3,4].map(n => `<button id="vl-${spiel.id}-${n}" class="btn btn-sm ${n===1?'btn-primary':'btn-ghost'}"
@@ -6682,21 +6682,26 @@ function renderBlackjack() {
             <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
               <div style="width:28px;height:28px;border-radius:50%;background:${col};color:white;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0">${initials}</div>
               <span style="font-weight:700;flex:1">${name}</span>
-              ${karte && summe !== null ? `<span style="font-size:1rem;font-weight:900;color:${ueber?'#dc2626':genau21?'#16a34a':'var(--primary)'}">${summe}${ueber?' 💥':genau21?' 🎉':''}</span>` : ''}
+              ${karte && wuerfe.length > 0 ? `<span style="font-size:.78rem;color:var(--text-muted)">Würfe: ${wuerfe.reduce((s,x)=>s+x,0)}</span>` : ''}
               <button onclick="bjRemoveSpieler('${esc}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.1rem;padding:2px 6px">−</button>
             </div>
 
-            <!-- Karte wählen -->
+            <!-- Karte wählen / verdeckt -->
+            ${karte ? `
+            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+              <div style="background:#1e3a5f;color:white;border-radius:8px;width:42px;height:52px;display:flex;align-items:center;justify-content:center;font-size:1.4rem">🎴</div>
+              <div>
+                <div style="font-size:.82rem;font-weight:700;color:#1e3a5f">Karte verdeckt</div>
+                <button onclick="bjWaehleKarte('${esc}',null)" style="font-size:.7rem;padding:2px 7px;border:1px solid var(--border);border-radius:4px;background:white;cursor:pointer;color:var(--text-muted);margin-top:2px">↩ ändern</button>
+              </div>
+            </div>` : `
             <div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.4rem">
-              ${BJ_KARTEN.map(k => {
-                const selected = karte === k.wert;
-                return `<button onclick="bjWaehleKarte('${esc}','${k.wert}')"
-                  style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:38px;height:48px;border-radius:8px;border:2px solid ${selected?'var(--primary)':'var(--border)'};background:${selected?'#eff6ff':'white'};cursor:pointer;padding:2px 6px;gap:1px">
-                  <span style="font-size:.85rem;font-weight:800;color:${selected?'var(--primary)':'var(--text)'};line-height:1">${k.anzeige}</span>
-                  ${k.sub ? `<span style="font-size:.6rem;color:${selected?'var(--primary)':'var(--text-muted)'};line-height:1">${k.sub}</span>` : `<span style="font-size:.6rem;color:transparent;line-height:1">.</span>`}
-                </button>`;
-              }).join('')}
-            </div>
+              ${BJ_KARTEN.map(k => `<button onclick="bjWaehleKarte('${esc}','${k.wert}')"
+                  style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:38px;height:48px;border-radius:8px;border:2px solid var(--border);background:white;cursor:pointer;padding:2px 6px;gap:1px">
+                  <span style="font-size:.85rem;font-weight:800;line-height:1">${k.anzeige}</span>
+                  ${k.sub ? `<span style="font-size:.6rem;color:var(--text-muted);line-height:1">${k.sub}</span>` : `<span style="font-size:.6rem;color:transparent;line-height:1">.</span>`}
+                </button>`).join('')}
+            </div>`}
 
             <!-- Würfe -->
             ${karte ? `

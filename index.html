@@ -1939,11 +1939,16 @@ function bestaetigeKegelSession() {
     });
   });
 
+  const { alle: alleAuswertung } = kgBerechneAuswertung();
+  const gesamtEinnahmen = Math.round(alleAuswertung.reduce((s, m) => s + m.kegelbuch + 3.00, 0) * 100) / 100;
+
   db.collection('kegelsessions').add({
     name: aktiveSession.name, datum: today(),
     eintraege: eintraegeFlach, ...saisonMeta(),
     angemeldet: aktiveSession.angemeldet || [],
     spieler: aktiveSession.spieler || [],
+    gesamtEinnahmen,
+    mitgliederAnzahl: state.mitglieder.length,
     createdAt: Date.now()
   });
 
@@ -1976,8 +1981,18 @@ function renderKegelHistorie() {
     container.innerHTML = '<div class="section-title" style="padding:0 0 .5rem">Letzte Sessions</div>' +
       snap.docs.map(d => {
         const s = d.data();
-        const total = (s.eintraege||[]).reduce((sum,e) => sum + Number(e.betrag), 0);
-        const aktiveAnzahl = (s.angemeldet||[]).length || '?';
+        const kegelbuchTotal = (s.eintraege||[]).reduce((sum,e) => sum + Number(e.betrag), 0);
+        const aktiveAnzahl = (s.angemeldet||[]).length;
+
+        // Gesamteinnahmen: gespeichert (neu) oder on-the-fly berechnen (alt)
+        let gesamtEinnahmen = s.gesamtEinnahmen;
+        if (!gesamtEinnahmen && aktiveAnzahl > 0) {
+          const mitgliederAnz = s.mitgliederAnzahl || state.mitglieder.length;
+          const abwesendeAnz = mitgliederAnz - aktiveAnzahl;
+          const durchschnitt = kegelbuchTotal / aktiveAnzahl;
+          gesamtEinnahmen = Math.round((kegelbuchTotal + aktiveAnzahl * 3 + abwesendeAnz * (durchschnitt + 3)) * 100) / 100;
+        }
+
         return `<div class="card" style="opacity:.85">
           <div style="display:flex;justify-content:space-between;align-items:start;gap:.5rem">
             <div style="flex:1;cursor:pointer" onclick="zeigeSessionDetail('${d.id}')">
@@ -1986,8 +2001,11 @@ function renderKegelHistorie() {
                 <span class="tag tag-blue">${formatDate(s.datum)}</span>
               </div>
               <div style="font-size:.875rem;color:var(--text-muted)">
-                ${aktiveAnzahl} Kegler · Kegelbuch gesamt: <strong style="color:var(--text)">${formatEur(total)}</strong>
+                ${aktiveAnzahl || '?'} Kegler · Kegelbuch: <strong style="color:var(--text)">${formatEur(kegelbuchTotal)}</strong>
               </div>
+              ${gesamtEinnahmen ? `<div style="font-size:.82rem;color:var(--primary);margin-top:.15rem">
+                💰 Gesamt inkl. Abwesende + Bahn: <strong>${formatEur(gesamtEinnahmen)}</strong>
+              </div>` : ''}
             </div>
             <button class="btn btn-danger btn-sm" onclick="loescheSession('${d.id}','${s.name}')">🗑</button>
           </div>

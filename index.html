@@ -1444,7 +1444,7 @@ function showPage(name, btn) {
   });
   if (name === 'statistiken') renderStatistiken();
   if (name === 'kegeln') { renderKegelHistorie(); renderKgTerminListe(); renderKgSpielerAuswahl(); }
-  if (name === 'spiele') { setzSpiel = null; renderSpieleListe(); }
+  if (name === 'spiele') { renderSpieleListe(); }
   if (name === 'quiz') { renderQuizAdmin(); }
   window.scrollTo(0, 0);
 }
@@ -3548,6 +3548,18 @@ function setVorauswahlVerlierer(spielId, n) {
 function renderSpieleListe() {
   const container = document.getElementById('spiele-liste');
   if (!container) return;
+
+  // Laufendes Spiel wiederherstellen statt Liste zu zeigen
+  if (rrState)         { renderRussischRoulette(); return; }
+  if (bjState)         { renderBlackjack(); return; }
+  if (wdmState)        { renderWieDuMir(); return; }
+  if (btState)         { renderBergTal(); return; }
+  if (busBauenState)   { renderBusBauen(); return; }
+  if (miteinanderState){ renderMiteinander(); return; }
+  if (rennenState)     { renderRennen(); return; }
+  if (teamSpielState)  { renderTeamSpiel(); return; }
+  if (setzSpiel)       { renderSetzSpiel(); return; }
+  if (aktivesSpiel)    { renderAktivesSpiel(); return; }
 
   const aktiveSpielerListe = getAktiveSpieler();
 

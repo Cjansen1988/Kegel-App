@@ -1919,11 +1919,19 @@ function bestaetigeKegelSession() {
   // Einträge für Historie
   const eintraegeFlach = [];
   state.mitglieder.forEach(m => {
+    // Kegelbuch-Kategorien
     const counts = aktiveSession.counts[m.name]||{};
     KG_KATEGORIEN.forEach(g => g.strafen.forEach(s => {
       const n = counts[s.name]||0;
       if (n > 0) eintraegeFlach.push({ mitglied: m.name, kategorie: s.name, betrag: s.betrag*n, anzahl: n });
     }));
+    // Spiele-Strafen
+    const spieleBetrag = aktiveSession.spiele?.[m.name] || 0;
+    if (spieleBetrag > 0) {
+      const spieleDetail = (aktiveSession.spieleDetail?.[m.name] || []);
+      const beschreibung = spieleDetail.map(d => d.beschreibung).join(', ') || 'Spiele';
+      eintraegeFlach.push({ mitglied: m.name, kategorie: 'Spiele', betrag: spieleBetrag, anzahl: spieleDetail.length || 1, notiz: beschreibung });
+    }
   });
 
   // Strafen speichern
@@ -2031,7 +2039,10 @@ function zeigeSessionDetail(sessionId) {
     eintraege.forEach(e => {
       if (!perSpieler[e.mitglied]) perSpieler[e.mitglied] = { total: 0, details: [] };
       perSpieler[e.mitglied].total += Number(e.betrag);
-      if (e.anzahl > 0) perSpieler[e.mitglied].details.push(`${e.kategorie} ×${e.anzahl}`);
+      if (Number(e.betrag) > 0) {
+        const label = e.kategorie === 'Spiele' && e.notiz ? `Spiele (${e.notiz})` : (e.anzahl > 1 ? `${e.kategorie} ×${e.anzahl}` : e.kategorie);
+        perSpieler[e.mitglied].details.push(label);
+      }
     });
 
     const angemeldet = s.angemeldet || Object.keys(perSpieler);

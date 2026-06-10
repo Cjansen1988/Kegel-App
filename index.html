@@ -1204,26 +1204,40 @@ function renderMemberLive() {
 
   if (tab) tab.style.opacity = '1';
 
-  // Totals berechnen
-  const spielerTotals = state.mitglieder.map(m => {
-    const counts = live.counts?.[m.name] || {};
+  // Wer ist dabei (aus spieler/angemeldet oder fallback: alle Mitglieder)
+  const dabeiNamen = live.angemeldet?.length ? live.angemeldet : (live.spieler?.length ? live.spieler : state.mitglieder.map(m => m.name));
+
+  // Totals berechnen — nur dabei-Spieler
+  const spielerTotals = dabeiNamen.map(name => {
+    const counts = live.counts?.[name] || {};
     let total = 0;
     const details = [];
     KG_KATEGORIEN.forEach(g => g.strafen.forEach(s => {
       const n = counts[s.name] || 0;
       if (n > 0) { total += n * s.betrag; details.push(`${s.name} ×${n}`); }
     }));
-    return { name: m.name, total, details };
+    return { name, total, details };
   }).sort((a,b) => b.total - a.total);
 
   const gesamtBetrag = spielerTotals.reduce((s,m) => s + m.total, 0);
-  const maxTotal = spielerTotals[0]?.total || 1;
+  const maxTotal = Math.max(...spielerTotals.map(s => s.total), 1);
+  const durchschnitt = spielerTotals.length > 0 ? gesamtBetrag / spielerTotals.length : 0;
 
   container.innerHTML = `
     <div class="card" style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:white;margin-bottom:1rem">
       <div style="font-size:.8rem;opacity:.8;margin-bottom:.25rem">🎳 Aktive Session</div>
       <div style="font-weight:700;font-size:1.1rem">${live.name}</div>
-      <div style="font-size:.85rem;opacity:.8;margin-top:.25rem">Gesamt: ${formatEur(gesamtBetrag)}</div>
+      <div style="display:flex;gap:1rem;margin-top:.5rem;flex-wrap:wrap">
+        <div style="font-size:.82rem;opacity:.9">👥 <strong>${spielerTotals.length}</strong> Kegler dabei</div>
+        <div style="font-size:.82rem;opacity:.9">⌀ <strong>${formatEur(durchschnitt)}</strong> pro Person</div>
+        <div style="font-size:.82rem;opacity:.9">Gesamt: <strong>${formatEur(gesamtBetrag)}</strong></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:.75rem">
+      <div class="card-title">👥 Aktiv dabei</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+        ${dabeiNamen.map(name => `<span style="background:#eff6ff;color:#1d4ed8;border-radius:99px;padding:.25rem .7rem;font-size:.82rem;font-weight:600">🎳 ${name}</span>`).join('')}
+      </div>
     </div>
     <div class="card">
       <div class="card-title">📊 Aktueller Stand</div>
@@ -1469,7 +1483,7 @@ let aktiverKgTab = 'kegel';
 
 function saveLiveSession() {
   if (!aktiveSession) return;
-  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, updatedAt: Date.now() });
+  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], updatedAt: Date.now() });
 }
 function clearLiveSession() { db.collection('live').doc('session').set({ aktiv: false }); }
 

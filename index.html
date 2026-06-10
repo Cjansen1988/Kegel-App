@@ -666,6 +666,17 @@
   <!-- Differenz -->
   <div id="kasse-differenz-box" class="card" style="margin-bottom:1rem;display:none"></div>
 
+  <!-- Bahn bezahlen -->
+  <div class="card" style="margin-bottom:1rem;border-color:#fbbf24;background:#fffbeb">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem">
+      <div>
+        <div style="font-weight:700;font-size:.95rem">🏟️ Bahn bezahlt</div>
+        <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">Bucht −40,00 € als Ausgabe und zieht vom Ist-Bestand ab</div>
+      </div>
+      <button class="btn btn-primary" onclick="bahnBezahltDialog()">−40,00 € buchen</button>
+    </div>
+  </div>
+
   <!-- Ist-Betrag eingeben -->
   <div class="card" style="margin-bottom:1rem">
     <div class="card-title">💰 Ist-Bestand aktualisieren</div>
@@ -3087,6 +3098,69 @@ function speichereIstBestand() {
   });
   document.getElementById('ist-konto').value = '';
   document.getElementById('ist-bar').value = '';
+}
+
+function bahnBezahltDialog() {
+  const BETRAG = 40.00;
+  const popup = document.createElement('div');
+  popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:600;display:flex;align-items:center;justify-content:center;padding:1rem';
+  popup.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:1.5rem;width:100%;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,.2)" onclick="event.stopPropagation()">
+      <div style="font-size:1.1rem;font-weight:800;margin-bottom:.4rem">🏟️ Bahn bezahlt — 40,00 €</div>
+      <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:1.25rem">Wie wurde die Kegelbahn bezahlt?</div>
+      <div style="display:flex;flex-direction:column;gap:.6rem">
+        <button onclick="bahnBezahltBestaetigen('bar')" class="btn btn-primary btn-full" style="font-size:1rem;padding:14px">
+          💵 Bar bezahlt
+          <span style="font-size:.78rem;display:block;font-weight:400;opacity:.85">Wird von der Barkasse abgezogen</span>
+        </button>
+        <button onclick="bahnBezahltBestaetigen('konto')" class="btn btn-ghost btn-full" style="font-size:1rem;padding:14px">
+          🏦 Per Karte bezahlt
+          <span style="font-size:.78rem;display:block;font-weight:400;color:var(--text-muted)">Wird vom Konto abgezogen</span>
+        </button>
+        <button onclick="this.closest('[style*=fixed]').remove()" class="btn btn-ghost btn-sm" style="margin-top:.25rem">Abbrechen</button>
+      </div>
+    </div>`;
+  popup.addEventListener('click', () => popup.remove());
+  document.body.appendChild(popup);
+}
+
+function bahnBezahltBestaetigen(methode) {
+  const BETRAG = 40.00;
+  // 1. Kassenbuch-Ausgabe buchen
+  db.collection('kassenbuch').add({
+    typ: 'ausgabe',
+    beschr: `Kegelbahn-Gebühr (${methode === 'bar' ? 'Bar' : 'Karte'})`,
+    betrag: BETRAG,
+    datum: today(),
+    kat: 'Miete',
+    createdAt: Date.now()
+  });
+
+  // 2. Ist-Bestand aktualisieren (falls vorhanden)
+  const ist = state.istBestand;
+  if (ist) {
+    const neuerWert = Math.round(((ist[methode] || 0) - BETRAG) * 100) / 100;
+    db.collection('config').doc('istBestand').update({
+      [methode]: neuerWert,
+      updatedAt: Date.now(),
+      datum: today()
+    });
+  }
+
+  // Popup schließen
+  document.querySelectorAll('[style*="position:fixed"]').forEach(el => {
+    if (el.querySelector('.btn-primary')) el.remove();
+  });
+
+  // Kurzes Feedback
+  const card = document.querySelector('#page-kassenbuch .card');
+  if (card) {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#15803d;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:700;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+    toast.textContent = `✓ −40,00 € vom ${methode === 'bar' ? 'Bargeld' : 'Konto'} abgezogen`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+  }
 }
 
 function renderIstBestand() {

@@ -5171,9 +5171,20 @@ function rrStrafenEintragen() {
   const rs = rrState;
   const spiel = SPIELE_KATALOG.find(s => s.id === rs.spielId);
   const gewinner = rs.spieler.find(p => rs.lebenStand[p] > 0);
-  rs.spieler.filter(p => p !== gewinner).forEach(v => {
-    addSpieleStrafe(v, 0, `${spiel.name} — Ausgeschieden`);
+  const verlierer = rs.spieler.filter(p => p !== gewinner);
+  verlierer.forEach(v => {
+    addSpieleStrafe(v, 1.00, `Verl. Spiel (${spiel.name})`);
   });
+  if (!aktiveSession) {
+    verlierer.forEach(name => {
+      db.collection('strafen').add({
+        mitglied: name, kategorie: 'Verl. Spiel',
+        notiz: `Verl. Spiel (${spiel.name})`, betrag: 1.00,
+        datum: today(), bezahlt: false, createdAt: Date.now(), ...saisonMeta()
+      });
+    });
+  }
+  alert(`✅ ${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel${aktiveSession ? ' in der Live-Session' : ''}.`);
   rrState = null;
   renderSpieleListe();
 }

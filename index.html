@@ -761,6 +761,17 @@
       </table>
     </div>
   </div>
+
+  <!-- Gefahrenzone -->
+  <div class="card" style="border-color:#fecaca;background:#fff5f5;margin-top:.5rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem">
+      <div>
+        <div style="font-weight:700;color:#b91c1c;font-size:.9rem">⚠️ Kasse zurücksetzen</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.1rem">Löscht alle Buchungen und setzt den Ist-Bestand auf 0</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="kasseZuruecksetzenDialog()">Kasse zurücksetzen</button>
+    </div>
+  </div>
 </div>
 
 <!-- MITGLIEDER -->
@@ -3232,6 +3243,61 @@ function addBuchung() {
 function deleteBuchung(id) {
   if (!confirm('Buchung löschen?')) return;
   db.collection('kassenbuch').doc(id).delete();
+}
+
+function kasseZuruecksetzenDialog() {
+  const popup = document.createElement('div');
+  popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:center;justify-content:center;padding:1rem';
+  popup.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:1.5rem;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.25)" onclick="event.stopPropagation()">
+      <div style="font-size:1.1rem;font-weight:800;color:#b91c1c;margin-bottom:.4rem">⚠️ Kasse zurücksetzen</div>
+      <div style="font-size:.875rem;color:var(--text-muted);margin-bottom:1.25rem">
+        Das löscht <strong>alle ${state.kassenbuch.length} Buchungen</strong> aus dem Kassenbuch und setzt den Ist-Bestand auf 0. Diese Aktion kann nicht rückgängig gemacht werden!
+      </div>
+      <div style="background:#fef2f2;border-radius:8px;padding:.75rem;margin-bottom:1.25rem;font-size:.82rem;color:#b91c1c">
+        Zur Bestätigung eintippen: <strong>ZURÜCKSETZEN</strong>
+        <input type="text" id="kasse-reset-confirm" placeholder="ZURÜCKSETZEN" style="display:block;margin-top:.5rem;width:100%;padding:8px 10px;border:1.5px solid #fecaca;border-radius:6px;font-size:.9rem">
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button onclick="this.closest('[style*=fixed]').remove()" class="btn btn-ghost" style="flex:1">Abbrechen</button>
+        <button onclick="kasseZuruecksetzenBestaetigen()" class="btn btn-danger" style="flex:1">Alles löschen</button>
+      </div>
+    </div>`;
+  popup.addEventListener('click', () => popup.remove());
+  document.body.appendChild(popup);
+}
+
+async function kasseZuruecksetzenBestaetigen() {
+  const input = document.getElementById('kasse-reset-confirm');
+  if (!input || input.value.trim().toUpperCase() !== 'ZURÜCKSETZEN') {
+    input.style.borderColor = '#dc2626';
+    input.placeholder = '⚠ Bitte "ZURÜCKSETZEN" eintippen';
+    return;
+  }
+
+  // Alle Kassenbuch-Einträge löschen
+  const batch = db.batch();
+  state.kassenbuch.forEach(b => {
+    batch.delete(db.collection('kassenbuch').doc(b.id));
+  });
+  await batch.commit();
+
+  // Ist-Bestand auf 0 setzen
+  await db.collection('config').doc('istBestand').set({
+    konto: 0, bar: 0, updatedAt: Date.now(), datum: today()
+  });
+
+  // Popup schließen
+  document.querySelectorAll('[style*="position:fixed"]').forEach(el => {
+    if (el.querySelector('#kasse-reset-confirm')) el.remove();
+  });
+
+  // Toast
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#15803d;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:700;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+  toast.textContent = '✓ Kasse wurde auf 0 zurückgesetzt';
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2500);
 }
 
 function filterKasse(f) { kasseFilter = f; renderKassenbuch(); }

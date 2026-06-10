@@ -4927,15 +4927,39 @@ function btPunkte(spielerName) {
 function btWurfLabel(w) { return w === 'pumpe' ? '0' : w; }
 
 function btStrafenEintragen() {
-  const bs = btState;
-  const spiel = SPIELE_KATALOG.find(s => s.id === bs.spielId);
-  const sorted = [...bs.spieler].sort((a, b) => btPunkte(a) - btPunkte(b));
-  sorted.slice(0, bs.anzahlVerlierer).forEach(v => {
-    const pts = btPunkte(v);
-    addSpieleStrafe(v, 0, `${spiel.name} — ${pts >= 0 ? '+' : ''}${pts} Punkte`);
-  });
-  btState = null;
-  renderSpieleListe();
+  try {
+    if (!btState) { alert('Fehler: Spielstatus nicht gefunden.'); return; }
+    const bs = btState;
+    const spiel = SPIELE_KATALOG.find(s => s.id === bs.spielId);
+    const sorted = [...bs.spieler].sort((a, b) => btPunkte(a) - btPunkte(b));
+    const verlierer = sorted.slice(0, bs.anzahlVerlierer);
+
+    if (aktiveSession) {
+      verlierer.forEach(v => addSpieleStrafe(v, 1.00, `Verl. Spiel (${spiel.name})`));
+    } else {
+      const batch = db.batch();
+      verlierer.forEach(name => {
+        batch.set(db.collection('strafen').doc(), {
+          mitglied: name, kategorie: 'Verl. Spiel',
+          notiz: `Verl. Spiel (${spiel.name})`, betrag: 1.00,
+          datum: today(), bezahlt: false, createdAt: Date.now(), ...saisonMeta()
+        });
+      });
+      batch.commit();
+      verlierer.forEach(name => {
+        db.collection('spielverluste').add({
+          spieler: name, spielName: spiel.name, betrag: 1.00,
+          datum: today(), ...saisonMeta(), createdAt: Date.now()
+        }).catch(() => {});
+      });
+    }
+
+    alert(`✅ ${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel${aktiveSession ? ' in der Live-Session' : ''}.`);
+    btState = null;
+    renderSpieleListe();
+  } catch(e) {
+    alert('Fehler beim Eintragen: ' + e.message);
+  }
 }
 
 function renderBergTal() {
@@ -5418,14 +5442,39 @@ function wdmZeigeErgebnis() {
 }
 
 function wdmStrafenEintragen() {
-  const ws = wdmState;
-  const spiel = SPIELE_KATALOG.find(s => s.id === ws.spielId);
-  const sorted = [...ws.spieler].sort((a, b) => ws.striche[b] - ws.striche[a]);
-  sorted.slice(0, ws.anzahlVerlierer).forEach(v => {
-    addSpieleStrafe(v, 0, `${spiel.name} — ${ws.striche[v]} Strich${ws.striche[v] !== 1 ? 'e' : ''}`);
-  });
-  wdmState = null;
-  renderSpieleListe();
+  try {
+    if (!wdmState) { alert('Fehler: Spielstatus nicht gefunden.'); return; }
+    const ws = wdmState;
+    const spiel = SPIELE_KATALOG.find(s => s.id === ws.spielId);
+    const sorted = [...ws.spieler].sort((a, b) => ws.striche[b] - ws.striche[a]);
+    const verlierer = sorted.slice(0, ws.anzahlVerlierer);
+
+    if (aktiveSession) {
+      verlierer.forEach(v => addSpieleStrafe(v, 1.00, `Verl. Spiel (${spiel.name})`));
+    } else {
+      const batch = db.batch();
+      verlierer.forEach(name => {
+        batch.set(db.collection('strafen').doc(), {
+          mitglied: name, kategorie: 'Verl. Spiel',
+          notiz: `Verl. Spiel (${spiel.name})`, betrag: 1.00,
+          datum: today(), bezahlt: false, createdAt: Date.now(), ...saisonMeta()
+        });
+      });
+      batch.commit();
+      verlierer.forEach(name => {
+        db.collection('spielverluste').add({
+          spieler: name, spielName: spiel.name, betrag: 1.00,
+          datum: today(), ...saisonMeta(), createdAt: Date.now()
+        }).catch(() => {});
+      });
+    }
+
+    alert(`✅ ${verlierer.join(', ')} ${verlierer.length > 1 ? 'bekommen' : 'bekommt'} je 1× Verl. Spiel${aktiveSession ? ' in der Live-Session' : ''}.`);
+    wdmState = null;
+    renderSpieleListe();
+  } catch(e) {
+    alert('Fehler beim Eintragen: ' + e.message);
+  }
 }
 
 function wdmThrowLabel(w) {

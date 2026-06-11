@@ -8,6 +8,8 @@
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <style>
   :root {
@@ -858,7 +860,7 @@ let fbConfig = null;
 let db = null;
 let state = {
   adminPw: 'admin123',
-  clubName: 'Kegelclub',
+  clubName: 'Blackout Boys',
   mitglieder: [],
   termine: [],
   strafen: [],
@@ -948,10 +950,10 @@ function subscribeAll() {
     if (snap.exists) {
       const d = snap.data();
       state.adminPw = d.adminPw || 'admin123';
-      state.clubName = d.clubName || 'Kegelclub';
+      state.clubName = d.clubName || 'Blackout Boys';
       document.getElementById('nav-club-name').textContent = state.clubName;
     } else {
-      db.collection('config').doc('settings').set({ adminPw: 'admin123', clubName: 'Kegelclub' });
+      db.collection('config').doc('settings').set({ adminPw: 'admin123', clubName: 'Blackout Boys' });
     }
     loaded.settings = true; checkAllLoaded();
     renderMitglieder();
@@ -1121,7 +1123,7 @@ function saveSettings() {
 function showMemberView() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('member-screen').style.display = 'block';
-  document.getElementById('member-club-name').textContent = state.clubName || 'Kegelclub';
+  document.getElementById('member-club-name').textContent = state.clubName || 'Blackout Boys';
   refreshMemberNameSel();
   renderMemberAll();
 }
@@ -2123,11 +2125,145 @@ function renderKegelHistorie() {
                 💰 Gesamt inkl. Abwesende + Bahn: <strong>${formatEur(gesamtEinnahmen)}</strong>
               </div>` : ''}
             </div>
-            <button class="btn btn-danger btn-sm" onclick="loescheSession('${d.id}','${s.name}')">🗑</button>
+            <div style="display:flex;gap:.35rem">
+              <button class="btn btn-ghost btn-sm" onclick="exportSessionPDF('${d.id}')" title="Als PDF exportieren">📄 PDF</button>
+              <button class="btn btn-danger btn-sm" onclick="loescheSession('${d.id}','${s.name}')">🗑</button>
+            </div>
           </div>
         </div>`;
       }).join('');
   });
+}
+
+async function exportSessionPDF(sessionId) {
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1e293b;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3);white-space:nowrap';
+  toast.textContent = '⏳ PDF wird erstellt…';
+  document.body.appendChild(toast);
+  try {
+    const docSnap = await db.collection('kegelsessions').doc(sessionId).get();
+    if (!docSnap.exists) { toast.textContent = '❌ Session nicht gefunden'; setTimeout(() => toast.remove(), 2000); return; }
+    const s = docSnap.data();
+    const BAHN = 3.00;
+    const KEGELBAHN_KOSTEN = 40;
+    const eintraege = s.eintraege || [];
+    const angemeldet = s.angemeldet || [];
+    const perPerson = {};
+    eintraege.forEach(e => {
+      if (!perPerson[e.mitglied]) perPerson[e.mitglied] = [];
+      perPerson[e.mitglied].push(e);
+    });
+    const abwesendeNamen = Object.keys(perPerson).filter(n => !angemeldet.includes(n));
+    const strafenAnwesend = angemeldet.reduce((sum, n) => sum + (perPerson[n]||[]).reduce((a,e) => a + Number(e.betrag), 0), 0);
+    const strafenAbwesend = abwesendeNamen.reduce((sum, n) => sum + (perPerson[n]||[]).filter(e=>e.kategorie==='Abwesenheit').reduce((a,e) => a + Number(e.betrag), 0), 0);
+    const allePersonen = angemeldet.length + abwesendeNamen.length;
+    const bahnBeitraege = allePersonen * BAHN;
+    const gesamtEinnahmen = Math.round((strafenAnwesend + strafenAbwesend + bahnBeitraege) * 100) / 100;
+    const kasseDiff = Math.round((gesamtEinnahmen - KEGELBAHN_KOSTEN) * 100) / 100;
+    const ini = n => n.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+    const catStyle = k => {
+      if (k==='Abwesenheit') return 'background:#fef9c3;color:#854d0e';
+      if (k==='Spiele'||k==='Verl. Spiel'||k.toLowerCase().includes('spiel')) return 'background:#ede9fe;color:#5b21b6';
+      return 'background:#dbeafe;color:#1e40af';
+    };
+    const personCard = (name, rows, total, isAbsent) => {
+      const ab = isAbsent ? '#fef9c3' : '#dbeafe';
+      const ac = isAbsent ? '#854d0e' : '#1e40af';
+      const rowsH = rows.map(r => `<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:0.5px solid #e2e8f0">
+        <span style="font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;white-space:nowrap;${catStyle(r.kat)}">${r.kat}</span>
+        <span style="color:#64748b;flex:1;font-size:12px">${r.desc||''}</span>
+        <span style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap">${formatEur(Number(r.betrag))}</span>
+      </div>`).join('');
+      return `<div style="border:0.5px solid #e2e8f0;border-radius:8px;margin-bottom:8px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f8fafc">
+          <div style="display:flex;align-items:center;gap:7px">
+            <div style="width:26px;height:26px;border-radius:50%;background:${ab};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:${ac};flex-shrink:0">${ini(name)}</div>
+            <span style="font-weight:600;color:#1e293b;font-size:13px">${name}</span>
+            ${isAbsent?'<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:#fef9c3;color:#854d0e;margin-left:2px">abwesend</span>':''}
+          </div>
+          <span style="font-weight:700;color:#b91c1c;font-size:14px">${formatEur(total)}</span>
+        </div>
+        ${rowsH}
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+          <span style="font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;background:#dcfce7;color:#15803d">Bahn</span>
+          <span style="color:#64748b;flex:1;font-size:12px">Anteil Kegelbahn</span>
+          <span style="font-size:12px;font-weight:600;color:#1e293b">${formatEur(BAHN)}</span>
+        </div>
+      </div>`;
+    };
+    const anwesendeCards = angemeldet.map(name => {
+      const rows = (perPerson[name]||[]).map(e => ({ kat: e.kategorie, desc: e.notiz || (e.anzahl>1?'×'+e.anzahl:''), betrag: e.betrag }));
+      return personCard(name, rows, (perPerson[name]||[]).reduce((a,e)=>a+Number(e.betrag),0) + BAHN, false);
+    }).join('');
+    const abwesendeCards = abwesendeNamen.map(name => {
+      const rows = (perPerson[name]||[]).filter(e=>e.kategorie==='Abwesenheit').map(e => ({ kat:'Abwesenheit', desc: e.notiz||'', betrag: e.betrag }));
+      return personCard(name, rows, (perPerson[name]||[]).filter(e=>e.kategorie==='Abwesenheit').reduce((a,e)=>a+Number(e.betrag),0) + BAHN, true);
+    }).join('');
+    const kBg = kasseDiff >= 0 ? '#052e16' : '#450a0a';
+    const kColor = kasseDiff >= 0 ? '#4ade80' : '#fca5a5';
+    const kLbl = kasseDiff >= 0 ? '#86efac' : '#fca5a5';
+    const datumDisp = s.datum ? formatDate(s.datum) : '–';
+    const exportDatum = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const clubName = state.clubName || 'Blackout Boys';
+    const pdfHtml = `<div style="width:595px;background:white;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;color:#1e293b">
+      <div style="background:#16213e;padding:20px 28px 16px">
+        <div style="color:#8888bb;font-size:10px;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">${clubName}</div>
+        <div style="color:#fff;font-size:20px;font-weight:600;margin-bottom:2px">Abendabrechnung</div>
+        <div style="color:#7777aa;font-size:12px;margin-bottom:14px">${s.name}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span style="background:#1e2d52;border:0.5px solid #2d3d70;color:#9999cc;font-size:11px;padding:3px 9px;border-radius:99px">📅 ${datumDisp}</span>
+          <span style="background:#1e2d52;border:0.5px solid #2d3d70;color:#9999cc;font-size:11px;padding:3px 9px;border-radius:99px">👥 ${angemeldet.length} anwesend · ${abwesendeNamen.length} abwesend</span>
+        </div>
+      </div>
+      <div style="padding:20px 28px">
+        ${angemeldet.length > 0 ? `<div style="font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px;font-weight:600">ANWESENDE — STRAFEN &amp; BAHN-BEITRAG</div>${anwesendeCards}` : ''}
+        ${abwesendeNamen.length > 0 ? `<div style="font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px;margin-top:16px;font-weight:600">ABWESENDE — ABWESENHEITSSTRAFE &amp; BAHN-BEITRAG</div>${abwesendeCards}` : ''}
+        <div style="font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px;margin-top:16px;font-weight:600">KASSENABSCHLUSS</div>
+        <div style="border:0.5px solid #e2e8f0;border-radius:8px;overflow:hidden">
+          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:12px">Strafen Anwesende</span><span style="font-weight:600;color:#16a34a">+ ${formatEur(strafenAnwesend)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:12px">Strafen Abwesende</span><span style="font-weight:600;color:#16a34a">+ ${formatEur(strafenAbwesend)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:12px">Bahn-Beiträge (${allePersonen} × ${formatEur(BAHN)})</span><span style="font-weight:600;color:#16a34a">+ ${formatEur(bahnBeitraege)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0;background:#f8fafc"><span style="font-weight:600;color:#1e293b">Gesamteinnahmen</span><span style="font-weight:600;color:#16a34a">${formatEur(gesamtEinnahmen)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:12px">Kegelbahn (Kosten)</span><span style="font-weight:600;color:#b91c1c">− ${formatEur(KEGELBAHN_KOSTEN)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:9px 14px;background:${kBg}"><span style="color:${kLbl};font-size:12px;font-weight:600">Geht in die Kasse</span><span style="font-weight:700;font-size:16px;color:${kColor}">${kasseDiff>=0?'+ ':'− '}${formatEur(Math.abs(kasseDiff))}</span></div>
+        </div>
+      </div>
+      <div style="padding:10px 28px;border-top:0.5px solid #e2e8f0;display:flex;justify-content:space-between">
+        <span style="font-size:11px;color:#94a3b8">Exportiert am ${exportDatum} · ${clubName}</span>
+        <span style="font-size:11px;color:#94a3b8">Seite 1/1</span>
+      </div>
+    </div>`;
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1';
+    wrapper.innerHTML = pdfHtml;
+    document.body.appendChild(wrapper);
+    await new Promise(r => setTimeout(r, 200));
+    const canvas = await html2canvas(wrapper.firstElementChild, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+    document.body.removeChild(wrapper);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pdfW = pdf.internal.pageSize.getWidth();
+    const imgH = (canvas.height / 2) * (pdfW / (canvas.width / 2));
+    const pdfH = pdf.internal.pageSize.getHeight();
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    if (imgH <= pdfH) {
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, imgH);
+    } else {
+      let y = 0;
+      while (y < imgH) {
+        if (y > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, -y, pdfW, imgH);
+        y += pdfH;
+      }
+    }
+    pdf.save(`kegelbuch-${s.datum||'export'}.pdf`);
+    toast.textContent = '✅ PDF gespeichert!';
+    setTimeout(() => toast.remove(), 2500);
+  } catch(e) {
+    console.error('PDF error:', e);
+    toast.textContent = '❌ Fehler beim Export';
+    setTimeout(() => toast.remove(), 3000);
+  }
 }
 
 function loescheSession(sessionId, name) {

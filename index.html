@@ -613,21 +613,37 @@
 
 <!-- STATISTIKEN -->
 <div class="page" id="page-statistiken">
-  <div class="grid-3" id="stats-boxes"></div>
-  <div class="grid-2">
-    <div class="card"><div class="card-title">🏆 Strafranking</div><div id="straf-ranking"></div></div>
-    <div class="card"><div class="card-title">📅 Anwesenheitsranking</div><div id="anwesenheit-ranking"></div></div>
-  </div>
-  <div class="card">
-    <div class="card-title">👤 Mitglied-Auswertung</div>
-    <div class="form-group" style="max-width:250px;margin-bottom:1rem"><label>Mitglied auswählen</label><select id="stats-mitglied-sel" onchange="renderMitgliedStats()"></select></div>
-    <div id="mitglied-stats-detail"></div>
+
+  <!-- Filter Bar -->
+  <div class="card" style="margin-bottom:1rem;padding:.75rem 1rem">
+    <div style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center">
+      <span style="font-size:.8rem;font-weight:700;color:var(--text-muted)">Filter:</span>
+      <div style="display:flex;gap:.3rem;flex-wrap:wrap">
+        <button class="btn btn-sm btn-primary" id="sf-all"   onclick="setStatsFilter('zeitraum','all')">Alles</button>
+        <button class="btn btn-sm btn-ghost"  id="sf-year"  onclick="setStatsFilter('zeitraum','year')">Dieses Jahr</button>
+        <button class="btn btn-sm btn-ghost"  id="sf-3m"    onclick="setStatsFilter('zeitraum','3m')">3 Monate</button>
+        <button class="btn btn-sm btn-ghost"  id="sf-1m"    onclick="setStatsFilter('zeitraum','1m')">1 Monat</button>
+      </div>
+      <select id="sf-person" onchange="setStatsFilter('person',this.value)"
+        style="padding:5px 10px;border-radius:8px;border:1px solid var(--border);font-size:.82rem;margin-left:auto">
+        <option value="all">👥 Alle Personen</option>
+      </select>
+    </div>
   </div>
 
-  <!-- Spielverluste -->
+  <!-- KPI Boxes -->
+  <div class="grid-3" id="stats-boxes"></div>
+
+  <!-- Rankings -->
+  <div class="grid-2">
+    <div class="card"><div class="card-title">🏆 Strafranking</div><div id="straf-ranking"></div></div>
+    <div class="card"><div class="card-title">📅 Anwesenheit</div><div id="anwesenheit-ranking"></div></div>
+  </div>
+
+  <!-- Monatstrend -->
   <div class="card">
-    <div class="card-title">🎮 Spiel-Verluste</div>
-    <div id="spiel-verluste-container"><div class="empty-state">Noch keine Spiel-Verluste erfasst.</div></div>
+    <div class="card-title">📈 Monatstrend (Strafen)</div>
+    <div id="stats-trend-chart"></div>
   </div>
 
   <!-- Kegelbuch-Statistiken -->
@@ -642,13 +658,32 @@
     <div id="kg-stats-container"><div class="empty-state">Noch keine Kegel-Sessions abgeschlossen.</div></div>
   </div>
 
+  <!-- Spiel-Verluste -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+      <div class="card-title" style="margin:0">🎮 Spiel-Verluste</div>
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger);font-size:.75rem" onclick="spielverlusteZuruecksetzen()">↺ Zurücksetzen</button>
+    </div>
+    <div id="spiel-verluste-container"><div class="empty-state">Noch keine Spiel-Verluste erfasst.</div></div>
+  </div>
+
+  <!-- Mitglied-Auswertung -->
+  <div class="card">
+    <div class="card-title">👤 Mitglied-Auswertung</div>
+    <div class="form-group" style="max-width:250px;margin-bottom:1rem">
+      <label>Mitglied auswählen</label>
+      <select id="stats-mitglied-sel" onchange="renderMitgliedStats()"></select>
+    </div>
+    <div id="mitglied-stats-detail"></div>
+  </div>
+
 </div>
 
 <!-- KASSENBUCH -->
 <div class="page" id="page-kassenbuch">
 
-  <!-- Soll / Ist Übersicht -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+  <!-- Soll / Ist / Ausstehend Übersicht -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
     <div class="balance-box" style="margin-bottom:0">
       <div class="lbl">Soll (Kassenbuch)</div>
       <div class="amount" id="kassenstand">€ 0,00</div>
@@ -661,10 +696,21 @@
         <span>💵 <span id="ist-bar-lbl">€ 0,00</span></span>
       </div>
     </div>
+    <div class="balance-box" id="kasse-ausstehend-box" style="margin-bottom:0;grid-column:1/-1;background:linear-gradient(135deg,#7c2d12,#dc2626)">
+      <div class="lbl">⏳ Noch ausstehend (unbezahlte Strafen)</div>
+      <div class="amount" id="kasse-ausstehend-betrag">€ 0,00</div>
+      <div style="font-size:.8rem;opacity:.85;margin-top:.3rem" id="kasse-ausstehend-detail">– Personen</div>
+    </div>
   </div>
 
   <!-- Differenz -->
   <div id="kasse-differenz-box" class="card" style="margin-bottom:1rem;display:none"></div>
+
+  <!-- Prognose -->
+  <div class="card" style="margin-bottom:1rem;border-color:#8b5cf6;background:linear-gradient(135deg,#faf5ff,#f3e8ff)">
+    <div class="card-title" style="color:#6d28d9">🔮 Kasse Prognose</div>
+    <div id="kasse-prognose-content"><!-- wird per JS befüllt --></div>
+  </div>
 
   <!-- Bahn bezahlen -->
   <div class="card" style="margin-bottom:1rem;border-color:#fbbf24;background:#fffbeb">
@@ -694,12 +740,6 @@
     <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Stand vom: <span id="ist-datum">–</span></div>
   </div>
 
-  <div class="card" id="offene-strafen-kasse-box" style="display:none;background:#fee2e2;border-color:#fecaca">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
-      <span style="font-weight:700;color:#b91c1c">⚠️ Offene Strafen</span>
-      <span id="offene-strafen-kasse-detail" style="color:#b91c1c;font-size:.9rem"></span>
-    </div>
-  </div>
   <!-- Strafe schnell eintragen -->
   <div class="card" style="margin-bottom:1rem">
     <div class="card-title">⚡ Strafe eintragen</div>
@@ -952,7 +992,7 @@ function subscribeAll() {
       ? alle.filter(s => s.saisonId === saisonId)
       : alle.filter(s => !s.saisonId);
     loaded.strafen = true; checkAllLoaded();
-    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview();
+    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose();
 
     // Kategorien
     const katSnap = snap.docs.filter(d => false); // handled separately
@@ -1129,7 +1169,7 @@ function renderMemberOverview() {
   const mStrafen = state.strafen.filter(s => s.mitglied === name);
   const offeneStrafen = mStrafen.filter(s => !s.bezahlt);
   const offenBetrag = offeneStrafen.reduce((sum,s) => sum + Number(s.betrag), 0);
-  const pastTermine = state.termine.filter(t => t.datum < today());
+  const pastTermine = state.termine.filter(t => t.datum < today() && !t.ausfall);
   const alleAbendeOv = [
     ...pastTermine.map(t => ({ anwesend: t.anmeldungen||[] })),
     ...(state.kegelsessions||[]).map(s => ({ anwesend: s.angemeldet||[] }))
@@ -1275,23 +1315,91 @@ function sendeZahlungsanfrage(mitglied) {
 function bestaetigeZahlung(anfragenId) {
   const anfrage = (state.zahlungsanfragen||[]).find(z => z.id === anfragenId);
   if (!anfrage) return;
-  if (!confirm(`Zahlung von ${anfrage.mitglied} (${formatEur(anfrage.betrag)}) bestätigen?`)) return;
+
+  const popup = document.createElement('div');
+  popup.id = 'zahlung-bestaetigen-popup';
+  popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:center;justify-content:center;padding:1rem';
+  popup.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:1.5rem;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.25)" onclick="event.stopPropagation()">
+      <div style="font-size:1.05rem;font-weight:800;color:#15803d;margin-bottom:.3rem">💸 Zahlung bestätigen</div>
+      <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:1.2rem">
+        <strong>${anfrage.mitglied}</strong> · ${formatEur(anfrage.betrag)}
+      </div>
+      <div style="font-weight:700;font-size:.875rem;margin-bottom:.6rem">Wie wurde bezahlt?</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.25rem">
+        <label id="zahlung-bar-label" style="border:2px solid #e2e8f0;border-radius:10px;padding:.85rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;transition:all .15s" onclick="selectZahlungsart('bar')">
+          <input type="radio" name="zahlungsart" value="bar" style="display:none">
+          <span style="font-size:1.3rem">💵</span>
+          <span style="font-weight:600;font-size:.9rem">Bar</span>
+        </label>
+        <label id="zahlung-konto-label" style="border:2px solid #e2e8f0;border-radius:10px;padding:.85rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;transition:all .15s" onclick="selectZahlungsart('konto')">
+          <input type="radio" name="zahlungsart" value="konto" style="display:none">
+          <span style="font-size:1.3rem">🏦</span>
+          <span style="font-weight:600;font-size:.9rem">Überweisung</span>
+        </label>
+      </div>
+      <div style="background:#f0fdf4;border-radius:8px;padding:.65rem .85rem;font-size:.8rem;color:#15803d;margin-bottom:1.25rem">
+        ✓ Strafen werden als bezahlt markiert<br>
+        ✓ Kassenbuch-Einnahme wird eingetragen<br>
+        ✓ Ist-Bestand wird automatisch aktualisiert
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button onclick="document.getElementById('zahlung-bestaetigen-popup').remove()" class="btn btn-ghost" style="flex:1">Abbrechen</button>
+        <button id="zahlung-bestaetigen-btn" onclick="zahlung_bestaetigenAusfuehren('${anfragenId}')" class="btn btn-success" style="flex:1" disabled>Bestätigen</button>
+      </div>
+    </div>`;
+  popup.addEventListener('click', () => popup.remove());
+  document.body.appendChild(popup);
+}
+
+function selectZahlungsart(art) {
+  ['bar','konto'].forEach(a => {
+    const el = document.getElementById('zahlung-' + a + '-label');
+    if (el) el.style.cssText = el.style.cssText.replace(/border:[^;]+/, a === art ? 'border:2px solid #16a34a' : 'border:2px solid #e2e8f0');
+    if (el) el.style.background = a === art ? '#f0fdf4' : 'white';
+  });
+  const btn = document.getElementById('zahlung-bestaetigen-btn');
+  if (btn) { btn.disabled = false; btn.dataset.art = art; }
+}
+
+async function zahlung_bestaetigenAusfuehren(anfragenId) {
+  const btn = document.getElementById('zahlung-bestaetigen-btn');
+  const art = btn?.dataset.art;
+  if (!art) return;
+  const anfrage = (state.zahlungsanfragen||[]).find(z => z.id === anfragenId);
+  if (!anfrage) return;
+
   const batch = db.batch();
   (anfrage.strafIds||[]).forEach(sid => {
     batch.update(db.collection('strafen').doc(sid), { bezahlt: true });
-    // Kassenbuch-Eintrag
     const strafe = state.strafen.find(s => s.id === sid);
     if (strafe) {
-      const ref = db.collection('kassenbuch').doc();
-      batch.set(ref, {
+      batch.set(db.collection('kassenbuch').doc(), {
         typ: 'einnahme', beschr: `Strafe: ${strafe.mitglied} – ${strafe.kategorie}`,
         betrag: strafe.betrag, datum: today(), kat: 'Strafen',
-        strafId: sid, createdAt: Date.now()
+        zahlungsart: art, strafId: sid, createdAt: Date.now()
       });
     }
   });
-  batch.update(db.collection('zahlungsanfragen').doc(anfragenId), { status: 'bestaetigt' });
-  batch.commit();
+  batch.update(db.collection('zahlungsanfragen').doc(anfragenId), { status: 'bestaetigt', zahlungsart: art });
+
+  // Ist-Bestand aktualisieren
+  const ist = state.istBestand || { konto: 0, bar: 0 };
+  const neuerWert = art === 'bar'
+    ? { konto: Number(ist.konto)||0, bar: (Number(ist.bar)||0) + anfrage.betrag }
+    : { konto: (Number(ist.konto)||0) + anfrage.betrag, bar: Number(ist.bar)||0 };
+  batch.set(db.collection('config').doc('istBestand'), {
+    ...neuerWert, updatedAt: Date.now(), datum: today()
+  });
+
+  await batch.commit();
+  document.getElementById('zahlung-bestaetigen-popup')?.remove();
+
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#15803d;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:700;box-shadow:0 4px 12px rgba(0,0,0,.2);white-space:nowrap';
+  toast.textContent = `✅ ${anfrage.mitglied} · ${formatEur(anfrage.betrag)} · ${art === 'bar' ? '💵 Bar' : '🏦 Überweisung'}`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
 }
 
 function ablehnenZahlung(anfragenId) {
@@ -2237,20 +2345,100 @@ function renderTerminCard(t, isPast) {
     const tag = isAnm ? '<span class="tag tag-green">An</span>' : isAbm ? '<span class="tag tag-red">Ab</span>' : '<span class="tag tag-yellow">?</span>';
     return `<tr><td>${m.name}</td><td>${tag}</td><td><button class="btn btn-ghost btn-sm" onclick="toggleAnmeldung('${t.id}','${m.name}')">${isAnm?'Abmelden':'Anmelden'}</button></td></tr>`;
   }).join('');
-  return `<div class="card" style="${isPast?'opacity:.75':''}">
+
+  const ausfallBanner = t.ausfall ? `
+    <div style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:8px;padding:.5rem .85rem;margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
+      <span style="font-weight:700;color:#b91c1c;font-size:.9rem">🚫 Termin ausgefallen${t.ausfallStrafe>0?' · Universalstrafe '+formatEur(t.ausfallStrafe)+' eingetragen':''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="terminAusfallRueckgaengig('${t.id}')" style="font-size:.75rem;color:#6b7280">↩ Rückgängig</button>
+    </div>` : '';
+
+  return `<div class="card" style="${isPast?'opacity:.75':''}${t.ausfall?';border-color:#fca5a5':''}">
     <div class="card-title">
-      <span>${isPast?'⏮':'📅'} ${t.name} · ${formatDate(t.datum)}${t.zeit?' um '+t.zeit+' Uhr':''}${t.ort?' · 📍'+t.ort:''}${t.serieId?` <span class="tag tag-blue" style="font-size:.7rem">🔁 alle ${t.serieWochen} Wo.</span>`:''}</span>
-      <button class="btn btn-danger btn-sm" onclick="deleteTermin('${t.id}')">🗑</button>
+      <span>${isPast?'⏮':'📅'} ${t.name} · ${formatDate(t.datum)}${t.zeit?' um '+t.zeit+' Uhr':''}${t.ort?' · 📍'+t.ort:''}${t.serieId?` <span class="tag tag-blue" style="font-size:.7rem">🔁 alle ${t.serieWochen} Wo.</span>`:''}${t.ausfall?` <span class="tag tag-red" style="font-size:.7rem">🚫 Ausfall</span>`:''}</span>
+      <div style="display:flex;gap:.4rem">
+        ${!t.ausfall ? `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="terminAusfallDialog('${t.id}')">🚫 Ausfall</button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="deleteTermin('${t.id}')">🗑</button>
+      </div>
     </div>
+    ${ausfallBanner}
     <div style="display:flex;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
       <span class="tag tag-green">✅ ${anm.length} angemeldet</span>
       <span class="tag tag-red">❌ ${abm.length} abgemeldet</span>
       <span class="tag tag-yellow">❓ ${offen.length} offen</span>
     </div>
-    <details><summary style="cursor:pointer;font-size:.85rem;color:var(--text-muted);font-weight:600">Mitglieder verwalten</summary>
+    ${!t.ausfall ? `<details><summary style="cursor:pointer;font-size:.85rem;color:var(--text-muted);font-weight:600">Mitglieder verwalten</summary>
     <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>Mitglied</th><th>Status</th><th></th></tr></thead><tbody>${memberRows}</tbody></table></div>
-    </details>
+    </details>` : ''}
   </div>`;
+}
+
+function terminAusfallDialog(terminId) {
+  const t = state.termine.find(x => x.id === terminId);
+  if (!t) return;
+  const popup = document.createElement('div');
+  popup.id = 'ausfall-popup';
+  popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:center;justify-content:center;padding:1rem';
+  popup.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:1.5rem;width:100%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.25)" onclick="event.stopPropagation()">
+      <div style="font-size:1.05rem;font-weight:800;color:#b91c1c;margin-bottom:.3rem">🚫 Termin als Ausfall markieren</div>
+      <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:1.2rem">${t.name} · ${formatDate(t.datum)}</div>
+      <div style="font-size:.82rem;color:#64748b;margin-bottom:1rem">Der Termin wird als ausgefallen markiert und zählt nicht zur Anwesenheitsstatistik.</div>
+      <div style="background:#fef3c7;border-radius:10px;padding:1rem;margin-bottom:1.25rem">
+        <div style="font-weight:700;font-size:.875rem;margin-bottom:.75rem;color:#92400e">💸 Universalstrafe (optional)</div>
+        <div style="display:flex;gap:.75rem;align-items:flex-end">
+          <div style="flex:1">
+            <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:.3rem">Betrag (€)</label>
+            <input type="number" id="ausfall-betrag" step="0.50" min="0" placeholder="0.00" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:.9rem">
+          </div>
+          <div style="flex:2">
+            <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:.3rem">Beschreibung</label>
+            <input type="text" id="ausfall-beschr" value="Termin Ausfall" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:.9rem">
+          </div>
+        </div>
+        <div style="font-size:.75rem;color:#92400e;margin-top:.6rem">Wird für alle ${state.mitglieder.length} Mitglieder eingetragen, wenn Betrag > 0.</div>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button onclick="document.getElementById('ausfall-popup').remove()" class="btn btn-ghost" style="flex:1">Abbrechen</button>
+        <button onclick="terminAusfallBestaetigen('${terminId}')" class="btn btn-danger" style="flex:1">Ausfall bestätigen</button>
+      </div>
+    </div>`;
+  popup.addEventListener('click', () => popup.remove());
+  document.body.appendChild(popup);
+}
+
+function terminAusfallBestaetigen(terminId) {
+  const betrag = parseFloat(document.getElementById('ausfall-betrag').value) || 0;
+  const beschr = (document.getElementById('ausfall-beschr').value || 'Termin Ausfall').trim();
+
+  // Termin als Ausfall markieren
+  db.collection('termine').doc(terminId).update({ ausfall: true, ausfallStrafe: betrag, ausfallBeschr: beschr });
+
+  // Strafe für alle Mitglieder eintragen
+  if (betrag > 0) {
+    const batch = db.batch();
+    state.mitglieder.forEach(m => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: m.name, kategorie: 'Termin Ausfall', notiz: beschr,
+        betrag, datum: today(), bezahlt: false, createdAt: Date.now(), ...saisonMeta()
+      });
+    });
+    batch.commit();
+  }
+
+  document.getElementById('ausfall-popup')?.remove();
+
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#b91c1c;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:700;box-shadow:0 4px 12px rgba(0,0,0,.2);white-space:nowrap';
+  toast.textContent = betrag > 0
+    ? `🚫 Ausfall eingetragen · ${formatEur(betrag)} für ${state.mitglieder.length} Mitglieder`
+    : '🚫 Termin als Ausfall markiert';
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+function terminAusfallRueckgaengig(terminId) {
+  if (!confirm('Ausfall-Markierung entfernen? Eingetragene Strafen werden NICHT automatisch gelöscht.')) return;
+  db.collection('termine').doc(terminId).update({ ausfall: false, ausfallStrafe: 0, ausfallBeschr: '' });
 }
 
 // ========== MITGLIEDER ==========
@@ -2534,15 +2722,19 @@ function renderStrafen() {
     `;
   }
 
-  // Hinweisbox unter Kassenstand
-  const kasseBox = document.getElementById('offene-strafen-kasse-box');
-  const kasseDetail = document.getElementById('offene-strafen-kasse-detail');
-  if (kasseBox && kasseDetail) {
-    if (offene.length > 0) {
-      kasseBox.style.display = 'block';
-      kasseDetail.textContent = `${offene.length} Strafe${offene.length > 1 ? 'n' : ''} · ${formatEur(offenBetrag)} ausstehend`;
+  // Ausstehend-Box im Kassen-Header aktualisieren
+  const ausstehendBetrag = document.getElementById('kasse-ausstehend-betrag');
+  const ausstehendDetail = document.getElementById('kasse-ausstehend-detail');
+  const ausstehendBox = document.getElementById('kasse-ausstehend-box');
+  if (ausstehendBetrag) ausstehendBetrag.textContent = formatEur(offenBetrag);
+  if (ausstehendDetail) {
+    if (offene.length === 0) {
+      ausstehendDetail.textContent = '✅ Alle Strafen bezahlt';
+      if (ausstehendBox) ausstehendBox.style.background = 'linear-gradient(135deg,#064e3b,#059669)';
     } else {
-      kasseBox.style.display = 'none';
+      const personenMitOffenen = [...new Set(offene.map(s => s.mitglied))].length;
+      ausstehendDetail.textContent = `${offene.length} offene Strafe${offene.length > 1 ? 'n' : ''} · ${personenMitOffenen} Person${personenMitOffenen > 1 ? 'en' : ''}`;
+      if (ausstehendBox) ausstehendBox.style.background = 'linear-gradient(135deg,#7c2d12,#dc2626)';
     }
   }
 
@@ -3103,65 +3295,187 @@ function renderSpielVerluste() {
     <div style="font-size:.73rem;color:var(--text-muted);margin-top:.5rem">🔴 = meiste Verluste in diesem Spiel · Zeigt aktive Saison</div>`;
 }
 
+// ── Stats Filter ─────────────────────────────────────────────
+let statsFilter = { zeitraum: 'all', person: 'all' };
+
+function setStatsFilter(key, val) {
+  statsFilter[key] = val;
+  if (key === 'zeitraum') {
+    ['all','year','3m','1m'].forEach(k => {
+      const btn = document.getElementById('sf-' + k);
+      if (btn) { btn.className = `btn btn-sm ${k === val ? 'btn-primary' : 'btn-ghost'}`; }
+    });
+  }
+  renderStatistiken();
+}
+
+function statsFilterDatum() {
+  const t = statsFilter.zeitraum;
+  if (t === 'all') return null;
+  const d = new Date();
+  if (t === 'year')  { d.setMonth(0); d.setDate(1); }
+  if (t === '3m')    { d.setMonth(d.getMonth() - 3); }
+  if (t === '1m')    { d.setMonth(d.getMonth() - 1); }
+  return d.toISOString().split('T')[0];
+}
+
+function statsFilteredStrafen() {
+  let s = state.strafen;
+  const von = statsFilterDatum();
+  if (von) s = s.filter(x => x.datum >= von);
+  if (statsFilter.person !== 'all') s = s.filter(x => x.mitglied === statsFilter.person);
+  return s;
+}
+
+function svgBarChart(data, valueKey, labelKey, colorFn, formatVal, height) {
+  if (!data.length) return '<div class="empty-state">Keine Daten</div>';
+  const max = Math.max(...data.map(d => d[valueKey]), 0.01);
+  const W = 300, H = height || 160, padL = 80, padR = 10, padT = 8, padB = 24, barH = 18, gap = 6;
+  const totalH = data.length * (barH + gap) + padT + padB;
+  return `<svg viewBox="0 0 ${W} ${totalH}" style="width:100%;max-width:${W}px;display:block">
+    ${data.map((d, i) => {
+      const y = padT + i * (barH + gap);
+      const bw = Math.max(2, (d[valueKey] / max) * (W - padL - padR));
+      const color = colorFn(i, d);
+      return `
+        <text x="${padL - 5}" y="${y + barH * .72}" text-anchor="end" font-size="11" fill="#64748b" font-family="sans-serif">${d[labelKey]}</text>
+        <rect x="${padL}" y="${y}" width="${bw}" height="${barH}" rx="4" fill="${color}" opacity=".9"/>
+        <text x="${padL + bw + 4}" y="${y + barH * .72}" font-size="11" font-weight="700" fill="#1e293b" font-family="sans-serif">${formatVal(d[valueKey])}</text>`;
+    }).join('')}
+  </svg>`;
+}
+
+function svgMonatstrend(strafen) {
+  if (!strafen.length) return '<div class="empty-state">Noch keine Daten</div>';
+  // Letzte 6 Monate
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+    const key = d.toISOString().slice(0,7);
+    const label = d.toLocaleDateString('de-DE', { month: 'short', year: '2-digit' });
+    const total = strafen.filter(s => s.datum && s.datum.startsWith(key)).reduce((sum,s) => sum + Number(s.betrag), 0);
+    months.push({ key, label, total });
+  }
+  const max = Math.max(...months.map(m => m.total), 0.01);
+  const W = 320, H = 110, padB = 20, padT = 8, padLR = 10;
+  const bw = (W - padLR * 2) / months.length;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;display:block">
+    ${months.map((m, i) => {
+      const bh = Math.max(2, (m.total / max) * (H - padB - padT - 20));
+      const x = padLR + i * bw + 4;
+      const y = H - padB - bh;
+      const isMax = m.total === max;
+      return `
+        <rect x="${x}" y="${y}" width="${bw - 8}" height="${bh}" rx="4" fill="${isMax ? 'var(--danger)' : 'var(--primary)'}" opacity="${isMax ? '1' : '.65'}"/>
+        ${m.total > 0 ? `<text x="${x + (bw-8)/2}" y="${y - 3}" text-anchor="middle" font-size="9" font-weight="700" fill="#1e293b" font-family="sans-serif">${formatEur(m.total)}</text>` : ''}
+        <text x="${x + (bw-8)/2}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#94a3b8" font-family="sans-serif">${m.label}</text>`;
+    }).join('')}
+  </svg>`;
+}
+
 function renderStatistiken() {
-  const gesamtStrafen = state.strafen.reduce((s,x) => s+Number(x.betrag), 0);
-  const offeneStrafen = state.strafen.filter(s => !s.bezahlt).reduce((s,x) => s+Number(x.betrag), 0);
+  // Filter-Dropdown aktualisieren
+  const sel = document.getElementById('sf-person');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="all">👥 Alle Personen</option>' +
+      state.mitglieder.map(m => `<option value="${m.name}" ${m.name===cur?'selected':''}>${m.name}</option>`).join('');
+    if (statsFilter.person !== 'all') sel.value = statsFilter.person;
+  }
+
+  const strafen = statsFilteredStrafen();
+  const alleStrafen = state.strafen;
+  const pastTermine = state.termine.filter(t => t.datum < today() && !t.ausfall);
+  const sessions = state.kegelsessions || [];
+
+  // KPIs
+  const gesamtBetrag   = strafen.reduce((s,x) => s + Number(x.betrag), 0);
+  const offenBetrag    = strafen.filter(s => !s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
+  const bezahltBetrag  = strafen.filter(s => s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
+  const anzAbende      = pastTermine.length + sessions.length;
+  const avgProAbend    = anzAbende > 0 ? gesamtBetrag / anzAbende : 0;
+  const hochsteStrafe  = strafen.reduce((m,s) => Number(s.betrag) > m ? Number(s.betrag) : m, 0);
+  const spielVerl      = (state.spielverluste||[]).length;
+
   document.getElementById('stats-boxes').innerHTML = `
-    <div class="stat"><div class="val">${state.mitglieder.length}</div><div class="lbl">Mitglieder</div></div>
-    <div class="stat"><div class="val">${formatEur(gesamtStrafen)}</div><div class="lbl">Strafen gesamt</div></div>
-    <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offeneStrafen)}</div><div class="lbl">Strafen offen</div></div>
-    <div class="stat"><div class="val">${state.termine.length}</div><div class="lbl">Termine gesamt</div></div>
-    <div class="stat"><div class="val">${state.termine.filter(t=>t.datum<today()).length}</div><div class="lbl">Termine gespielt</div></div>
-    <div class="stat"><div class="val">${state.kassenbuch.length}</div><div class="lbl">Kassenbuchungen</div></div>
+    <div class="stat"><div class="val">${formatEur(gesamtBetrag)}</div><div class="lbl">Strafen gesamt</div></div>
+    <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offenBetrag)}</div><div class="lbl">Noch offen</div></div>
+    <div class="stat"><div class="val" style="color:#16a34a">${formatEur(bezahltBetrag)}</div><div class="lbl">Bezahlt</div></div>
+    <div class="stat"><div class="val">${formatEur(avgProAbend)}</div><div class="lbl">Ø pro Abend</div></div>
+    <div class="stat"><div class="val">${anzAbende}</div><div class="lbl">Abende gespielt</div></div>
+    <div class="stat"><div class="val">${spielVerl}</div><div class="lbl">Spiele verloren</div></div>
   `;
 
+  // Strafranking
   const strafSummen = state.mitglieder.map(m => ({
-    name: m.name,
-    total: state.strafen.filter(s=>s.mitglied===m.name).reduce((sum,s)=>sum+Number(s.betrag),0),
-    count: state.strafen.filter(s=>s.mitglied===m.name).length
-  })).sort((a,b)=>b.total-a.total);
-  const maxStr = strafSummen[0]?.total || 1;
-  document.getElementById('straf-ranking').innerHTML = strafSummen.map((m,i) => `
-    <div class="ranking-row">
-      <div class="rank-num">${i+1}</div>
-      <div class="rank-name">${m.name}<br><span style="font-size:.75rem;color:var(--text-muted)">${m.count} Strafen</span></div>
-      <div class="bar-wrap"><div class="bar" style="width:${m.total/maxStr*100}%;background:${i===0?'var(--danger)':i===1?'var(--warning)':'var(--primary)'}"></div></div>
-      <div class="rank-val">${formatEur(m.total)}</div>
-    </div>`).join('') || '<div class="empty-state">Keine Daten</div>';
+    name: m.name.split(' ')[0],
+    fullName: m.name,
+    total: strafen.filter(s=>s.mitglied===m.name).reduce((sum,s)=>sum+Number(s.betrag),0),
+    count: strafen.filter(s=>s.mitglied===m.name).length
+  })).sort((a,b) => b.total - a.total);
 
-  // Anwesenheit: Termine + Kegel-Sessions kombinieren
-  const pastTermine = state.termine.filter(t=>t.datum<today());
-  const kegelSessions = (state.kegelsessions||[]);
-  // Alle "Abende" = vergangene Termine + Sessions (ohne Duplikate per Datum)
+  document.getElementById('straf-ranking').innerHTML =
+    svgBarChart(strafSummen, 'total', 'name',
+      (i) => i===0?'var(--danger)':i===1?'var(--warning)':'var(--primary)',
+      formatEur) +
+    `<div style="margin-top:.5rem">` +
+    strafSummen.map((m,i) => `<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:.15rem 0;border-top:1px solid var(--border)">
+      <span><strong>${i+1}.</strong> ${m.fullName}</span>
+      <span style="color:var(--text-muted)">${m.count} Einträge</span>
+    </div>`).join('') + `</div>`;
+
+  // Anwesenheitsranking
   const alleAbende = [
     ...pastTermine.map(t => ({ datum: t.datum, anwesend: t.anmeldungen||[] })),
-    ...kegelSessions.map(s => ({ datum: s.datum, anwesend: s.angemeldet||[] }))
+    ...sessions.map(s => ({ datum: s.datum, anwesend: s.angemeldet||[] }))
   ];
   const anwSummen = state.mitglieder.map(m => ({
-    name: m.name,
+    name: m.name.split(' ')[0],
+    fullName: m.name,
     count: alleAbende.filter(a => a.anwesend.includes(m.name)).length,
-    total: alleAbende.length
-  })).sort((a,b)=>b.count-a.count);
-  const maxAnw = anwSummen[0]?.count || 1;
-  document.getElementById('anwesenheit-ranking').innerHTML = anwSummen.map((m,i) => `
-    <div class="ranking-row">
-      <div class="rank-num">${i+1}</div>
-      <div class="rank-name">${m.name}<br><span style="font-size:.75rem;color:var(--text-muted)">${m.total>0?Math.round(m.count/m.total*100):0}% Anwesenheit</span></div>
-      <div class="bar-wrap"><div class="bar" style="width:${m.total>0?m.count/m.total*100:0}%"></div></div>
-      <div class="rank-val">${m.count}/${m.total}</div>
-    </div>`).join('') || '<div class="empty-state">Noch keine gespielten Termine</div>';
+    pct: alleAbende.length > 0 ? Math.round(alleAbende.filter(a => a.anwesend.includes(m.name)).length / alleAbende.length * 100) : 0
+  })).sort((a,b) => b.count - a.count);
+
+  document.getElementById('anwesenheit-ranking').innerHTML =
+    svgBarChart(anwSummen, 'pct', 'name',
+      (i,d) => d.pct >= 80 ? '#16a34a' : d.pct >= 50 ? 'var(--primary)' : 'var(--warning)',
+      v => v + '%') +
+    `<div style="margin-top:.5rem">` +
+    anwSummen.map((m,i) => `<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:.15rem 0;border-top:1px solid var(--border)">
+      <span><strong>${i+1}.</strong> ${m.fullName}</span>
+      <span style="color:var(--text-muted)">${m.count}/${alleAbende.length} Abende</span>
+    </div>`).join('') + `</div>`;
+
+  // Monatstrend
+  document.getElementById('stats-trend-chart').innerHTML = svgMonatstrend(alleStrafen);
 
   renderMitgliedStats();
   renderKgStatistiken();
-  renderFunFacts();
   renderSpielVerluste();
+}
+
+function spielverlusteZuruecksetzen() {
+  const n = (state.spielverluste||[]).length + (state.alleSpieldverluste||[]).length;
+  if (!n) { alert('Keine Spiel-Verluste vorhanden.'); return; }
+  if (!confirm('Alle Spiel-Verluste wirklich löschen? Dies kann nicht rückgängig gemacht werden.')) return;
+  const batch = db.batch();
+  (state.alleSpieldverluste || state.spielverluste || []).forEach(v => {
+    batch.delete(db.collection('spielverluste').doc(v.id));
+  });
+  batch.commit().then(() => {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#15803d;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:700';
+    t.textContent = '✓ Spiel-Verluste zurückgesetzt';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+  });
 }
 
 function renderMitgliedStats() {
   const name = document.getElementById('stats-mitglied-sel')?.value;
   if (!name) return;
   const mStrafen = state.strafen.filter(s=>s.mitglied===name);
-  const pastTermine = state.termine.filter(t=>t.datum<today());
+  const pastTermine = state.termine.filter(t=>t.datum<today()&&!t.ausfall);
   const alleAbendeM = [
     ...pastTermine.map(t => ({ anwesend: t.anmeldungen||[] })),
     ...(state.kegelsessions||[]).map(s => ({ anwesend: s.angemeldet||[] }))
@@ -3312,6 +3626,7 @@ function renderIstBestand() {
   const barEl = document.getElementById('ist-bar');
   if (kontoEl && !kontoEl.value) kontoEl.placeholder = formatEur(ist.konto||0).replace('€ ','');
   if (barEl && !barEl.value) barEl.placeholder = formatEur(ist.bar||0).replace('€ ','');
+  renderKassePrognose();
 }
 
 // ========== KASSENBUCH ==========
@@ -3389,11 +3704,113 @@ async function kasseZuruecksetzenBestaetigen() {
 
 function filterKasse(f) { kasseFilter = f; renderKassenbuch(); }
 
+// ========== KASSE PROGNOSE ==========
+let kassePrognoseMode = '12';
+let kassePrognoseCustomDate = '';
+
+function setKassePrognose(mode) {
+  kassePrognoseMode = mode;
+  renderKassePrognose();
+}
+
+function renderKassePrognose() {
+  const el = document.getElementById('kasse-prognose-content');
+  if (!el) return;
+
+  const ist = state.istBestand;
+  const istGesamt = ist ? (Number(ist.konto) || 0) + (Number(ist.bar) || 0) : 0;
+
+  // Ø monatliche Strafen aus state.strafen berechnen
+  const strafen = state.strafen || [];
+  const byMonth = {};
+  strafen.forEach(s => {
+    const m = (s.datum || '').substring(0, 7); // YYYY-MM
+    if (!m || m.length < 7) return;
+    byMonth[m] = (byMonth[m] || 0) + Number(s.betrag || 0);
+  });
+  const monthValues = Object.values(byMonth);
+  const avgMonthly = monthValues.length > 0
+    ? monthValues.reduce((a, b) => a + b, 0) / monthValues.length
+    : 0;
+
+  // Monate berechnen
+  let months;
+  if (kassePrognoseMode === 'custom') {
+    if (!kassePrognoseCustomDate) {
+      months = 12;
+    } else {
+      const now = new Date();
+      const target = new Date(kassePrognoseCustomDate);
+      months = Math.max(1, (target.getFullYear() - now.getFullYear()) * 12 + (target.getMonth() - now.getMonth()));
+    }
+  } else {
+    months = parseInt(kassePrognoseMode);
+  }
+
+  const bahnProMonat = 40;
+  const netProMonat = avgMonthly - bahnProMonat;
+  const projected = istGesamt + months * netProMonat;
+
+  // Chart-Punkte
+  const step = months <= 12 ? 2 : months <= 18 ? 3 : 4;
+  const points = [];
+  for (let m = 0; m <= months; m += step) { points.push({ m, v: istGesamt + m * netProMonat }); }
+  if (points[points.length - 1].m !== months) points.push({ m: months, v: projected });
+
+  const allVals = points.map(p => p.v);
+  const minV = Math.min(0, ...allVals);
+  const maxV = Math.max(istGesamt, ...allVals);
+  const range = maxV - minV || 1;
+
+  const W = 300, H = 70;
+  const pl = 6, pr = 6, pt = 6, pb = 6;
+  const cW = W - pl - pr, cH = H - pt - pb;
+  const toX = m => pl + (m / months) * cW;
+  const toY = v => pt + cH - ((v - minV) / range) * cH;
+  const zeroY = toY(0);
+  const polyPts = points.map(p => `${toX(p.m)},${toY(p.v)}`).join(' ');
+
+  const modeButtons = ['12','14','16','18','20'].map(m =>
+    `<button onclick="setKassePrognose('${m}')" class="btn btn-sm ${kassePrognoseMode===m?'btn-primary':'btn-ghost'}" style="min-width:46px;padding:4px 8px">${m}M</button>`
+  ).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.85rem;align-items:center">
+      ${modeButtons}
+      <button onclick="setKassePrognose('custom')" class="btn btn-sm ${kassePrognoseMode==='custom'?'btn-primary':'btn-ghost'}" style="padding:4px 10px">📅</button>
+      ${kassePrognoseMode==='custom' ? `<input type="date" id="prognose-custom-date" value="${kassePrognoseCustomDate}" onchange="kassePrognoseCustomDate=this.value;renderKassePrognose()" style="padding:4px 8px;border-radius:6px;border:1.5px solid #8b5cf6;font-size:.85rem;background:white">` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem;margin-bottom:.85rem">
+      <div style="background:white;border-radius:10px;padding:.6rem .8rem;box-shadow:0 1px 4px rgba(0,0,0,.07)">
+        <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.15rem">Aktueller Ist-Bestand</div>
+        <div style="font-weight:800;font-size:1.05rem;color:#1e293b">${formatEur(istGesamt)}</div>
+      </div>
+      <div style="background:${projected>=0?'white':'#fee2e2'};border-radius:10px;padding:.6rem .8rem;box-shadow:0 1px 4px rgba(0,0,0,.07);border:${projected<0?'1.5px solid #fca5a5':'none'}">
+        <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.15rem">In ${months} Monaten</div>
+        <div style="font-weight:800;font-size:1.05rem;color:${projected>=0?'#15803d':'#b91c1c'}">${formatEur(projected)}</div>
+      </div>
+    </div>
+    <div style="background:white;border-radius:10px;padding:.6rem;margin-bottom:.7rem">
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
+        ${minV < 0 ? `<line x1="${pl}" y1="${zeroY.toFixed(1)}" x2="${W-pr}" y2="${zeroY.toFixed(1)}" stroke="#fca5a5" stroke-width="1" stroke-dasharray="3,3"/>` : ''}
+        <polyline points="${polyPts}" fill="none" stroke="#8b5cf6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        ${points.map(p => `<circle cx="${toX(p.m).toFixed(1)}" cy="${toY(p.v).toFixed(1)}" r="3" fill="${p.v>=0?'#8b5cf6':'#ef4444'}"/>`).join('')}
+      </svg>
+    </div>
+    <div style="font-size:.73rem;color:var(--text-muted);display:flex;gap:.85rem;flex-wrap:wrap">
+      <span>📊 Ø Strafen/Monat: <strong style="color:#1e293b">${formatEur(avgMonthly)}</strong></span>
+      <span>🏟️ Bahn/Monat: <strong style="color:#b91c1c">−€ 40,00</strong></span>
+      <span>📈 Netto: <strong style="color:${netProMonat>=0?'#15803d':'#b91c1c'}">${netProMonat>=0?'+':''}${formatEur(netProMonat)}/M</strong></span>
+      ${monthValues.length > 0 ? `<span>📅 Basis: <strong style="color:#1e293b">${monthValues.length} Mon.</strong></span>` : `<span style="color:#b91c1c">⚠️ Noch keine Strafen-Daten</span>`}
+    </div>`;
+}
+
 function renderKassenbuch() {
   const einnahmen = state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
   const ausgaben = state.kassenbuch.filter(b=>b.typ==='ausgabe').reduce((s,b)=>s+Number(b.betrag),0);
   const stand = einnahmen - ausgaben;
   renderIstBestand(); // Differenz-Box aktualisieren wenn Kassenbuch sich ändert
+  renderKassePrognose();
   const el = document.getElementById('kassenstand');
   if (el) el.textContent = formatEur(stand);
   const ueb = document.getElementById('kasse-uebersicht');

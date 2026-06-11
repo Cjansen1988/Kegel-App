@@ -924,6 +924,13 @@ function initFirebase() {
       firebase.initializeApp(fbConfig);
     }
     db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+      if (err.code === 'failed-precondition') {
+        console.warn('Offline-Modus: Mehrere Tabs offen, nur ein Tab nutzt den Cache.');
+      } else if (err.code === 'unimplemented') {
+        console.warn('Offline-Modus: Dieser Browser unterstützt keine Offline-Persistenz.');
+      }
+    });
     subscribeAll();
   } catch(e) {
     document.getElementById('loading-overlay').style.display = 'none';
@@ -941,7 +948,19 @@ function subscribeAll() {
       initialLoadDone = true;
       document.getElementById('loading-overlay').style.display = 'none';
       document.getElementById('login-screen').style.display = 'flex';
-      document.getElementById('sync-dot').classList.remove('offline');
+      const dot = document.getElementById('sync-dot');
+      const updateDot = () => {
+        if (!navigator.onLine) {
+          dot.classList.add('offline');
+          dot.title = '📵 Offline – Änderungen werden gespeichert und beim nächsten Online-Moment synchronisiert';
+        } else {
+          dot.classList.remove('offline');
+          dot.title = '🟢 Verbunden';
+        }
+      };
+      updateDot();
+      window.addEventListener('online', updateDot);
+      window.addEventListener('offline', updateDot);
     }
   }
 

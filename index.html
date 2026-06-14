@@ -849,6 +849,10 @@
       <hr class="divider">
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="resetConfig()">🔧 Firebase neu konfigurieren</button>
       <hr class="divider">
+      <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">🔍 Verbindungstest</div>
+      <button class="btn btn-ghost btn-sm" onclick="testFirestoreSchreiben()">🧪 Schreib-/Lösch-Test</button>
+      <div id="firestore-test-result" style="font-size:.8rem;margin-top:.5rem"></div>
+      <hr class="divider">
       <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">📥 Historische Daten</div>
       <button class="btn btn-ghost btn-sm" onclick="zeigeImportVorschau()">📥 Alte Sessions importieren (2025/26)</button>
       <hr class="divider">
@@ -3197,9 +3201,29 @@ function bezahltToggle(id, current) {
   }
 }
 
-function deleteStrafe(id) {
+async function testFirestoreSchreiben() {
+  const el = document.getElementById('firestore-test-result');
+  if (el) el.innerHTML = '⏳ Teste…';
+  try {
+    const ref = db.collection('_test').doc('write-test');
+    await ref.set({ ts: Date.now() });
+    await ref.delete();
+    if (el) el.innerHTML = '<span style="color:var(--success)">✅ Schreiben & Löschen funktioniert!</span>';
+  } catch(e) {
+    if (el) el.innerHTML = '<span style="color:var(--danger)">❌ Fehler: ' + e.message + '</span>';
+    console.error('Firestore test error:', e);
+  }
+}
+
+async function deleteStrafe(id) {
   if (!confirm('Strafe löschen?')) return;
-  db.collection('strafen').doc(id).delete();
+  if (!id) { alert('Fehler: Keine ID für diese Strafe gefunden.'); return; }
+  try {
+    await db.collection('strafen').doc(id).delete();
+  } catch(e) {
+    alert('❌ Löschen fehlgeschlagen: ' + e.message + '\n\nBitte prüfe ob du online bist.');
+    console.error('deleteStrafe error:', e, 'id:', id);
+  }
 }
 
 function renderStrafen() {
@@ -4529,9 +4553,20 @@ async function ksDeleteAuswahl(pid) {
   const checked = [...document.querySelectorAll(`#${pid} .ks-cb:checked`)];
   if (!checked.length) return;
   if (!confirm(`${checked.length} Strafe${checked.length>1?'n':''} löschen?`)) return;
-  const batch = db.batch();
-  checked.forEach(cb => batch.delete(db.collection('strafen').doc(cb.dataset.id)));
-  await batch.commit();
+  const btn = document.getElementById(pid + '-del-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const batch = db.batch();
+    checked.forEach(cb => {
+      if (!cb.dataset.id) throw new Error('Fehlende ID bei einer Strafe');
+      batch.delete(db.collection('strafen').doc(cb.dataset.id));
+    });
+    await batch.commit();
+  } catch(e) {
+    alert('❌ Löschen fehlgeschlagen: ' + e.message + '\n\nBitte prüfe ob du online bist.');
+    console.error('ksDeleteAuswahl error:', e);
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ========== SPIELE ==========

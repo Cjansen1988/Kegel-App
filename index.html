@@ -3819,7 +3819,7 @@ function spielverlusteZuruecksetzen() {
 function renderMitgliedStats() {
   const name = document.getElementById('stats-mitglied-sel')?.value;
   if (!name) return;
-  const mStrafen = state.strafen.filter(s=>s.mitglied===name);
+  const mStrafen = state.strafen.filter(s=>s.mitglied===name).slice().sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
   const pastTermine = state.termine.filter(t=>t.datum<today()&&!t.ausfall);
   const alleAbendeM = [
     ...pastTermine.map(t => ({ anwesend: t.anmeldungen||[] })),
@@ -3828,22 +3828,116 @@ function renderMitgliedStats() {
   const anwesend = alleAbendeM.filter(a => a.anwesend.includes(name)).length;
   const offen = mStrafen.filter(s=>!s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0);
   const bezahlt = mStrafen.filter(s=>s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0);
+  const gesamt = offen + bezahlt;
+
+  // Spiel-Verluste dieser Person
+  const mVerluste = (state.spielverluste||[]).filter(v=>v.spieler===name).slice().sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
+  const spielCounts = {};
+  mVerluste.forEach(v => { spielCounts[v.spielName] = (spielCounts[v.spielName]||0)+1; });
+  const topSpiel = Object.entries(spielCounts).sort((a,b)=>b[1]-a[1])[0];
+
+  // Kegelbuch-Sessions dieser Person
+  const kSessions = (state.kegelsessions||[]).filter(s=>(s.angemeldet||[]).includes(name));
+  const kgesamtBetrag = kSessions.reduce((sum,s) => {
+    const eintraege = (s.eintraege||[]).filter(e=>e.mitglied===name);
+    return sum + eintraege.reduce((a,e)=>a+Number(e.betrag),0);
+  }, 0);
+
+  // Strafen nach Kategorie gruppiert
+  const byKat = {};
+  mStrafen.forEach(s => {
+    if (!byKat[s.kategorie]) byKat[s.kategorie] = { count:0, total:0, entries:[] };
+    byKat[s.kategorie].count++;
+    byKat[s.kategorie].total += Number(s.betrag);
+    byKat[s.kategorie].entries.push(s);
+  });
+  const katSorted = Object.entries(byKat).sort((a,b)=>b[1].total-a[1].total);
+
   document.getElementById('mitglied-stats-detail').innerHTML = `
-    <div class="grid-3" style="margin-bottom:1rem">
-      <div class="stat"><div class="val">${anwesend}</div><div class="lbl">Termine dabei</div></div>
-      <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offen)}</div><div class="lbl">Strafen offen</div></div>
-      <div class="stat"><div class="val" style="color:var(--success)">${formatEur(bezahlt)}</div><div class="lbl">Strafen bezahlt</div></div>
+    <!-- KPI-Zeile -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:1rem">
+      <div class="stat"><div class="val">${anwesend}</div><div class="lbl">Abende</div></div>
+      <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(gesamt)}</div><div class="lbl">Strafen ges.</div></div>
+      <div class="stat"><div class="val">${mVerluste.length}</div><div class="lbl">Spiele verl.</div></div>
     </div>
-    <div class="section-title">Strafen-Detail</div>
-    ${mStrafen.length===0?'<div class="empty-state">Keine Strafen</div>':
-    `<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Kategorie</th><th>Betrag</th><th>Status</th></tr></thead><tbody>
-      ${mStrafen.map(s=>`<tr>
-        <td>${formatDate(s.datum)}</td>
-        <td>${s.kategorie}${s.notiz?` <span style="color:var(--text-muted);font-size:.75rem">(${s.notiz})</span>`:''}</td>
-        <td>${formatEur(s.betrag)}</td>
-        <td><span class="tag ${s.bezahlt?'tag-green':'tag-red'}">${s.bezahlt?'Bezahlt':'Offen'}</span></td>
-      </tr>`).join('')}
-    </tbody></table></div>`}`;
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:1.25rem">
+      <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offen)}</div><div class="lbl">Noch offen</div></div>
+      <div class="stat"><div class="val" style="color:var(--success)">${formatEur(bezahlt)}</div><div class="lbl">Bezahlt</div></div>
+      <div class="stat"><div class="val">${kSessions.length}</div><div class="lbl">Kegelabende</div></div>
+    </div>
+
+    <!-- Spiel-Verluste -->
+    ${mVerluste.length > 0 ? `
+    <div class="section-title" style="margin-bottom:.5rem">🎮 Spiel-Verluste (${mVerluste.length})</div>
+    ${topSpiel ? `<div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.6rem">Meistens verloren: <strong>${topSpiel[0]}</strong> (${topSpiel[1]}×)</div>` : ''}
+    <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.75rem">
+      ${Object.entries(spielCounts).sort((a,b)=>b[1]-a[1]).map(([spiel,n])=>`
+        <span style="background:#fef2f2;border:1px solid #fecaca;border-radius:99px;padding:3px 10px;font-size:.78rem;color:#b91c1c;font-weight:600">${spiel} ×${n}</span>
+      `).join('')}
+    </div>
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:1.25rem">
+      ${mVerluste.slice(0,10).map((v,i)=>`
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.45rem .75rem;${i>0?'border-top:1px solid var(--border)':''}">
+          <span style="font-size:.8rem;background:#fef2f2;color:#b91c1c;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap">${v.spielName}</span>
+          <span style="flex:1;font-size:.8rem;color:var(--text-muted)">${v.notiz||'Verloren'}</span>
+          <span style="font-size:.75rem;color:var(--text-muted);white-space:nowrap">${formatDate(v.datum)}</span>
+        </div>`).join('')}
+      ${mVerluste.length > 10 ? `<div style="padding:.4rem .75rem;font-size:.75rem;color:var(--text-muted);border-top:1px solid var(--border)">… und ${mVerluste.length-10} weitere</div>` : ''}
+    </div>` : `<div style="margin-bottom:1.25rem;padding:.6rem;background:#f0fdf4;border-radius:8px;font-size:.82rem;color:#15803d;text-align:center">🏆 Noch kein Spiel verloren!</div>`}
+
+    <!-- Strafen nach Kategorie -->
+    <div class="section-title" style="margin-bottom:.5rem">📋 Strafen nach Kategorie</div>
+    ${katSorted.length === 0 ? '<div class="empty-state">Keine Strafen</div>' : `
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:1.25rem">
+      ${katSorted.map(([kat,d],i)=>`
+        <div style="${i>0?'border-top:1px solid var(--border)':''}">
+          <button onclick="msToggleKat(this)" style="width:100%;background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;text-align:left">
+            <span style="flex:1;font-weight:600;font-size:.875rem">${kat}</span>
+            <span style="font-size:.78rem;color:var(--text-muted)">${d.count}×</span>
+            <span style="font-weight:700;color:${d.total>0?'var(--danger)':'var(--text-muted)'}">${formatEur(d.total)}</span>
+            <span style="font-size:.7rem;color:var(--text-muted)">▼</span>
+          </button>
+          <div class="ms-kat-detail" style="display:none;border-top:1px solid var(--border)">
+            ${d.entries.map(s=>`
+              <div style="display:flex;align-items:center;gap:.5rem;padding:.35rem .75rem .35rem 1.25rem;border-bottom:1px solid var(--border)">
+                <span style="font-size:.75rem;color:var(--text-muted);flex:1">${formatDate(s.datum)}${s.notiz?' · '+s.notiz:''}</span>
+                <span style="font-size:.8rem;font-weight:600;color:var(--danger)">${formatEur(s.betrag)}</span>
+                <span class="tag ${s.bezahlt?'tag-green':'tag-red'}" style="font-size:.65rem;padding:1px 6px">${s.bezahlt?'✓':'!'}</span>
+              </div>`).join('')}
+          </div>
+        </div>`).join('')}
+    </div>`}
+
+    <!-- Kegelbuch-History -->
+    ${kSessions.length > 0 ? `
+    <div class="section-title" style="margin-bottom:.5rem">🎳 Kegelbuch-History (${kSessions.length} Sessions)</div>
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:.5rem">
+      ${kSessions.slice().sort((a,b)=>(b.datum||'').localeCompare(a.datum||'')).map((s,i)=>{
+        const eintraege = (s.eintraege||[]).filter(e=>e.mitglied===name);
+        const total = eintraege.reduce((a,e)=>a+Number(e.betrag),0);
+        const details = eintraege.filter(e=>Number(e.betrag)>0).map(e=>e.anzahl>1?`${e.kategorie} ×${e.anzahl}`:e.kategorie).join(', ');
+        return `<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;${i>0?'border-top:1px solid var(--border)':''}">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:.82rem">${s.name}</div>
+            <div style="font-size:.72rem;color:var(--text-muted)">${formatDate(s.datum)}${details?' · '+details:''}</div>
+          </div>
+          <span style="font-weight:700;font-size:.875rem;color:${total>0?'var(--danger)':'var(--text-muted)'}">${formatEur(total)}</span>
+        </div>`;
+      }).join('')}
+      <div style="display:flex;justify-content:space-between;padding:.5rem .75rem;border-top:2px solid var(--border);font-weight:700;font-size:.82rem;background:var(--bg)">
+        <span>Kegelbuch gesamt</span><span style="color:var(--danger)">${formatEur(kgesamtBetrag)}</span>
+      </div>
+    </div>` : ''}
+  `;
+}
+
+function msToggleKat(btn) {
+  const detail = btn.nextElementSibling;
+  if (!detail) return;
+  const open = detail.style.display !== 'none';
+  detail.style.display = open ? 'none' : 'block';
+  const chevron = btn.querySelector('span:last-child');
+  if (chevron) chevron.style.transform = open ? '' : 'rotate(180deg)';
 }
 
 // ========== IST-BESTAND ==========

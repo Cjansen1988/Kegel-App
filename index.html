@@ -2258,7 +2258,7 @@ function renderKegelHistorie() {
             <div style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:flex-end">
               <button class="btn btn-ghost btn-sm" onclick="zeigeSessionDetail('${d.id}')" title="Details anzeigen">👁 Details</button>
               <button class="btn btn-ghost btn-sm" onclick="exportSessionPDF('${d.id}')" title="Als PDF exportieren">📄 PDF</button>
-              <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="loescheSessionStrafen('${d.id}','${s.datum}')" title="Falsch eingetragene Strafen löschen">↩ Strafen löschen</button>
+              <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="zeigeSessionStrafen('${d.id}','${s.datum}')" title="Strafen dieser Session verwalten">↩ Strafen</button>
               <button class="btn btn-danger btn-sm" onclick="loescheSession('${d.id}','${s.name}')">🗑</button>
             </div>
           </div>
@@ -2410,13 +2410,9 @@ async function exportSessionPDF(sessionId) {
   }
 }
 
-async function loescheSessionStrafen(sessionId, datum) {
-  if (!confirm('Alle Kegelbuch-Strafen dieser Session löschen?\n\nDas betrifft nur die Kegelbuch-Strafen von diesem Abend, nicht manuell eingetragene Strafen.')) return;
-
-  // Suche zuerst nach sessionId (neue Sessions), dann Fallback auf datum (alte Sessions)
+async function zeigeSessionStrafen(sessionId, datum) {
+  // Lade Strafen dieser Session
   let snap = await db.collection('strafen').where('sessionId', '==', sessionId).get();
-
-  // Fallback: Strafen vom selben Datum mit Kategorie 'Kegelbuch'
   if (snap.empty && datum) {
     snap = await db.collection('strafen')
       .where('datum', '==', datum)
@@ -2424,20 +2420,98 @@ async function loescheSessionStrafen(sessionId, datum) {
       .get();
   }
 
-  if (snap.empty) { alert('Keine Kegelbuch-Strafen für diese Session gefunden.'); return; }
+  const strafen = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a,b) => (a.mitglied||'').localeCompare(b.mitglied||''));
 
-  const anzahl = snap.size;
-  if (!confirm(`${anzahl} Strafe${anzahl > 1 ? 'n' : ''} wirklich löschen?`)) return;
+  const modalId = 'session-strafen-modal';
+  document.getElementById(modalId)?.remove();
 
+  const renderListe = () => {
+    const aktuelle = strafen.filter(s => !s._geloescht);
+    const liste = document.getElementById(modalId + '-liste');
+    if (!liste) return;
+    if (!aktuelle.length) {
+      liste.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:.875rem">✅ Alle Strafen gelöscht</div>';
+      return;
+    }
+    liste.innerHTML = aktuelle.map(s => `
+      <div id="ssz-${s.id}" style="display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:.875rem">${s.mitglied}</div>
+          <div style="font-size:.75rem;color:var(--text-muted)">${s.kategorie}${s.notiz?' · '+s.notiz:''}</div>
+        </div>
+        <span style="font-weight:700;color:#b91c1c;white-space:nowrap">${formatEur(s.betrag)}</span>
+        <button onclick="sessionStrafeLoschen('${s.id}','${modalId}')" class="btn btn-danger btn-sm" style="padding:4px 9px;flex-shrink:0">🗑</button>
+      </div>`).join('');
+  };
+
+  const alleBtn = strafen.length > 1
+    ? `<button onclick="alleSessionStrafen('${modalId}')" class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;font-size:.78rem">Alle löschen</button>`
+    : '';
+
+  const modal = document.createElement('div');
+  modal.id = modalId;
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:600;display:flex;align-items:flex-end;justify-content:center';
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px 16px 0 0;width:100%;max-width:560px;max-height:80vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+      <div style="padding:1rem 1.1rem .75rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <div>
+          <div style="font-weight:700;font-size:.95rem">↩ Strafen dieser Session</div>
+          <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${strafen.length} Einträge · einzeln löschbar</div>
+        </div>
+        <div style="display:flex;gap:.4rem;align-items:center">
+          ${alleBtn}
+          <button onclick="document.getElementById('${modalId}').remove()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--text-muted);line-height:1;padding:.2rem">✕</button>
+        </div>
+      </div>
+      <div id="${modalId}-liste" style="overflow-y:auto;flex:1"></div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  // Strafen in state cachen für Lösch-Callbacks
+  modal._strafen = strafen;
+  renderListe();
+}
+
+async function sessionStrafeLoschen(strafId, modalId) {
+  if (!confirm('Diese Strafe löschen?')) return;
+  await db.collection('strafen').doc(strafId).delete();
+  // aus lokalem Array entfernen
+  const modal = document.getElementById(modalId);
+  if (modal?._strafen) {
+    const s = modal._strafen.find(x => x.id === strafId);
+    if (s) s._geloescht = true;
+    // re-render
+    const aktuelle = modal._strafen.filter(x => !x._geloescht);
+    const liste = document.getElementById(modalId + '-liste');
+    if (!liste) return;
+    if (!aktuelle.length) {
+      liste.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:.875rem">✅ Alle Strafen dieser Session gelöscht</div>';
+      return;
+    }
+    liste.innerHTML = aktuelle.map(s => `
+      <div id="ssz-${s.id}" style="display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:.875rem">${s.mitglied}</div>
+          <div style="font-size:.75rem;color:var(--text-muted)">${s.kategorie}${s.notiz?' · '+s.notiz:''}</div>
+        </div>
+        <span style="font-weight:700;color:#b91c1c;white-space:nowrap">${formatEur(s.betrag)}</span>
+        <button onclick="sessionStrafeLoschen('${s.id}','${modalId}')" class="btn btn-danger btn-sm" style="padding:4px 9px;flex-shrink:0">🗑</button>
+      </div>`).join('');
+  }
+}
+
+async function alleSessionStrafen(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal?._strafen) return;
+  const aktuelle = modal._strafen.filter(x => !x._geloescht);
+  if (!confirm(`Alle ${aktuelle.length} Strafen dieser Session löschen?`)) return;
   const batch = db.batch();
-  snap.docs.forEach(d => batch.delete(d.ref));
+  aktuelle.forEach(s => { batch.delete(db.collection('strafen').doc(s.id)); s._geloescht = true; });
   await batch.commit();
-
-  const toast = document.createElement('div');
-  toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#15803d;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:700;box-shadow:0 4px 12px rgba(0,0,0,.2);white-space:nowrap';
-  toast.textContent = `✅ ${anzahl} Strafe${anzahl > 1 ? 'n' : ''} gelöscht`;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 2500);
+  const liste = document.getElementById(modalId + '-liste');
+  if (liste) liste.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:.875rem">✅ Alle Strafen dieser Session gelöscht</div>';
 }
 
 function loescheSession(sessionId, name) {

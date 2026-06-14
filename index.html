@@ -1022,17 +1022,12 @@ function subscribeAll() {
   }, () => { loaded.termine = true; checkAllLoaded(); }));
 
   // Strafen (gefiltert nach aktiver Saison)
+  // WICHTIG: Alle Strafen cachen, damit bei Saison-Wechsel neu gefiltert werden kann
   unsubscribers.push(db.collection('strafen').orderBy('datum','desc').onSnapshot(snap => {
-    const alle = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const saisonId = state.aktiveSaison?.id || null;
-    state.strafen = saisonId
-      ? alle.filter(s => s.saisonId === saisonId)
-      : alle.filter(s => !s.saisonId);
+    state._alleStrafen = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    applySaisonFilterStrafen();
     loaded.strafen = true; checkAllLoaded();
     renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose(); renderKasseSchuldner();
-
-    // Kategorien
-    const katSnap = snap.docs.filter(d => false); // handled separately
   }, () => { loaded.strafen = true; checkAllLoaded(); }));
 
   // Strafkategorien
@@ -1053,10 +1048,12 @@ function subscribeAll() {
   // Quiz
   subscribeQuiz();
 
-  // Saison
+  // Saison — nach dem Laden Strafen neu filtern
   unsubscribers.push(db.collection('config').doc('saison').onSnapshot(snap => {
     state.aktiveSaison = snap.exists ? snap.data() : null;
+    applySaisonFilterStrafen();
     renderSaisonInfo();
+    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose(); renderKasseSchuldner();
   }, () => {}));
 
   // Kegelsessions (gefiltert nach aktiver Saison)
@@ -8784,6 +8781,15 @@ function resetQuiz() {
 // ========== SAISON-SYSTEM ==========
 function saisonMeta() {
   return state.aktiveSaison ? { saisonId: state.aktiveSaison.id } : {};
+}
+
+// Filtert state._alleStrafen nach aktiver Saison und schreibt in state.strafen
+function applySaisonFilterStrafen() {
+  const alle = state._alleStrafen || [];
+  const saisonId = state.aktiveSaison?.id || null;
+  state.strafen = saisonId
+    ? alle.filter(s => s.saisonId === saisonId)
+    : alle.filter(s => !s.saisonId);
 }
 
 function renderSaisonInfo() {

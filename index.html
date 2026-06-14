@@ -2041,20 +2041,31 @@ function zurueckZuSession() {
 
 function bestaetigeKegelSession() {
   if (!aktiveSession) return;
+
+  // Doppelklick / Offline-Schutz
+  const saveBtn = document.querySelector('#kegeln-bestaetigung-screen .btn-primary');
+  if (saveBtn) {
+    if (saveBtn.disabled) return;
+    saveBtn.disabled = true;
+    saveBtn.textContent = navigator.onLine ? '⏳ Wird gespeichert…' : '📵 Offline – wird gespeichert sobald du online bist…';
+  }
+
   const { alle } = kgBerechneAuswertung();
   const KEGELBAHN = 3.00;
   const batch = db.batch();
 
+  // Session-Ref vorab generieren damit sessionId in Strafen gespeichert werden kann
+  const sessionRef = db.collection('kegelsessions').doc();
+  const sessionId = sessionRef.id;
+
   // Einträge für Historie
   const eintraegeFlach = [];
   state.mitglieder.forEach(m => {
-    // Kegelbuch-Kategorien
     const counts = aktiveSession.counts[m.name]||{};
     KG_KATEGORIEN.forEach(g => g.strafen.forEach(s => {
       const n = counts[s.name]||0;
       if (n > 0) eintraegeFlach.push({ mitglied: m.name, kategorie: s.name, betrag: s.betrag*n, anzahl: n });
     }));
-    // Spiele-Strafen
     const spieleBetrag = aktiveSession.spiele?.[m.name] || 0;
     if (spieleBetrag > 0) {
       const spieleDetail = (aktiveSession.spieleDetail?.[m.name] || []);
@@ -2063,7 +2074,7 @@ function bestaetigeKegelSession() {
     }
   });
 
-  // Strafen speichern
+  // Strafen speichern (mit sessionId für späteres Rückgängig-Machen)
   alle.forEach(s => {
     const gesamtBetrag = Math.round((s.kegelbuch + KEGELBAHN) * 100) / 100;
     const notiz = s.abwesend
@@ -2072,14 +2083,16 @@ function bestaetigeKegelSession() {
     batch.set(db.collection('strafen').doc(), {
       mitglied: s.name, kategorie: 'Kegelbuch',
       notiz, betrag: gesamtBetrag,
-      datum: today(), bezahlt: false, createdAt: Date.now()
+      datum: today(), bezahlt: false, createdAt: Date.now(),
+      sessionId, ...saisonMeta()
     });
   });
 
   const { alle: alleAuswertung } = kgBerechneAuswertung();
   const gesamtEinnahmen = Math.round(alleAuswertung.reduce((s, m) => s + m.kegelbuch + 3.00, 0) * 100) / 100;
 
-  db.collection('kegelsessions').add({
+  // Session-Dokument im selben Batch speichern
+  batch.set(sessionRef, {
     name: aktiveSession.name, datum: today(),
     eintraege: eintraegeFlach, ...saisonMeta(),
     angemeldet: aktiveSession.angemeldet || [],
@@ -2094,7 +2107,11 @@ function bestaetigeKegelSession() {
     document.getElementById('kegeln-bestaetigung-screen').style.display = 'none';
     document.getElementById('kegeln-start-screen').style.display = 'block';
     renderKegelHistorie();
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Strafen speichern'; }
     alert('✅ Strafen wurden übernommen!');
+  }).catch(err => {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Strafen speichern'; }
+    alert('❌ Fehler beim Speichern: ' + err.message);
   });
 }
 
@@ -2144,8 +2161,9 @@ function renderKegelHistorie() {
                 💰 Gesamt inkl. Abwesende + Bahn: <strong>${formatEur(gesamtEinnahmen)}</strong>
               </div>` : ''}
             </div>
-            <div style="display:flex;gap:.35rem">
+            <div style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:flex-end">
               <button class="btn btn-ghost btn-sm" onclick="exportSessionPDF('${d.id}')" title="Als PDF exportieren">📄 PDF</button>
+              <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="loescheSessionStrafen('${d.id}','${s.datum}')" title="Falsch eingetragene Strafen löschen">↩ Strafen löschen</button>
               <button class="btn btn-danger btn-sm" onclick="loescheSession('${d.id}','${s.name}')">🗑</button>
             </div>
           </div>
@@ -2180,76 +2198,85 @@ async function exportSessionPDF(sessionId) {
     const gesamtEinnahmen = Math.round((strafenAnwesend + strafenAbwesend + bahnBeitraege) * 100) / 100;
     const kasseDiff = Math.round((gesamtEinnahmen - KEGELBAHN_KOSTEN) * 100) / 100;
     const ini = n => n.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
-    const catStyle = k => {
-      if (k==='Abwesenheit') return 'background:#fef9c3;color:#854d0e';
-      if (k==='Spiele'||k==='Verl. Spiel'||k.toLowerCase().includes('spiel')) return 'background:#ede9fe;color:#5b21b6';
-      return 'background:#dbeafe;color:#1e40af';
-    };
-    const personCard = (name, rows, total, isAbsent) => {
-      const ab = isAbsent ? '#fef9c3' : '#dbeafe';
-      const ac = isAbsent ? '#854d0e' : '#1e40af';
-      const rowsH = rows.map(r => `<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:0.5px solid #e2e8f0">
-        <span style="font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;white-space:nowrap;${catStyle(r.kat)}">${r.kat}</span>
-        <span style="color:#64748b;flex:1;font-size:12px">${r.desc||''}</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap">${formatEur(Number(r.betrag))}</span>
-      </div>`).join('');
-      return `<div style="border:0.5px solid #e2e8f0;border-radius:8px;margin-bottom:8px;overflow:hidden">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f8fafc">
-          <div style="display:flex;align-items:center;gap:7px">
-            <div style="width:26px;height:26px;border-radius:50%;background:${ab};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:${ac};flex-shrink:0">${ini(name)}</div>
-            <span style="font-weight:600;color:#1e293b;font-size:13px">${name}</span>
-            ${isAbsent?'<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:#fef9c3;color:#854d0e;margin-left:2px">abwesend</span>':''}
-          </div>
-          <span style="font-weight:700;color:#b91c1c;font-size:14px">${formatEur(total)}</span>
-        </div>
-        ${rowsH}
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
-          <span style="font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;background:#dcfce7;color:#15803d">Bahn</span>
-          <span style="color:#64748b;flex:1;font-size:12px">Anteil Kegelbahn</span>
-          <span style="font-size:12px;font-weight:600;color:#1e293b">${formatEur(BAHN)}</span>
-        </div>
-      </div>`;
-    };
-    const anwesendeCards = angemeldet.map(name => {
-      const rows = (perPerson[name]||[]).map(e => ({ kat: e.kategorie, desc: e.notiz || (e.anzahl>1?'×'+e.anzahl:''), betrag: e.betrag }));
-      return personCard(name, rows, (perPerson[name]||[]).reduce((a,e)=>a+Number(e.betrag),0) + BAHN, false);
-    }).join('');
-    const abwesendeCards = abwesendeNamen.map(name => {
-      const rows = (perPerson[name]||[]).filter(e=>e.kategorie==='Abwesenheit').map(e => ({ kat:'Abwesenheit', desc: e.notiz||'', betrag: e.betrag }));
-      return personCard(name, rows, (perPerson[name]||[]).filter(e=>e.kategorie==='Abwesenheit').reduce((a,e)=>a+Number(e.betrag),0) + BAHN, true);
-    }).join('');
     const kBg = kasseDiff >= 0 ? '#052e16' : '#450a0a';
     const kColor = kasseDiff >= 0 ? '#4ade80' : '#fca5a5';
     const kLbl = kasseDiff >= 0 ? '#86efac' : '#fca5a5';
     const datumDisp = s.datum ? formatDate(s.datum) : '–';
     const exportDatum = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
     const clubName = state.clubName || 'Blackout Boys';
+    // Durchschnitt (nur Anwesende)
+    const durchschnitt = angemeldet.length > 0
+      ? Math.round(strafenAnwesend / angemeldet.length * 100) / 100 : 0;
+    const abwesendZahlt = Math.round((durchschnitt + BAHN) * 100) / 100;
+
+    // Kompakte Personenzeile
+    const personRow = (name, rows, total, isAbsent) => {
+      const ab = isAbsent ? '#fef9c3' : '#dbeafe';
+      const ac = isAbsent ? '#854d0e' : '#1e40af';
+      const details = [...rows.map(r => `${r.kat}${r.desc?' ('+r.desc+')':''}${r.betrag?': '+formatEur(Number(r.betrag)):''}`),'Bahn: '+formatEur(BAHN)].join(' · ');
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:0.5px solid #e2e8f0">
+        <div style="width:24px;height:24px;border-radius:50%;background:${ab};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:${ac};flex-shrink:0">${ini(name)}</div>
+        <div style="flex:1;min-width:0">
+          <span style="font-weight:600;font-size:12px;color:#1e293b">${name}</span>
+          ${isAbsent?'<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#fef9c3;color:#854d0e;margin-left:4px">abwesend</span>':''}
+          <div style="font-size:10px;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${details}</div>
+        </div>
+        <span style="font-weight:700;color:#b91c1c;font-size:13px;white-space:nowrap">${formatEur(total)}</span>
+      </div>`;
+    };
+
+    const anwesendeRows = angemeldet.map(name => {
+      const rows = (perPerson[name]||[]).map(e => ({ kat: e.kategorie, desc: e.notiz||(e.anzahl>1?'×'+e.anzahl:''), betrag: e.betrag }));
+      return personRow(name, rows, (perPerson[name]||[]).reduce((a,e)=>a+Number(e.betrag),0)+BAHN, false);
+    }).join('');
+    const abwesendeRows = abwesendeNamen.map(name => {
+      const rows = (perPerson[name]||[]).filter(e=>e.kategorie==='Abwesenheit').map(e=>({kat:'Abwesenheit',desc:e.notiz||'',betrag:e.betrag}));
+      return personRow(name, rows, (perPerson[name]||[]).filter(e=>e.kategorie==='Abwesenheit').reduce((a,e)=>a+Number(e.betrag),0)+BAHN, true);
+    }).join('');
+
     const pdfHtml = `<div style="width:595px;background:white;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;color:#1e293b">
-      <div style="background:#16213e;padding:20px 28px 16px">
-        <div style="color:#8888bb;font-size:10px;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">${clubName}</div>
-        <div style="color:#fff;font-size:20px;font-weight:600;margin-bottom:2px">Abendabrechnung</div>
-        <div style="color:#7777aa;font-size:12px;margin-bottom:14px">${s.name}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <span style="background:#1e2d52;border:0.5px solid #2d3d70;color:#9999cc;font-size:11px;padding:3px 9px;border-radius:99px">📅 ${datumDisp}</span>
-          <span style="background:#1e2d52;border:0.5px solid #2d3d70;color:#9999cc;font-size:11px;padding:3px 9px;border-radius:99px">👥 ${angemeldet.length} anwesend · ${abwesendeNamen.length} abwesend</span>
+      <div style="background:#16213e;padding:16px 24px 12px">
+        <div style="color:#8888bb;font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-bottom:2px">${clubName}</div>
+        <div style="color:#fff;font-size:18px;font-weight:600;margin-bottom:1px">Abendabrechnung</div>
+        <div style="color:#7777aa;font-size:11px;margin-bottom:10px">${s.name}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <span style="background:#1e2d52;border:0.5px solid #2d3d70;color:#9999cc;font-size:10px;padding:2px 8px;border-radius:99px">📅 ${datumDisp}</span>
+          <span style="background:#1e2d52;border:0.5px solid #2d3d70;color:#9999cc;font-size:10px;padding:2px 8px;border-radius:99px">👥 ${angemeldet.length} anwesend · ${abwesendeNamen.length} abwesend</span>
+          <span style="background:#1e2d52;border:0.5px solid #2d3d70;color:#9999cc;font-size:10px;padding:2px 8px;border-radius:99px">Ø ${formatEur(durchschnitt)} · Abwesende zahlen ${formatEur(abwesendZahlt)}</span>
         </div>
       </div>
-      <div style="padding:20px 28px">
-        ${angemeldet.length > 0 ? `<div style="font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px;font-weight:600">ANWESENDE — STRAFEN &amp; BAHN-BEITRAG</div>${anwesendeCards}` : ''}
-        ${abwesendeNamen.length > 0 ? `<div style="font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px;margin-top:16px;font-weight:600">ABWESENDE — ABWESENHEITSSTRAFE &amp; BAHN-BEITRAG</div>${abwesendeCards}` : ''}
-        <div style="font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px;margin-top:16px;font-weight:600">KASSENABSCHLUSS</div>
+      <div style="padding:14px 24px">
+        ${angemeldet.length > 0 ? `
+        <div style="font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:6px;font-weight:600">ANWESENDE</div>
+        <div style="border:0.5px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:12px">
+          ${anwesendeRows}
+          <div style="display:flex;justify-content:space-between;padding:6px 12px;background:#f8fafc">
+            <span style="font-size:11px;color:#64748b">Ø pro Person</span>
+            <span style="font-weight:600;font-size:11px;color:#1e293b">${formatEur(durchschnitt)} Strafen + ${formatEur(BAHN)} Bahn</span>
+          </div>
+        </div>` : ''}
+        ${abwesendeNamen.length > 0 ? `
+        <div style="font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:6px;font-weight:600">ABWESENDE</div>
+        <div style="border:0.5px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:12px">
+          ${abwesendeRows}
+          <div style="display:flex;justify-content:space-between;padding:6px 12px;background:#f8fafc">
+            <span style="font-size:11px;color:#64748b">Abwesenheit = Ø Strafen + Bahn</span>
+            <span style="font-weight:600;font-size:11px;color:#1e293b">${formatEur(durchschnitt)} + ${formatEur(BAHN)} = ${formatEur(abwesendZahlt)}</span>
+          </div>
+        </div>` : ''}
+        <div style="font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:6px;font-weight:600">KASSENABSCHLUSS</div>
         <div style="border:0.5px solid #e2e8f0;border-radius:8px;overflow:hidden">
-          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:12px">Strafen Anwesende</span><span style="font-weight:600;color:#16a34a">+ ${formatEur(strafenAnwesend)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:12px">Strafen Abwesende</span><span style="font-weight:600;color:#16a34a">+ ${formatEur(strafenAbwesend)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:12px">Bahn-Beiträge (${allePersonen} × ${formatEur(BAHN)})</span><span style="font-weight:600;color:#16a34a">+ ${formatEur(bahnBeitraege)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0;background:#f8fafc"><span style="font-weight:600;color:#1e293b">Gesamteinnahmen</span><span style="font-weight:600;color:#16a34a">${formatEur(gesamtEinnahmen)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:12px">Kegelbahn (Kosten)</span><span style="font-weight:600;color:#b91c1c">− ${formatEur(KEGELBAHN_KOSTEN)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:9px 14px;background:${kBg}"><span style="color:${kLbl};font-size:12px;font-weight:600">Geht in die Kasse</span><span style="font-weight:700;font-size:16px;color:${kColor}">${kasseDiff>=0?'+ ':'− '}${formatEur(Math.abs(kasseDiff))}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:7px 12px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:11px">Strafen Anwesende</span><span style="font-weight:600;font-size:11px;color:#16a34a">+ ${formatEur(strafenAnwesend)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:7px 12px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:11px">Strafen Abwesende</span><span style="font-weight:600;font-size:11px;color:#16a34a">+ ${formatEur(strafenAbwesend)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:7px 12px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:11px">Bahn-Beiträge (${allePersonen} × ${formatEur(BAHN)})</span><span style="font-weight:600;font-size:11px;color:#16a34a">+ ${formatEur(bahnBeitraege)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:7px 12px;border-bottom:0.5px solid #e2e8f0;background:#f8fafc"><span style="font-weight:600;color:#1e293b">Gesamteinnahmen</span><span style="font-weight:600;color:#16a34a">${formatEur(gesamtEinnahmen)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:7px 12px;border-bottom:0.5px solid #e2e8f0"><span style="color:#64748b;font-size:11px">Kegelbahn (Kosten)</span><span style="font-weight:600;font-size:11px;color:#b91c1c">− ${formatEur(KEGELBAHN_KOSTEN)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:9px 12px;background:${kBg}"><span style="color:${kLbl};font-size:11px;font-weight:600">Geht in die Kasse</span><span style="font-weight:700;font-size:15px;color:${kColor}">${kasseDiff>=0?'+ ':'− '}${formatEur(Math.abs(kasseDiff))}</span></div>
         </div>
       </div>
-      <div style="padding:10px 28px;border-top:0.5px solid #e2e8f0;display:flex;justify-content:space-between">
-        <span style="font-size:11px;color:#94a3b8">Exportiert am ${exportDatum} · ${clubName}</span>
-        <span style="font-size:11px;color:#94a3b8">Seite 1/1</span>
+      <div style="padding:8px 24px;border-top:0.5px solid #e2e8f0;display:flex;justify-content:space-between">
+        <span style="font-size:10px;color:#94a3b8">Exportiert am ${exportDatum} · ${clubName}</span>
+        <span style="font-size:10px;color:#94a3b8">Seite 1/1</span>
       </div>
     </div>`;
     const wrapper = document.createElement('div');
@@ -2283,6 +2310,36 @@ async function exportSessionPDF(sessionId) {
     toast.textContent = '❌ Fehler beim Export';
     setTimeout(() => toast.remove(), 3000);
   }
+}
+
+async function loescheSessionStrafen(sessionId, datum) {
+  if (!confirm('Alle Kegelbuch-Strafen dieser Session löschen?\n\nDas betrifft nur die Kegelbuch-Strafen von diesem Abend, nicht manuell eingetragene Strafen.')) return;
+
+  // Suche zuerst nach sessionId (neue Sessions), dann Fallback auf datum (alte Sessions)
+  let snap = await db.collection('strafen').where('sessionId', '==', sessionId).get();
+
+  // Fallback: Strafen vom selben Datum mit Kategorie 'Kegelbuch'
+  if (snap.empty && datum) {
+    snap = await db.collection('strafen')
+      .where('datum', '==', datum)
+      .where('kategorie', '==', 'Kegelbuch')
+      .get();
+  }
+
+  if (snap.empty) { alert('Keine Kegelbuch-Strafen für diese Session gefunden.'); return; }
+
+  const anzahl = snap.size;
+  if (!confirm(`${anzahl} Strafe${anzahl > 1 ? 'n' : ''} wirklich löschen?`)) return;
+
+  const batch = db.batch();
+  snap.docs.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#15803d;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:700;box-shadow:0 4px 12px rgba(0,0,0,.2);white-space:nowrap';
+  toast.textContent = `✅ ${anzahl} Strafe${anzahl > 1 ? 'n' : ''} gelöscht`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2500);
 }
 
 function loescheSession(sessionId, name) {

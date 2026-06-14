@@ -4428,6 +4428,9 @@ function renderKassenbuch() {
 }
 
 
+// Tracks which schuldner accordions are currently open
+const _schuldnerOpen = new Set();
+
 function renderKasseSchuldner() {
   const el = document.getElementById('kasse-schuldner-liste');
   const card = document.getElementById('kasse-schuldner-card');
@@ -4453,6 +4456,7 @@ function renderKasseSchuldner() {
 
   el.innerHTML = personen.map(([name, data]) => {
     const pid = 'schuldner-' + name.replace(/\s/g,'_');
+    const isOpen = _schuldnerOpen.has(pid);
     const sortedStrafen = data.strafen.slice().sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     return `
     <div style="border:1px solid var(--border);border-radius:10px;margin-bottom:.5rem;overflow:hidden">
@@ -4466,12 +4470,15 @@ function renderKasseSchuldner() {
         </div>
         <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
           <span style="font-weight:700;color:#b91c1c;font-size:.95rem">${formatEur(data.total)}</span>
-          <span id="${pid}-chevron" style="color:var(--text-muted);font-size:.75rem;transition:transform .2s">▼</span>
+          <span id="${pid}-chevron" style="color:var(--text-muted);font-size:.75rem;transition:transform .2s;${isOpen?'transform:rotate(180deg)':''}">▼</span>
         </div>
       </button>
-      <div id="${pid}" style="display:none;border-top:1px solid var(--border)">
+      <div id="${pid}" style="display:${isOpen?'block':'none'};border-top:1px solid var(--border)">
         ${sortedStrafen.map(s => `
         <div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .85rem;border-bottom:1px solid var(--border)" class="schuldner-zeile">
+          <label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0" onclick="event.stopPropagation()">
+            <input type="checkbox" class="ks-cb" data-id="${s.id}" data-pid="${pid}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--danger)" onchange="ksUpdateAuswahlBtn('${pid}')">
+          </label>
           <div style="flex:1;min-width:0">
             <div style="font-size:.84rem;font-weight:600;color:var(--text)">${s.kategorie}${s.notiz?`<span style="font-weight:400;color:var(--text-muted)"> · ${s.notiz}</span>`:''}</div>
             <div style="font-size:.72rem;color:var(--text-muted)">${formatDate(s.datum)}</div>
@@ -4479,7 +4486,12 @@ function renderKasseSchuldner() {
           <span style="font-weight:700;color:#b91c1c;white-space:nowrap">${formatEur(s.betrag)}</span>
           <button class="btn btn-danger btn-sm" style="padding:3px 8px;font-size:.75rem;flex-shrink:0" onclick="deleteStrafe('${s.id}')">🗑</button>
         </div>`).join('')}
-        <div style="padding:.5rem .85rem;display:flex;justify-content:flex-end;gap:.5rem;background:var(--bg)">
+        <div style="padding:.5rem .85rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;background:var(--bg);flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:.4rem">
+            <button class="btn btn-ghost btn-sm" style="font-size:.75rem;padding:4px 9px" onclick="ksSelectAll('${pid}')">☑ Alle</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:.75rem;padding:4px 9px" onclick="ksSelectNoneForPerson('${pid}')">✕ Keine</button>
+            <button id="${pid}-del-btn" class="btn btn-danger btn-sm" style="font-size:.75rem;padding:4px 9px;display:none" onclick="ksDeleteAuswahl('${pid}')">🗑 Auswahl löschen</button>
+          </div>
           <button class="btn btn-ghost btn-sm" onclick="sendeZahlungsanfrage('${name}')" style="font-size:.78rem">💸 Zahlungsanfrage</button>
         </div>
       </div>
@@ -4494,6 +4506,32 @@ function toggleSchuldnerDetail(pid) {
   const open = el.style.display !== 'none';
   el.style.display = open ? 'none' : 'block';
   if (chevron) chevron.style.transform = open ? '' : 'rotate(180deg)';
+  if (open) _schuldnerOpen.delete(pid); else _schuldnerOpen.add(pid);
+}
+
+function ksUpdateAuswahlBtn(pid) {
+  const checked = document.querySelectorAll(`#${pid} .ks-cb:checked`).length;
+  const btn = document.getElementById(pid + '-del-btn');
+  if (btn) { btn.style.display = checked ? 'inline-flex' : 'none'; btn.textContent = `🗑 ${checked} löschen`; }
+}
+
+function ksSelectAll(pid) {
+  document.querySelectorAll(`#${pid} .ks-cb`).forEach(cb => cb.checked = true);
+  ksUpdateAuswahlBtn(pid);
+}
+
+function ksSelectNoneForPerson(pid) {
+  document.querySelectorAll(`#${pid} .ks-cb`).forEach(cb => cb.checked = false);
+  ksUpdateAuswahlBtn(pid);
+}
+
+async function ksDeleteAuswahl(pid) {
+  const checked = [...document.querySelectorAll(`#${pid} .ks-cb:checked`)];
+  if (!checked.length) return;
+  if (!confirm(`${checked.length} Strafe${checked.length>1?'n':''} löschen?`)) return;
+  const batch = db.batch();
+  checked.forEach(cb => batch.delete(db.collection('strafen').doc(cb.dataset.id)));
+  await batch.commit();
 }
 
 // ========== SPIELE ==========

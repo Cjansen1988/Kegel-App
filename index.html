@@ -423,7 +423,7 @@
       <button class="nav-tab active" onclick="showPage('termine',this)">📅 Termine</button>
       <button class="nav-tab" onclick="showPage('kegeln',this)">🎳 Kegelbuch</button>
       <button class="nav-tab" onclick="showPage('spiele',this)">🎮 Spiele</button>
-      <button class="nav-tab" onclick="showPage('kassenbuch',this)">💰 Kasse</button>
+      <button class="nav-tab" onclick="showPage('kassenbuch',this)">💰 Kasse <span id="zahlung-badge-kasse" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.7rem;font-weight:800;padding:1px 6px;vertical-align:middle;margin-left:2px"></span></button>
       <button class="nav-tab" onclick="showPage('statistiken',this)">📊 Statistiken</button>
       <button class="nav-tab" onclick="showPage('quiz',this)">🧠 Quiz</button>
       <button class="nav-tab" onclick="showPage('mitglieder',this)">⚙️ Einstellungen</button>
@@ -438,7 +438,7 @@
     <button class="bnav-tab active" onclick="showPage('termine',this)" data-page="termine"><span class="icon">📅</span>Termine</button>
     <button class="bnav-tab" onclick="showPage('kegeln',this)" data-page="kegeln"><span class="icon">🎳</span>Kegelbuch</button>
     <button class="bnav-tab" onclick="showPage('spiele',this)" data-page="spiele"><span class="icon">🎮</span>Spiele</button>
-    <button class="bnav-tab" onclick="showPage('kassenbuch',this)" data-page="kassenbuch"><span class="icon">💰</span>Kasse</button>
+    <button class="bnav-tab" onclick="showPage('kassenbuch',this)" data-page="kassenbuch"><span class="icon">💰</span>Kasse <span id="zahlung-badge-kasse-m" style="display:none;background:#ef4444;color:white;border-radius:99px;font-size:.65rem;font-weight:800;padding:1px 5px;vertical-align:middle"></span></button>
     <button class="bnav-tab" onclick="showPage('statistiken',this)" data-page="statistiken"><span class="icon">📊</span>Stats</button>
     <button class="bnav-tab" onclick="showPage('quiz',this)" data-page="quiz"><span class="icon">🧠</span>Quiz</button>
     <button class="bnav-tab" onclick="showPage('mitglieder',this)" data-page="mitglieder"><span class="icon">⚙️</span>Einst.</button>
@@ -683,6 +683,9 @@
 
 <!-- KASSENBUCH -->
 <div class="page" id="page-kassenbuch">
+
+  <!-- Zahlungsanfragen (auch hier sichtbar) -->
+  <div id="zahlungsanfragen-box-kasse" style="display:none;margin-bottom:1rem"></div>
 
   <!-- Soll / Ist / Ausstehend Übersicht -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
@@ -1534,12 +1537,17 @@ function updateZahlungsBadge() {
 }
 
 function renderZahlungsanfragen() {
-  const box = document.getElementById('zahlungsanfragen-box');
-  if (!box) return;
   const anfragen = state.zahlungsanfragen || [];
-  if (!anfragen.length) { box.style.display = 'none'; return; }
-  box.style.display = 'block';
-  box.innerHTML = `
+
+  // Badge auf Kasse-Tab
+  ['zahlung-badge','zahlung-badge-m','zahlung-badge-kasse','zahlung-badge-kasse-m'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = anfragen.length > 0 ? 'inline-flex' : 'none';
+    el.textContent = anfragen.length;
+  });
+
+  const html = anfragen.length ? `
     <div class="card" style="border-color:#f97316;background:#fff7ed">
       <div class="card-title" style="color:#c2410c">💸 Zahlungsanfragen (${anfragen.length})</div>
       ${anfragen.map(z => `
@@ -1553,8 +1561,16 @@ function renderZahlungsanfragen() {
             <button class="btn btn-ghost btn-sm" onclick="ablehnenZahlung('${z.id}')">✗</button>
           </div>
         </div>`).join('')}
-    </div>`;
-  // Auch Übersicht aktualisieren
+    </div>` : '';
+
+  ['zahlungsanfragen-box','zahlungsanfragen-box-kasse'].forEach(id => {
+    const box = document.getElementById(id);
+    if (!box) return;
+    if (!anfragen.length) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.innerHTML = html;
+  });
+
   renderMemberOverview();
 }
 

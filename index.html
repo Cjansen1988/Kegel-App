@@ -1225,10 +1225,11 @@ function renderMemberOverview() {
             const hatOffeneAnfrage = (state.zahlungsanfragen||[]).some(z => z.mitglied === name && z.status === 'offen');
             return `
               ${offeneStrafen.map(s => `
-                <div class="strafe-row">
-                  <span>${s.kategorie}${s.notiz?' <span style="color:var(--text-muted);font-size:.8rem">(${s.notiz})</span>':''}<br>
+                <div class="strafe-row" style="gap:.4rem">
+                  <span style="flex:1">${s.kategorie}${s.notiz?`<span style="color:var(--text-muted);font-size:.8rem"> (${s.notiz})</span>`:''}<br>
                   <span style="font-size:.78rem;color:var(--text-muted)">${formatDate(s.datum)}</span></span>
                   <strong style="color:var(--danger)">${formatEur(s.betrag)}</strong>
+                  <button class="btn btn-danger btn-sm" style="padding:2px 7px;font-size:.75rem;flex-shrink:0" onclick="deleteStrafe('${s.id}')">🗑</button>
                 </div>`).join('')}
               <div style="display:flex;justify-content:space-between;padding-top:.75rem;font-weight:700;margin-bottom:.75rem">
                 <span>Gesamt offen</span>
@@ -2190,9 +2191,15 @@ async function exportSessionPDF(sessionId) {
       if (!perPerson[e.mitglied]) perPerson[e.mitglied] = [];
       perPerson[e.mitglied].push(e);
     });
-    const abwesendeNamen = Object.keys(perPerson).filter(n => !angemeldet.includes(n));
+    // Abwesende = alle Mitglieder die NICHT in angemeldet sind (aus state.mitglieder)
+    const alleMitglNamen = (s.spieler||[]).length ? s.spieler : (state.mitglieder||[]).map(m=>m.name);
+    const abwesendeNamen = alleMitglNamen.filter(n => !angemeldet.includes(n));
     const strafenAnwesend = angemeldet.reduce((sum, n) => sum + (perPerson[n]||[]).reduce((a,e) => a + Number(e.betrag), 0), 0);
-    const strafenAbwesend = abwesendeNamen.reduce((sum, n) => sum + (perPerson[n]||[]).filter(e=>e.kategorie==='Abwesenheit').reduce((a,e) => a + Number(e.betrag), 0), 0);
+    // Durchschnitt zuerst berechnen, damit Abwesende korrekt eingerechnet werden
+    const durchschnitt = angemeldet.length > 0
+      ? Math.round(strafenAnwesend / angemeldet.length * 100) / 100 : 0;
+    const strafenAbwesend = Math.round(abwesendeNamen.length * durchschnitt * 100) / 100;
+    const abwesendZahlt = Math.round((durchschnitt + BAHN) * 100) / 100;
     const allePersonen = angemeldet.length + abwesendeNamen.length;
     const bahnBeitraege = allePersonen * BAHN;
     const gesamtEinnahmen = Math.round((strafenAnwesend + strafenAbwesend + bahnBeitraege) * 100) / 100;
@@ -2204,10 +2211,6 @@ async function exportSessionPDF(sessionId) {
     const datumDisp = s.datum ? formatDate(s.datum) : '–';
     const exportDatum = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
     const clubName = state.clubName || 'Blackout Boys';
-    // Durchschnitt (nur Anwesende)
-    const durchschnitt = angemeldet.length > 0
-      ? Math.round(strafenAnwesend / angemeldet.length * 100) / 100 : 0;
-    const abwesendZahlt = Math.round((durchschnitt + BAHN) * 100) / 100;
 
     // Kompakte Personenzeile
     const personRow = (name, rows, total, isAbsent) => {
@@ -2230,8 +2233,9 @@ async function exportSessionPDF(sessionId) {
       return personRow(name, rows, (perPerson[name]||[]).reduce((a,e)=>a+Number(e.betrag),0)+BAHN, false);
     }).join('');
     const abwesendeRows = abwesendeNamen.map(name => {
-      const rows = (perPerson[name]||[]).filter(e=>e.kategorie==='Abwesenheit').map(e=>({kat:'Abwesenheit',desc:e.notiz||'',betrag:e.betrag}));
-      return personRow(name, rows, (perPerson[name]||[]).filter(e=>e.kategorie==='Abwesenheit').reduce((a,e)=>a+Number(e.betrag),0)+BAHN, true);
+      // Abwesende zahlen immer Ø der Anwesenden + Bahn
+      const rows = [{ kat: 'Abwesenheitsstrafe', desc: 'Ø der Anwesenden', betrag: durchschnitt }];
+      return personRow(name, rows, durchschnitt + BAHN, true);
     }).join('');
 
     const pdfHtml = `<div style="width:595px;background:white;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;color:#1e293b">

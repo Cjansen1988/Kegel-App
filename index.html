@@ -751,11 +751,17 @@
   <!-- Strafe schnell eintragen -->
   <div class="card" style="margin-bottom:1rem">
     <div class="card-title">⚡ Strafe eintragen</div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Person</label>
-        <select id="ks-mitglied"></select>
+    <div class="form-group" style="margin-bottom:.65rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+        <label style="margin:0">Personen</label>
+        <div style="display:flex;gap:.3rem">
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:.72rem" onclick="ksSelectAll()">Alle</button>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:.72rem" onclick="ksSelectNone()">Keine</button>
+        </div>
       </div>
+      <div id="ks-personen-chips" style="display:flex;flex-wrap:wrap;gap:.35rem"></div>
+    </div>
+    <div class="form-row">
       <div class="form-group">
         <label>Kategorie</label>
         <select id="ks-kategorie" onchange="ksKatChanged()">
@@ -2415,8 +2421,8 @@ function zeigeSessionDetail(sessionId) {
               Object.values(perSpieler[a]||{}).reduce((s,v)=>s+v.betrag,0)
             )).map((name,i) => {
               const spielerTotal = Object.values(perSpieler[name]||{}).reduce((sum,v)=>sum+v.betrag,0);
-              return `<tr style="${i%2===0?'background:var(--card-bg)':''}">
-                <td style="padding:.45rem .6rem;border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap;position:sticky;left:0;${i%2===0?'background:var(--card-bg)':'background:transparent'}">${name}</td>
+              return `<tr style="${i%2===0?'background:var(--card)':''}">
+                <td style="padding:.45rem .6rem;border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap;position:sticky;left:0;${i%2===0?'background:var(--card)':'background:transparent'}">${name}</td>
                 ${kats.map(k => {
                   const cell = (perSpieler[name]||{})[k];
                   if (!cell || cell.anzahl === 0) return `<td style="text-align:center;padding:.45rem .4rem;border-bottom:1px solid var(--border);color:var(--text-muted)">—</td>`;
@@ -2475,7 +2481,7 @@ function zeigeSessionDetail(sessionId) {
       </div>`;
 
     const html = `<div id="${overlayId}" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="document.getElementById('${overlayId}').remove()">
-      <div style="background:var(--card-bg);border-radius:16px 16px 0 0;width:100%;max-width:640px;max-height:92vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+      <div style="background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:640px;max-height:92vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
         <!-- Header -->
         <div style="padding:1.1rem 1.25rem .75rem;border-bottom:1px solid var(--border);flex-shrink:0">
           <div style="display:flex;justify-content:space-between;align-items:center">
@@ -2770,9 +2776,49 @@ function renderMitglieder() {
 
 function updateSelects() {
   const opts = state.mitglieder.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
-  ['s-mitglied','stats-mitglied-sel','ks-mitglied'].forEach(id => {
+  ['s-mitglied','stats-mitglied-sel'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { const cur = el.value; el.innerHTML = opts; if (cur) el.value = cur; }
+  });
+  renderKsPersonenChips();
+}
+
+function renderKsPersonenChips() {
+  const wrap = document.getElementById('ks-personen-chips');
+  if (!wrap) return;
+  const current = new Set([...wrap.querySelectorAll('[data-selected="1"]')].map(c => c.dataset.name));
+  wrap.innerHTML = state.mitglieder.map(m => {
+    const sel = current.has(m.name);
+    return `<button type="button" data-name="${m.name}" data-selected="${sel?'1':'0'}"
+      onclick="ksToggleChip(this)"
+      style="padding:4px 10px;border-radius:99px;font-size:.78rem;font-weight:600;cursor:pointer;border:1.5px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'var(--primary)':'white'};color:${sel?'white':'var(--text-muted)'};transition:all .15s"
+      >${m.name}</button>`;
+  }).join('');
+}
+
+function ksToggleChip(btn) {
+  const sel = btn.dataset.selected === '1';
+  btn.dataset.selected = sel ? '0' : '1';
+  btn.style.background = !sel ? 'var(--primary)' : 'white';
+  btn.style.color = !sel ? 'white' : 'var(--text-muted)';
+  btn.style.borderColor = !sel ? 'var(--primary)' : 'var(--border)';
+}
+
+function ksSelectAll() {
+  document.querySelectorAll('#ks-personen-chips button').forEach(btn => {
+    btn.dataset.selected = '1';
+    btn.style.background = 'var(--primary)';
+    btn.style.color = 'white';
+    btn.style.borderColor = 'var(--primary)';
+  });
+}
+
+function ksSelectNone() {
+  document.querySelectorAll('#ks-personen-chips button').forEach(btn => {
+    btn.dataset.selected = '0';
+    btn.style.background = 'white';
+    btn.style.color = 'var(--text-muted)';
+    btn.style.borderColor = 'var(--border)';
   });
 }
 
@@ -2822,31 +2868,47 @@ function ksKatChanged() {
 }
 
 function addKasseStrafe() {
-  const mitglied = document.getElementById('ks-mitglied').value;
+  const personen = [...document.querySelectorAll('#ks-personen-chips button[data-selected="1"]')].map(b => b.dataset.name);
   const kategorie = document.getElementById('ks-kategorie').value;
   const betrag = parseFloat(document.getElementById('ks-betrag').value);
   const notiz = document.getElementById('ks-notiz').value.trim();
   const bezahlt = document.getElementById('ks-bezahlt').checked;
   const datum = today();
-  if (!mitglied) { alert('Person auswählen!'); return; }
+  if (!personen.length) { alert('Mindestens eine Person auswählen!'); return; }
   if (!kategorie) { alert('Kategorie auswählen!'); return; }
   if (isNaN(betrag) || betrag <= 0) { alert('Gültigen Betrag eingeben!'); return; }
-  db.collection('strafen').add({ mitglied, kategorie, betrag, datum, notiz, bezahlt, ...saisonMeta(), createdAt: Date.now() }).then(ref => {
+
+  const batch = db.batch();
+  const kassenbuchEntries = [];
+  personen.forEach(mitglied => {
+    const ref = db.collection('strafen').doc();
+    batch.set(ref, { mitglied, kategorie, betrag, datum, notiz, bezahlt, ...saisonMeta(), createdAt: Date.now() });
     if (bezahlt) {
+      kassenbuchEntries.push({ mitglied, ref: ref.id });
+    }
+  });
+  batch.commit().then(() => {
+    kassenbuchEntries.forEach(({ mitglied, ref: strafId }) => {
       db.collection('kassenbuch').add({
         typ: 'einnahme',
         beschr: `Strafe: ${mitglied} – ${kategorie}${notiz ? ' ('+notiz+')' : ''}`,
-        betrag, datum, kat: 'Strafen', strafId: ref.id, createdAt: Date.now()
+        betrag, datum, kat: 'Strafen', strafId, createdAt: Date.now()
       });
-    }
+    });
   });
+
   document.getElementById('ks-kategorie').value = '';
   document.getElementById('ks-betrag').value = '';
   document.getElementById('ks-notiz').value = '';
   document.getElementById('ks-bezahlt').checked = false;
-  // Short confirmation feedback
+  ksSelectNone();
   const btn = document.querySelector('[onclick="addKasseStrafe()"]');
-  if (btn) { const orig = btn.textContent; btn.textContent = '✓ Eingetragen!'; btn.disabled = true; setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500); }
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = `✓ ${personen.length}× eingetragen!`;
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
+  }
 }
 
 function addStrafe() {

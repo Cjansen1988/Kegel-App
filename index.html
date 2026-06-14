@@ -708,6 +708,12 @@
   <!-- Differenz -->
   <div id="kasse-differenz-box" class="card" style="margin-bottom:1rem;display:none"></div>
 
+  <!-- Schuldner -->
+  <div class="card" style="margin-bottom:1rem" id="kasse-schuldner-card">
+    <div class="card-title">👥 Wer schuldet was?</div>
+    <div id="kasse-schuldner-liste"></div>
+  </div>
+
   <!-- Prognose -->
   <div class="card" style="margin-bottom:1rem;border-color:#8b5cf6;background:linear-gradient(135deg,#faf5ff,#f3e8ff)">
     <div class="card-title" style="color:#6d28d9">🔮 Kasse Prognose</div>
@@ -1013,7 +1019,7 @@ function subscribeAll() {
       ? alle.filter(s => s.saisonId === saisonId)
       : alle.filter(s => !s.saisonId);
     loaded.strafen = true; checkAllLoaded();
-    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose();
+    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose(); renderKasseSchuldner();
 
     // Kategorien
     const katSnap = snap.docs.filter(d => false); // handled separately
@@ -2163,6 +2169,7 @@ function renderKegelHistorie() {
               </div>` : ''}
             </div>
             <div style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:flex-end">
+              <button class="btn btn-ghost btn-sm" onclick="zeigeSessionDetail('${d.id}')" title="Details anzeigen">👁 Details</button>
               <button class="btn btn-ghost btn-sm" onclick="exportSessionPDF('${d.id}')" title="Als PDF exportieren">📄 PDF</button>
               <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="loescheSessionStrafen('${d.id}','${s.datum}')" title="Falsch eingetragene Strafen löschen">↩ Strafen löschen</button>
               <button class="btn btn-danger btn-sm" onclick="loescheSession('${d.id}','${s.name}')">🗑</button>
@@ -2358,89 +2365,149 @@ function zeigeSessionDetail(sessionId) {
     const eintraege = s.eintraege || [];
     const BAHN = 3.00;
 
-    // Gruppiere aktive Spieler nach Mitglied
+    // Alle Kategorien mit Daten ermitteln
+    const katsSet = new Set();
+    eintraege.forEach(e => { if (Number(e.betrag) > 0 || Number(e.anzahl) > 0) katsSet.add(e.kategorie); });
+    const kats = [...katsSet];
+
+    // Aufbau: perSpieler[name][kat] = { anzahl, betrag }
     const perSpieler = {};
     eintraege.forEach(e => {
-      if (!perSpieler[e.mitglied]) perSpieler[e.mitglied] = { total: 0, details: [] };
-      perSpieler[e.mitglied].total += Number(e.betrag);
-      if (Number(e.betrag) > 0) {
-        const label = e.kategorie === 'Spiele' && e.notiz ? `Spiele (${e.notiz})` : (e.anzahl > 1 ? `${e.kategorie} ×${e.anzahl}` : e.kategorie);
-        perSpieler[e.mitglied].details.push(label);
-      }
+      if (!perSpieler[e.mitglied]) perSpieler[e.mitglied] = {};
+      if (!perSpieler[e.mitglied][e.kategorie]) perSpieler[e.mitglied][e.kategorie] = { anzahl: 0, betrag: 0 };
+      perSpieler[e.mitglied][e.kategorie].anzahl += Number(e.anzahl || 0);
+      perSpieler[e.mitglied][e.kategorie].betrag += Number(e.betrag || 0);
     });
 
-    const angemeldet = s.angemeldet || Object.keys(perSpieler);
-    const gesamtKegelbuch = Object.values(perSpieler).reduce((sum,m) => sum + m.total, 0);
+    const angemeldet = s.angemeldet?.length ? s.angemeldet : Object.keys(perSpieler);
+    const gesamtKegelbuch = angemeldet.reduce((sum, n) =>
+      sum + Object.values(perSpieler[n] || {}).reduce((a, v) => a + v.betrag, 0), 0);
     const aktiveAnzahl = angemeldet.length || 1;
     const durchschnitt = Math.round(gesamtKegelbuch / aktiveAnzahl * 100) / 100;
 
-    // Abwesende = gespeicherte Mitgliederzahl minus angemeldet, oder aus state
-    const alleMitglieder = s.mitgliederAnzahl
-      ? null  // wir wissen nur die Zahl, keine Namen
-      : state.mitglieder.map(m => m.name);
-    const abwesendeNamen = alleMitglieder
-      ? alleMitglieder.filter(n => !angemeldet.includes(n))
-      : [];
+    const alleMitgliederNamen = (s.spieler||[]).length ? s.spieler : state.mitglieder.map(m => m.name);
+    const abwesendeNamen = alleMitgliederNamen.filter(n => !angemeldet.includes(n));
     const abwesendeAnzahl = s.mitgliederAnzahl
       ? (s.mitgliederAnzahl - aktiveAnzahl)
       : abwesendeNamen.length;
 
+    const strafenAbwesend = Math.round(abwesendeAnzahl * durchschnitt * 100) / 100;
+    const bahnGesamt = (aktiveAnzahl + abwesendeAnzahl) * BAHN;
     const gesamtEinnahmen = s.gesamtEinnahmen ||
-      Math.round((gesamtKegelbuch + aktiveAnzahl * BAHN + abwesendeAnzahl * (durchschnitt + BAHN)) * 100) / 100;
+      Math.round((gesamtKegelbuch + strafenAbwesend + bahnGesamt) * 100) / 100;
 
     const overlayId = 'sd-overlay-' + sessionId;
 
-    const html = `<div id="${overlayId}" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="document.getElementById('${overlayId}').remove()">
-      <div style="background:white;border-radius:16px 16px 0 0;padding:1.5rem;width:100%;max-width:640px;max-height:85vh;overflow-y:auto" onclick="event.stopPropagation()">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.25rem">
-          <h3 style="font-size:1rem;font-weight:700">🎳 ${s.name}</h3>
-          <button onclick="document.getElementById('${overlayId}').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);line-height:1">✕</button>
+    // Matrix-Tab: Tabelle mit Kategorien als Spalten
+    const matrixHtml = kats.length === 0 ? '<div style="color:var(--text-muted);padding:1rem 0;text-align:center;font-size:.875rem">Keine Kegelbuch-Einträge gespeichert.</div>' : `
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="width:100%;border-collapse:collapse;font-size:.8rem;min-width:${120 + kats.length * 72}px">
+          <thead>
+            <tr style="background:var(--bg)">
+              <th style="text-align:left;padding:.5rem .6rem;border-bottom:2px solid var(--border);font-size:.75rem;font-weight:700;color:var(--text-muted);white-space:nowrap;position:sticky;left:0;background:var(--bg)">Spieler</th>
+              ${kats.map(k => `<th style="text-align:center;padding:.5rem .4rem;border-bottom:2px solid var(--border);font-size:.72rem;font-weight:700;color:var(--text-muted);white-space:nowrap">${k}</th>`).join('')}
+              <th style="text-align:right;padding:.5rem .6rem;border-bottom:2px solid var(--border);font-size:.75rem;font-weight:700;color:var(--danger)">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${angemeldet.slice().sort((a,b)=>(
+              Object.values(perSpieler[b]||{}).reduce((s,v)=>s+v.betrag,0) -
+              Object.values(perSpieler[a]||{}).reduce((s,v)=>s+v.betrag,0)
+            )).map((name,i) => {
+              const spielerTotal = Object.values(perSpieler[name]||{}).reduce((sum,v)=>sum+v.betrag,0);
+              return `<tr style="${i%2===0?'background:var(--card-bg)':''}">
+                <td style="padding:.45rem .6rem;border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap;position:sticky;left:0;${i%2===0?'background:var(--card-bg)':'background:transparent'}">${name}</td>
+                ${kats.map(k => {
+                  const cell = (perSpieler[name]||{})[k];
+                  if (!cell || cell.anzahl === 0) return `<td style="text-align:center;padding:.45rem .4rem;border-bottom:1px solid var(--border);color:var(--text-muted)">—</td>`;
+                  return `<td style="text-align:center;padding:.45rem .4rem;border-bottom:1px solid var(--border)">
+                    <div style="font-weight:700;font-size:.82rem;color:var(--danger)">×${cell.anzahl}</div>
+                    <div style="font-size:.7rem;color:var(--text-muted)">${formatEur(cell.betrag)}</div>
+                  </td>`;
+                }).join('')}
+                <td style="text-align:right;padding:.45rem .6rem;border-bottom:1px solid var(--border);font-weight:700;color:${spielerTotal>0?'var(--danger)':'var(--text-muted)'}">
+                  ${formatEur(spielerTotal)}<div style="font-size:.7rem;font-weight:400;color:var(--text-muted)">+${formatEur(BAHN)} Bahn</div>
+                </td>
+              </tr>`;
+            }).join('')}
+            <tr style="background:var(--bg);font-weight:700">
+              <td style="padding:.5rem .6rem;border-top:2px solid var(--border);font-size:.78rem;color:var(--text-muted);position:sticky;left:0;background:var(--bg)">Gesamt</td>
+              ${kats.map(k => {
+                const katTotal = angemeldet.reduce((sum,n)=>sum+((perSpieler[n]||{})[k]?.betrag||0),0);
+                return `<td style="text-align:center;padding:.5rem .4rem;border-top:2px solid var(--border);font-size:.78rem;color:var(--text-muted)">${katTotal>0?formatEur(katTotal):'—'}</td>`;
+              }).join('')}
+              <td style="text-align:right;padding:.5rem .6rem;border-top:2px solid var(--border);color:var(--danger)">${formatEur(gesamtKegelbuch)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+
+    // Zusammenfassung-Tab
+    const summaryHtml = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1rem">
+        <div style="background:var(--bg);border-radius:10px;padding:.75rem;text-align:center">
+          <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.2rem">Ø Kegelbuch</div>
+          <div style="font-size:1.1rem;font-weight:700;color:var(--text)">${formatEur(durchschnitt)}</div>
         </div>
-        <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:1.25rem">📅 ${formatDate(s.datum)} · ${aktiveAnzahl} Kegler dabei</div>
+        <div style="background:var(--bg);border-radius:10px;padding:.75rem;text-align:center">
+          <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.2rem">Abwesende zahlen</div>
+          <div style="font-size:1.1rem;font-weight:700;color:var(--text)">${formatEur(durchschnitt + BAHN)}</div>
+        </div>
+      </div>
+      ${abwesendeNamen.length > 0 ? `
+      <div class="section-title" style="margin-bottom:.5rem">Abwesend (${abwesendeNamen.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:1rem">
+        ${abwesendeNamen.map(n => `<span style="background:var(--bg);border:1px solid var(--border);border-radius:99px;padding:3px 10px;font-size:.78rem;color:var(--text-muted)">${n} · ${formatEur(durchschnitt+BAHN)}</span>`).join('')}
+      </div>` : (abwesendeAnzahl > 0 ? `<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:1rem">${abwesendeAnzahl} Abwesende · je ${formatEur(durchschnitt + BAHN)}</div>` : '')}
+      <div style="background:var(--bg);border-radius:10px;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;padding:.6rem .9rem;border-bottom:1px solid var(--border);font-size:.875rem">
+          <span style="color:var(--text-muted)">Kegelbuch Anwesende</span><strong style="color:var(--success)">+ ${formatEur(gesamtKegelbuch)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:.6rem .9rem;border-bottom:1px solid var(--border);font-size:.875rem">
+          <span style="color:var(--text-muted)">Abwesenheitsstrafen (${abwesendeAnzahl}×)</span><strong style="color:var(--success)">+ ${formatEur(strafenAbwesend)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:.6rem .9rem;border-bottom:1px solid var(--border);font-size:.875rem">
+          <span style="color:var(--text-muted)">Bahn-Beiträge (${aktiveAnzahl+abwesendeAnzahl}×)</span><strong style="color:var(--success)">+ ${formatEur(bahnGesamt)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:.7rem .9rem;background:var(--primary);border-radius:0 0 10px 10px">
+          <span style="font-weight:700;color:white">💰 Gesamteinnahmen</span><strong style="color:white;font-size:1rem">${formatEur(gesamtEinnahmen)}</strong>
+        </div>
+      </div>`;
 
-        <div class="section-title">Anwesende (${aktiveAnzahl})</div>
-        ${angemeldet.length === 0 ? '<div style="color:var(--text-muted);font-size:.85rem;padding:.5rem 0">Keine Daten gespeichert</div>' :
-          angemeldet.sort((a,b) => ((perSpieler[b]?.total||0) - (perSpieler[a]?.total||0))).map(name => {
-            const data = perSpieler[name] || { total: 0, details: [] };
-            return `<div style="display:flex;justify-content:space-between;align-items:start;padding:.5rem 0;border-bottom:1px solid var(--border)">
-              <div>
-                <div style="font-weight:600">${name}</div>
-                ${data.details.length ? `<div style="font-size:.75rem;color:var(--text-muted)">${data.details.join(', ')}</div>` : '<div style="font-size:.75rem;color:var(--text-muted)">Keine Strafen</div>'}
-              </div>
-              <div style="text-align:right">
-                <div style="font-weight:700;color:${data.total>0?'var(--danger)':'var(--text-muted)'}">${formatEur(data.total)}</div>
-                <div style="font-size:.72rem;color:var(--text-muted)">+ ${formatEur(BAHN)} Bahn</div>
-              </div>
-            </div>`;
-          }).join('')}
-
-        ${abwesendeNamen.length > 0 ? `
-        <div class="section-title" style="margin-top:1rem">Abwesende (${abwesendeNamen.length}) <span style="font-weight:400;font-size:.75rem;color:var(--text-muted)">zahlen Ø + Bahn</span></div>
-        ${abwesendeNamen.map(name => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border);opacity:.6">
-            <div style="font-weight:500">${name}</div>
-            <div style="text-align:right">
-              <div style="font-weight:700;color:var(--text-muted)">${formatEur(durchschnitt)}</div>
-              <div style="font-size:.72rem;color:var(--text-muted)">+ ${formatEur(BAHN)} Bahn</div>
+    const html = `<div id="${overlayId}" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:flex-end;justify-content:center" onclick="document.getElementById('${overlayId}').remove()">
+      <div style="background:var(--card-bg);border-radius:16px 16px 0 0;width:100%;max-width:640px;max-height:92vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+        <!-- Header -->
+        <div style="padding:1.1rem 1.25rem .75rem;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-weight:700;font-size:1rem">🎳 ${s.name}</div>
+              <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">📅 ${formatDate(s.datum)} · ${aktiveAnzahl} anwesend · ${abwesendeAnzahl} abwesend</div>
             </div>
-          </div>`).join('')}` : (abwesendeAnzahl > 0 ? `
-        <div class="section-title" style="margin-top:1rem">Abwesende</div>
-        <div style="font-size:.85rem;color:var(--text-muted);padding:.5rem 0">${abwesendeAnzahl} Personen · je ${formatEur(durchschnitt + BAHN)} (Ø + Bahn)</div>` : '')}
-
-        <div style="background:var(--bg);border-radius:10px;padding:.9rem;margin-top:1.25rem;font-size:.875rem">
-          <div style="display:flex;justify-content:space-between;margin-bottom:.4rem">
-            <span>Ø Kegelbuch (Anwesende)</span><strong>${formatEur(durchschnitt)}</strong>
+            <button onclick="document.getElementById('${overlayId}').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);line-height:1;padding:.2rem">✕</button>
           </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:.4rem">
-            <span>Kegelbuch gesamt</span><strong>${formatEur(gesamtKegelbuch)}</strong>
+          <!-- Tab-Switcher -->
+          <div style="display:flex;gap:.4rem;margin-top:.75rem">
+            <button id="${overlayId}-tab-matrix" onclick="sdSwitchTab('${overlayId}','matrix')" style="flex:1;padding:.4rem;border-radius:7px;font-size:.8rem;font-weight:600;border:none;cursor:pointer;background:var(--primary);color:white">📊 Kegelbuch</button>
+            <button id="${overlayId}-tab-summary" onclick="sdSwitchTab('${overlayId}','summary')" style="flex:1;padding:.4rem;border-radius:7px;font-size:.8rem;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text-muted)">💰 Abrechnung</button>
           </div>
-          <div style="display:flex;justify-content:space-between;padding-top:.4rem;border-top:1px solid var(--border)">
-            <span style="font-weight:700">💰 Gesamteinnahmen</span><strong style="color:var(--primary)">${formatEur(gesamtEinnahmen)}</strong>
-          </div>
+        </div>
+        <!-- Content -->
+        <div style="overflow-y:auto;padding:1rem 1.25rem 1.5rem;flex:1">
+          <div id="${overlayId}-panel-matrix">${matrixHtml}</div>
+          <div id="${overlayId}-panel-summary" style="display:none">${summaryHtml}</div>
         </div>
       </div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
+  });
+}
+
+function sdSwitchTab(overlayId, tab) {
+  ['matrix','summary'].forEach(t => {
+    document.getElementById(overlayId+'-panel-'+t).style.display = t===tab ? 'block' : 'none';
+    const btn = document.getElementById(overlayId+'-tab-'+t);
+    btn.style.background = t===tab ? 'var(--primary)' : 'var(--bg)';
+    btn.style.color = t===tab ? 'white' : 'var(--text-muted)';
   });
 }
 
@@ -4049,6 +4116,74 @@ function renderKassenbuch() {
     </tr>`).join('') || '<tr><td colspan="5" class="empty-state">Keine Buchungen</td></tr>';
 }
 
+
+function renderKasseSchuldner() {
+  const el = document.getElementById('kasse-schuldner-liste');
+  const card = document.getElementById('kasse-schuldner-card');
+  if (!el) return;
+
+  const offene = state.strafen.filter(s => !s.bezahlt);
+  if (!offene.length) {
+    if (card) card.style.display = 'none';
+    return;
+  }
+  if (card) card.style.display = 'block';
+
+  // Gruppiere nach Person
+  const perPerson = {};
+  offene.forEach(s => {
+    if (!perPerson[s.mitglied]) perPerson[s.mitglied] = { total: 0, strafen: [] };
+    perPerson[s.mitglied].total += Number(s.betrag);
+    perPerson[s.mitglied].strafen.push(s);
+  });
+
+  // Sortiere nach Betrag absteigend
+  const personen = Object.entries(perPerson).sort((a,b) => b[1].total - a[1].total);
+
+  el.innerHTML = personen.map(([name, data]) => {
+    const pid = 'schuldner-' + name.replace(/\s/g,'_');
+    const sortedStrafen = data.strafen.slice().sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    return `
+    <div style="border:1px solid var(--border);border-radius:10px;margin-bottom:.5rem;overflow:hidden">
+      <button onclick="toggleSchuldnerDetail('${pid}')" style="width:100%;background:none;border:none;cursor:pointer;padding:.65rem .85rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;text-align:left">
+        <div style="display:flex;align-items:center;gap:.6rem;flex:1;min-width:0">
+          <div style="width:32px;height:32px;border-radius:50%;background:#fef2f2;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;color:#b91c1c;flex-shrink:0">${name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase()}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:.9rem;color:var(--text)">${name}</div>
+            <div style="font-size:.75rem;color:var(--text-muted)">${data.strafen.length} offene Strafe${data.strafen.length>1?'n':''}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
+          <span style="font-weight:700;color:#b91c1c;font-size:.95rem">${formatEur(data.total)}</span>
+          <span id="${pid}-chevron" style="color:var(--text-muted);font-size:.75rem;transition:transform .2s">▼</span>
+        </div>
+      </button>
+      <div id="${pid}" style="display:none;border-top:1px solid var(--border)">
+        ${sortedStrafen.map(s => `
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .85rem;border-bottom:1px solid var(--border)" class="schuldner-zeile">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.84rem;font-weight:600;color:var(--text)">${s.kategorie}${s.notiz?`<span style="font-weight:400;color:var(--text-muted)"> · ${s.notiz}</span>`:''}</div>
+            <div style="font-size:.72rem;color:var(--text-muted)">${formatDate(s.datum)}</div>
+          </div>
+          <span style="font-weight:700;color:#b91c1c;white-space:nowrap">${formatEur(s.betrag)}</span>
+          <button class="btn btn-danger btn-sm" style="padding:3px 8px;font-size:.75rem;flex-shrink:0" onclick="deleteStrafe('${s.id}')">🗑</button>
+        </div>`).join('')}
+        <div style="padding:.5rem .85rem;display:flex;justify-content:flex-end;gap:.5rem;background:var(--bg)">
+          <button class="btn btn-ghost btn-sm" onclick="sendeZahlungsanfrage('${name}')" style="font-size:.78rem">💸 Zahlungsanfrage</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleSchuldnerDetail(pid) {
+  const el = document.getElementById(pid);
+  const chevron = document.getElementById(pid + '-chevron');
+  if (!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? '' : 'rotate(180deg)';
+}
 
 // ========== SPIELE ==========
 

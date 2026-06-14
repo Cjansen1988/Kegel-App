@@ -1263,52 +1263,71 @@ function renderMemberOverview() {
 
     <!-- Kegelabende -->
     ${(() => {
-      const meineSessionen = (state.kegelsessions||[])
-        .filter(s => (s.angemeldet||[]).includes(name))
+      const alleSessionen = (state.kegelsessions||[])
         .slice().sort((a,b) => (b.datum||'').localeCompare(a.datum||''));
-      if (!meineSessionen.length) return '';
+      if (!alleSessionen.length) return '';
+      const BAHN = 3.00;
       return `<div class="overview-card">
         <h3>🎳 Meine Kegelabende</h3>
-        ${meineSessionen.map((s, idx) => {
+        ${alleSessionen.map((s, idx) => {
+          const warDabei = (s.angemeldet||[]).includes(name);
           const eintraege = (s.eintraege||[]).filter(e => e.mitglied === name);
           const kegelbuchBetrag = eintraege.reduce((sum,e) => sum + Number(e.betrag), 0);
           const verluste = (state.spielverluste||[]).filter(v => v.spieler === name && v.datum === s.datum);
           const pid = 'mo-session-' + idx;
           const hatEintraege = eintraege.some(e => Number(e.betrag) > 0) || verluste.length > 0;
-          return `<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:.5rem;overflow:hidden">
-            <button onclick="moToggleSession('${pid}')" style="width:100%;background:none;border:none;cursor:pointer;padding:.65rem .85rem;display:flex;align-items:center;gap:.5rem;text-align:left">
+
+          // Durchschnitt für Abwesende berechnen
+          const angemeldet = s.angemeldet || [];
+          const strafenAnwesend = angemeldet.reduce((sum, n) =>
+            sum + (s.eintraege||[]).filter(e=>e.mitglied===n).reduce((a,e)=>a+Number(e.betrag),0), 0);
+          const durchschnitt = angemeldet.length > 0 ? Math.round(strafenAnwesend / angemeldet.length * 100) / 100 : 0;
+          const abwesendZahlt = Math.round((durchschnitt + BAHN) * 100) / 100;
+
+          return `<div style="border:1px solid ${warDabei?'var(--border)':'#fecaca'};border-radius:10px;margin-bottom:.5rem;overflow:hidden">
+            <button onclick="moToggleSession('${pid}')" style="width:100%;background:${warDabei?'none':'#fff5f5'};border:none;cursor:pointer;padding:.65rem .85rem;display:flex;align-items:center;gap:.5rem;text-align:left">
+              <span style="font-size:1rem;flex-shrink:0">${warDabei ? '✅' : '❌'}</span>
               <div style="flex:1">
                 <div style="font-weight:600;font-size:.9rem">${s.name}</div>
-                <div style="font-size:.75rem;color:var(--text-muted);margin-top:.1rem">${formatDate(s.datum)}${verluste.length > 0 ? ` · 🎮 ${verluste.length} Spiel${verluste.length>1?'e':''} verloren` : ''}</div>
+                <div style="font-size:.75rem;color:var(--text-muted);margin-top:.1rem">
+                  ${formatDate(s.datum)}
+                  ${!warDabei ? ' · <span style="color:#b91c1c;font-weight:600">nicht dabei</span>' : ''}
+                  ${warDabei && verluste.length > 0 ? ` · 🎮 ${verluste.length} Spiel${verluste.length>1?'e':''} verloren` : ''}
+                </div>
               </div>
-              <span style="font-weight:700;font-size:.9rem;color:${kegelbuchBetrag>0?'#b91c1c':'var(--text-muted)'}">
-                ${kegelbuchBetrag > 0 ? formatEur(kegelbuchBetrag) : '✓ Keine'}
+              <span style="font-weight:700;font-size:.9rem;color:${!warDabei?'#b91c1c':kegelbuchBetrag>0?'#b91c1c':'var(--text-muted)'}">
+                ${!warDabei ? formatEur(abwesendZahlt) : kegelbuchBetrag > 0 ? formatEur(kegelbuchBetrag) : '✓ Keine'}
               </span>
               <span id="${pid}-chev" style="color:var(--text-muted);font-size:.7rem;margin-left:.2rem">▼</span>
             </button>
             <div id="${pid}" style="display:none;border-top:1px solid var(--border);padding:.6rem .85rem">
-              ${!hatEintraege
-                ? '<div style="font-size:.82rem;color:#15803d;padding:.25rem 0">✅ Nichts falsch gemacht!</div>'
-                : `${eintraege.filter(e=>Number(e.betrag)>0).map(e => `
-                    <div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
-                      <span style="font-size:.78rem;background:#fef2f2;color:#b91c1c;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap">
-                        ${e.kategorie}${e.anzahl>1?' ×'+e.anzahl:''}
-                      </span>
-                      <span style="font-size:.78rem;color:var(--text-muted);flex:1">${e.notiz||''}</span>
-                      <span style="font-weight:700;font-size:.82rem;color:#b91c1c">${formatEur(Number(e.betrag))}</span>
-                    </div>`).join('')}
-                  ${verluste.map(v => `
-                    <div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
-                      <span style="font-size:.78rem;background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap">
-                        🎮 ${v.spielName}
-                      </span>
-                      <span style="font-size:.78rem;color:var(--text-muted);flex:1">${v.notiz||'Verloren'}</span>
-                      <span style="font-weight:700;font-size:.82rem;color:#92400e">${formatEur(Number(v.betrag||0))}</span>
-                    </div>`).join('')}
-                  <div style="display:flex;justify-content:space-between;padding-top:.4rem;font-size:.82rem;font-weight:700">
-                    <span>Kegelbuch gesamt</span>
-                    <span style="color:#b91c1c">${formatEur(kegelbuchBetrag)}</span>
-                  </div>`}
+              ${!warDabei
+                ? `<div style="font-size:.83rem;color:#92400e;background:#fef9c3;border-radius:8px;padding:.6rem .75rem;line-height:1.5">
+                    😴 Du warst nicht dabei — du zahlst den Durchschnitt des Abends.<br>
+                    <strong>Ø Kegelbuch: ${formatEur(durchschnitt)} + Bahn: ${formatEur(BAHN)} = ${formatEur(abwesendZahlt)}</strong>
+                  </div>`
+                : !hatEintraege
+                  ? '<div style="font-size:.82rem;color:#15803d;padding:.25rem 0">✅ Nichts falsch gemacht!</div>'
+                  : `${eintraege.filter(e=>Number(e.betrag)>0).map(e => `
+                      <div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+                        <span style="font-size:.78rem;background:#fef2f2;color:#b91c1c;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap">
+                          ${e.kategorie}${e.anzahl>1?' ×'+e.anzahl:''}
+                        </span>
+                        <span style="font-size:.78rem;color:var(--text-muted);flex:1">${e.notiz||''}</span>
+                        <span style="font-weight:700;font-size:.82rem;color:#b91c1c">${formatEur(Number(e.betrag))}</span>
+                      </div>`).join('')}
+                    ${verluste.map(v => `
+                      <div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+                        <span style="font-size:.78rem;background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap">
+                          🎮 ${v.spielName}
+                        </span>
+                        <span style="font-size:.78rem;color:var(--text-muted);flex:1">${v.notiz||'Verloren'}</span>
+                        <span style="font-weight:700;font-size:.82rem;color:#92400e">${formatEur(Number(v.betrag||0))}</span>
+                      </div>`).join('')}
+                    <div style="display:flex;justify-content:space-between;padding-top:.4rem;font-size:.82rem;font-weight:700">
+                      <span>Kegelbuch gesamt</span>
+                      <span style="color:#b91c1c">${formatEur(kegelbuchBetrag)}</span>
+                    </div>`}
             </div>
           </div>`;
         }).join('')}

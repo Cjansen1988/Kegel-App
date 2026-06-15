@@ -114,15 +114,86 @@
   .config-inputs input { width: 100%; margin-bottom: .5rem; font-family: monospace; font-size: .82rem; }
   .config-error { color: var(--danger); font-size: .85rem; margin-top: .5rem; display: none; }
 
-  /* LOGIN */
-  #login-screen { position: fixed; inset: 0; background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-  .login-box { background: white; border-radius: 16px; padding: 2.5rem; width: 100%; max-width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
-  .login-box h2 { font-size: 1.4rem; margin-bottom: .25rem; }
-  .login-box p { color: var(--text-muted); font-size: .9rem; margin-bottom: 1.5rem; }
-  .login-box input { width: 100%; margin-bottom: .75rem; }
-  .login-box .btn { width: 100%; justify-content: center; padding: 10px; }
-  .login-error { color: var(--danger); font-size: .85rem; margin-top: .5rem; display: none; }
-  .login-logo { font-size: 2.5rem; text-align: center; margin-bottom: 1rem; }
+  /* WELCOME SCREEN */
+  #login-screen {
+    position: fixed; inset: 0; z-index: 1000; overflow-y: auto;
+    background: #f8fafc;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    min-height: 100vh;
+  }
+  .welcome-hero {
+    width: 100%; background: #f8fafc;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 2.5rem 1.5rem 0;
+  }
+  .welcome-inner {
+    position: relative; z-index: 1;
+    width: 100%; max-width: 420px; padding: 1.75rem 1.5rem 2rem;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  /* Shield logo */
+  .bb-shield {
+    width: 120px; height: 136px; position: relative; margin-bottom: 1.5rem;
+    filter: drop-shadow(0 8px 24px rgba(37,99,235,.5));
+  }
+  .bb-shield svg { width: 100%; height: 100%; }
+  /* Title */
+  .welcome-title {
+    font-size: 2rem; font-weight: 900; color: #0f172a; letter-spacing: .04em;
+    text-align: center; margin-bottom: .3rem;
+  }
+  .welcome-sub {
+    font-size: .82rem; color: #94a3b8; letter-spacing: .14em;
+    text-transform: uppercase; text-align: center;
+  }
+  /* Member picker */
+  .welcome-section { width: 100%; margin-bottom: 1rem; }
+  .welcome-section-label {
+    font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: #94a3b8; margin-bottom: .6rem;
+  }
+  .member-chips-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem;
+  }
+  .member-chip {
+    background: white; border: 1.5px solid #e2e8f0;
+    border-radius: 10px; padding: .6rem .75rem; cursor: pointer;
+    display: flex; align-items: center; gap: .6rem;
+    color: #1e293b; font-size: .9rem; font-weight: 600;
+    transition: all .15s; text-align: left; outline: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .member-chip:hover { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
+  .member-chip:active { transform: scale(.97); }
+  .member-chip .chip-avatar {
+    width: 28px; height: 28px; border-radius: 50%; background: #dbeafe;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .7rem; font-weight: 800; color: #1d4ed8; flex-shrink: 0;
+  }
+  .welcome-enter-btn {
+    width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 1rem;
+    font-weight: 700; cursor: pointer; margin-top: .5rem;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: white; letter-spacing: .02em;
+    box-shadow: 0 4px 16px rgba(37,99,235,.3);
+    transition: all .15s; display: flex; align-items: center; justify-content: center; gap: .5rem;
+  }
+  .welcome-enter-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .welcome-enter-btn:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,.4); }
+  .welcome-admin-link {
+    margin-top: 2rem; font-size: .75rem; color: #cbd5e1;
+    cursor: pointer; letter-spacing: .06em; text-decoration: none;
+    transition: color .15s; border: none; background: none;
+  }
+  .welcome-admin-link:hover { color: #64748b; }
+  /* Admin panel inside welcome */
+  .admin-panel {
+    width: 100%; background: white; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 1.25rem; margin-top: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .admin-panel input { width: 100%; margin-bottom: .6rem; }
+  .login-error { color: var(--danger); font-size: .82rem; margin-top: .4rem; display: none; }
 
   /* MEMBER VIEW */
   #member-screen { position: fixed; inset: 0; background: var(--bg); overflow-y: auto; z-index: 900; display: none; }
@@ -350,31 +421,71 @@
 
 <!-- LOGIN -->
 <div id="login-screen" style="display:none">
-  <div class="login-box">
-    <div class="login-logo">🎳</div>
-    <h2>Kegelclub</h2>
-    <p>Bitte melde dich an</p>
-    <input type="text" id="login-user" placeholder="Benutzername" />
-    <input type="password" id="login-pass" placeholder="Passwort" />
-    <button class="btn btn-primary" onclick="doLogin()">Anmelden</button>
-    <div class="login-error" id="login-error">Falscher Benutzername oder Passwort</div>
-    <hr style="margin:1rem 0;border-color:var(--border)">
-    <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem">Mitglied? Direkt zum Terminkalender:</p>
-    <button class="btn btn-ghost" style="width:100%;justify-content:center" onclick="showMemberView()">👤 Meine Übersicht & Termine</button>
+  <div class="welcome-inner">
+
+  <!-- Dark hero: logo + title -->
+  <div class="welcome-hero">
+    <div class="bb-shield" style="margin-bottom:1.25rem">
+      <img src="logo.png" alt="Blackout Boys" style="width:140px;height:140px;object-fit:contain;mix-blend-mode:multiply;display:block"
+           onerror="this.style.display='none';document.getElementById('bb-shield-fallback').style.display='block'">
+      <svg id="bb-shield-fallback" style="display:none" viewBox="0 0 120 136" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#1a1a1a"/>
+            <stop offset="100%" style="stop-color:#2a2a2a"/>
+          </linearGradient>
+        </defs>
+        <path d="M60 4 L112 22 L112 72 Q112 108 60 132 Q8 108 8 72 L8 22 Z" fill="url(#shieldGrad)" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+        <line x1="8" y1="32" x2="112" y2="32" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+        <text x="60" y="78" text-anchor="middle" font-family="Georgia, serif" font-size="50" font-weight="900" fill="white" opacity=".92">BB</text>
+        <text x="60" y="22" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="8.5" font-weight="700" fill="rgba(255,255,255,.55)" letter-spacing="1.5">BLACKOUT BOYS</text>
+        <text x="60" y="121" text-anchor="middle" font-size="13">🎳</text>
+      </svg>
+    </div>
+    <div class="welcome-title">Blackout Boys</div>
+    <div class="welcome-sub">Kegelclub · Seit 2015</div>
   </div>
+
+  <!-- White section: name picker -->
+  <div class="welcome-inner">
+    <!-- Member picker -->
+    <div class="welcome-section">
+      <div class="welcome-section-label">Wer bist du?</div>
+      <div class="member-chips-grid" id="welcome-chips">
+        <div style="color:#94a3b8;font-size:.85rem;grid-column:1/-1;padding:.5rem 0">Lade Mitglieder…</div>
+      </div>
+    </div>
+
+    <button class="welcome-enter-btn" id="welcome-enter-btn" disabled onclick="welcomeEnter()">
+      ➜ Weiter
+    </button>
+
+    <!-- Admin link (klein, unten) -->
+    <button class="welcome-admin-link" onclick="toggleWelcomeAdmin()">⚙ Admin</button>
+
+    <!-- Admin panel (versteckt) -->
+    <div class="admin-panel" id="welcome-admin-panel" style="display:none">
+      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.75rem">Admin-Zugang</div>
+      <input type="text" id="login-user" placeholder="Benutzername" autocomplete="username" />
+      <input type="password" id="login-pass" placeholder="Passwort" autocomplete="current-password"
+             onkeydown="if(event.key==='Enter') doLogin()" />
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doLogin()">Anmelden</button>
+      <div class="login-error" id="login-error">Falscher Benutzername oder Passwort</div>
+    </div>
+
+  </div>
+</div>
 </div>
 
 <!-- MEMBER VIEW -->
 <div id="member-screen" style="display:none">
+  <!-- Hidden select kept for compatibility with existing JS -->
+  <select id="member-name-sel" onchange="onMemberNameChange()" style="display:none"></select>
   <div class="member-header">
     <div style="display:flex;align-items:center;justify-content:space-between;max-width:640px;margin:0 auto">
-      <h2>🎳 <span id="member-club-name">Kegelclub</span></h2>
-      <button class="btn btn-ghost btn-sm" style="color:white;border-color:rgba(255,255,255,.4)" onclick="hideMemberView()">Admin</button>
-    </div>
-    <div style="max-width:640px;margin:.75rem auto 0">
-      <select id="member-name-sel" onchange="onMemberNameChange()" style="width:100%;padding:10px 12px;border-radius:8px;border:none;font-size:1rem;font-weight:600">
-        <option value="">– Name auswählen –</option>
-      </select>
+      <button onclick="hideMemberView()" style="background:rgba(255,255,255,.12);border:none;color:white;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:.85rem;font-weight:600;display:flex;align-items:center;gap:.4rem">‹ Zurück</button>
+      <div style="font-size:1rem;font-weight:700;color:white" id="member-display-name">–</div>
+      <div style="width:72px"></div><!-- spacer -->
     </div>
     <!-- Member tabs -->
     <div style="display:flex;max-width:640px;margin:.75rem auto 0;gap:.25rem">
@@ -521,7 +632,7 @@
 </div>
 
 <!-- TERMINE -->
-<div class="page active" id="page-termine">
+<div class="page" id="page-termine">
   <div class="card">
     <div class="card-title">📅 Neuen Termin anlegen</div>
     <div class="form-row">
@@ -1002,6 +1113,7 @@ function subscribeAll() {
     state.mitglieder = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     loaded.mitglieder = true; checkAllLoaded();
     renderMitglieder(); updateSelects(); renderStrafen(); renderStatistiken();
+    renderWelcomeChips();
     // Member view
     const sel = document.getElementById('member-name-sel');
     const current = sel.value;
@@ -1154,23 +1266,65 @@ function saveSettings() {
   }
 }
 
+// ========== WELCOME SCREEN ==========
+let _welcomeSelected = null;
+
+function renderWelcomeChips() {
+  const grid = document.getElementById('welcome-chips');
+  if (!grid) return;
+  if (!state.mitglieder.length) {
+    grid.innerHTML = '<div style="color:#94a3b8;font-size:.85rem;grid-column:1/-1;padding:.5rem 0">Keine Mitglieder gefunden</div>';
+    return;
+  }
+  grid.innerHTML = state.mitglieder.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(m => {
+    const initials = m.name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+    const sel = _welcomeSelected === m.name;
+    return `<button class="member-chip ${sel?'selected':''}" onclick="selectWelcomeChip('${m.name}')" style="${sel?'background:rgba(37,99,235,.5);border-color:#3b82f6;':''}">`
+      + `<span class="chip-avatar">${initials}</span>${m.name}</button>`;
+  }).join('');
+}
+
+function selectWelcomeChip(name) {
+  _welcomeSelected = name;
+  renderWelcomeChips();
+  const btn = document.getElementById('welcome-enter-btn');
+  if (btn) { btn.disabled = false; btn.textContent = '➜ Als ' + name.split(' ')[0] + ' weitergehen'; }
+}
+
+function welcomeEnter() {
+  if (!_welcomeSelected) return;
+  showMemberView(_welcomeSelected);
+}
+
+function toggleWelcomeAdmin() {
+  const p = document.getElementById('welcome-admin-panel');
+  if (!p) return;
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
 // ========== MEMBER VIEW ==========
-function showMemberView() {
+function showMemberView(preselect) {
+  _welcomeSelected = preselect || _welcomeSelected || null;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('member-screen').style.display = 'block';
-  document.getElementById('member-club-name').textContent = state.clubName || 'Blackout Boys';
-  refreshMemberNameSel();
+  const dispEl = document.getElementById('member-display-name');
+  if (dispEl) dispEl.textContent = _welcomeSelected || '–';
+  refreshMemberNameSel(_welcomeSelected);
   renderMemberAll();
 }
 
 function hideMemberView() {
   document.getElementById('member-screen').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
+  _welcomeSelected = null;
+  renderWelcomeChips();
+  const btn = document.getElementById('welcome-enter-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '➜ Weiter'; }
 }
 
-function refreshMemberNameSel() {
+function refreshMemberNameSel(preselect) {
   const sel = document.getElementById('member-name-sel');
-  const current = sel.value;
+  const current = preselect || sel.value;
   sel.innerHTML = '<option value="">– Name auswählen –</option>' +
     state.mitglieder.map(m => `<option value="${m.name}" ${m.name===current?'selected':''}>${m.name}</option>`).join('');
 }

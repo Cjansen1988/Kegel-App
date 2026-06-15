@@ -1206,12 +1206,9 @@ function renderMemberOverview() {
   const mStrafen = state.strafen.filter(s => s.mitglied === name);
   const offeneStrafen = mStrafen.filter(s => !s.bezahlt);
   const offenBetrag = offeneStrafen.reduce((sum,s) => sum + Number(s.betrag), 0);
-  const pastTermine = state.termine.filter(t => t.datum < today() && !t.ausfall);
-  const alleAbendeOv = [
-    ...pastTermine.map(t => ({ anwesend: t.anmeldungen||[] })),
-    ...(state.kegelsessions||[]).map(s => ({ anwesend: s.angemeldet||[] }))
-  ];
-  const anwesend = alleAbendeOv.filter(a => a.anwesend.includes(name)).length;
+  const alleSessionen = state.kegelsessions || [];
+  const anwesend = alleSessionen.filter(s => (s.angemeldet||[]).includes(name)).length;
+  const nichtDabei = alleSessionen.filter(s => !(s.angemeldet||[]).includes(name)).length;
   const naechster = state.termine.filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum))[0];
   const istAngemeldet = naechster ? (naechster.anmeldungen||[]).includes(name) : null;
 
@@ -1260,7 +1257,7 @@ function renderMemberOverview() {
     <!-- Statistik -->
     <div class="overview-card">
       <h3>📊 Deine Statistik</h3>
-      <div class="strafe-row"><span>Termine gespielt</span><strong>${anwesend} / ${pastTermine.length}</strong></div>
+      <div class="strafe-row"><span>Kegelabende gespielt</span><strong>${anwesend}${nichtDabei > 0 ? ` <span style="color:var(--text-muted);font-weight:400;font-size:.85rem">· ${nichtDabei}× nicht dabei</span>` : ''}</strong></div>
       <div class="strafe-row"><span>Strafen insgesamt</span><strong>${mStrafen.length}</strong></div>
       <div class="strafe-row"><span>Bereits bezahlt</span><strong style="color:var(--success)">${formatEur(mStrafen.filter(s=>s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0))}</strong></div>
     </div>

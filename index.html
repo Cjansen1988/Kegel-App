@@ -1373,12 +1373,15 @@ function renderMemberOverview() {
       ${naechster ? `
         <div style="font-weight:700;font-size:1rem">${naechster.name}</div>
         <div style="color:var(--text-muted);font-size:.875rem;margin:.25rem 0">${formatDate(naechster.datum)} um ${naechster.zeit} Uhr${naechster.ort?' · 📍'+naechster.ort:''}</div>
-        <div style="margin-top:.5rem">
+        <div style="margin-top:.5rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
           ${istAngemeldet
-            ? '<span class="tag tag-green">✓ Du bist angemeldet</span>'
+            ? `<span class="tag tag-green">✓ Du bist angemeldet</span>
+               <button class="btn btn-ghost btn-sm" onclick="memberAbmelden('${naechster.id}')">Abmelden</button>`
             : (naechster.abmeldungen||[]).includes(name)
-              ? '<span class="tag tag-red">✗ Du bist abgemeldet</span>'
-              : '<span class="tag tag-yellow">? Noch nicht geantwortet</span>'}
+              ? `<span class="tag tag-red">✗ Du bist abgemeldet</span>
+                 <button class="btn btn-success btn-sm" onclick="memberAnmelden('${naechster.id}')">Wieder anmelden</button>`
+              : `<button class="btn btn-primary btn-sm" onclick="memberAnmelden('${naechster.id}')">✓ Anmelden</button>
+                 <button class="btn btn-ghost btn-sm" onclick="memberAbmelden('${naechster.id}')">✗ Abmelden</button>`}
         </div>
       ` : '<div class="empty-state" style="padding:1rem 0">Keine Termine geplant</div>'}
     </div>

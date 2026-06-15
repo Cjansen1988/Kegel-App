@@ -1739,6 +1739,30 @@ function renderMemberKasse() {
   const prognosiert = stand + offenBetrag;
   const letzten = [...state.kassenbuch].sort((a,b)=>b.datum.localeCompare(a.datum)).slice(0,10);
 
+  // Zeitprognose berechnen
+  const byMonth = {};
+  (state.strafen||[]).forEach(s => {
+    const m = (s.datum||'').substring(0,7);
+    if (m && m.length === 7) byMonth[m] = (byMonth[m]||0) + Number(s.betrag||0);
+  });
+  const monthValues = Object.values(byMonth);
+  const avgMonthly = monthValues.length > 0 ? monthValues.reduce((a,b)=>a+b,0)/monthValues.length : 0;
+  const bahnProMonat = 40;
+  const netProMonat = avgMonthly - bahnProMonat;
+  const in12 = stand + 12 * netProMonat;
+
+  // Mini-Chart Punkte (12 Monate)
+  const W = 300, H = 60, pl = 6, pr = 6, pt = 4, pb = 4;
+  const pts12 = Array.from({length: 13}, (_,m) => ({ m, v: stand + m * netProMonat }));
+  const allVals = pts12.map(p=>p.v);
+  const minV = Math.min(0, ...allVals), maxV = Math.max(stand, ...allVals);
+  const range = maxV - minV || 1;
+  const cW = W-pl-pr, cH = H-pt-pb;
+  const toX = m => pl + (m/12)*cW;
+  const toY = v => pt + cH - ((v-minV)/range)*cH;
+  const zeroY = toY(0);
+  const polyPts = pts12.map(p=>`${toX(p.m).toFixed(1)},${toY(p.v).toFixed(1)}`).join(' ');
+
   container.innerHTML = `
     <div class="balance-box" style="margin-bottom:.75rem">
       <div class="lbl">Aktueller Kassenstand</div>
@@ -1754,6 +1778,34 @@ function renderMemberKasse() {
         <div style="font-size:1.3rem;font-weight:800;color:#15803d">${formatEur(prognosiert)}</div>
         <div style="font-size:.72rem;color:#15803d;font-weight:600;margin-top:.15rem">Wenn alle zahlen</div>
         <div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">Prognose</div>
+      </div>
+    </div>
+
+    <!-- Zeitprognose -->
+    <div class="overview-card" style="margin-bottom:1rem">
+      <h3>📈 12-Monats-Prognose</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
+        <div style="background:#f8fafc;border-radius:8px;padding:.6rem .75rem">
+          <div style="font-size:.7rem;color:var(--text-muted);margin-bottom:.1rem">In 12 Monaten</div>
+          <div style="font-weight:800;font-size:1rem;color:${in12>=0?'#15803d':'#b91c1c'}">${formatEur(in12)}</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:8px;padding:.6rem .75rem">
+          <div style="font-size:.7rem;color:var(--text-muted);margin-bottom:.1rem">Netto/Monat</div>
+          <div style="font-weight:800;font-size:1rem;color:${netProMonat>=0?'#15803d':'#b91c1c'}">${netProMonat>=0?'+':''}${formatEur(netProMonat)}</div>
+        </div>
+      </div>
+      <div style="background:#f8fafc;border-radius:8px;padding:.5rem;margin-bottom:.6rem">
+        <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
+          ${minV < 0 ? `<line x1="${pl}" y1="${zeroY.toFixed(1)}" x2="${W-pr}" y2="${zeroY.toFixed(1)}" stroke="#fca5a5" stroke-width="1" stroke-dasharray="3,3"/>` : ''}
+          <polyline points="${polyPts}" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+          <circle cx="${toX(0).toFixed(1)}" cy="${toY(stand).toFixed(1)}" r="3" fill="#8b5cf6"/>
+          <circle cx="${toX(12).toFixed(1)}" cy="${toY(in12).toFixed(1)}" r="3" fill="${in12>=0?'#8b5cf6':'#ef4444'}"/>
+        </svg>
+      </div>
+      <div style="font-size:.72rem;color:var(--text-muted);display:flex;gap:.75rem;flex-wrap:wrap">
+        <span>Ø Strafen/Monat: <strong style="color:#1e293b">${formatEur(avgMonthly)}</strong></span>
+        <span>Bahn/Monat: <strong style="color:#b91c1c">−€ 40,00</strong></span>
+        ${monthValues.length === 0 ? '<span style="color:#b91c1c">⚠️ Noch keine Daten</span>' : ''}
       </div>
     </div>
     <div class="overview-card">

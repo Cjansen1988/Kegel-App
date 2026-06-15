@@ -379,10 +379,10 @@
     <!-- Member tabs -->
     <div style="display:flex;max-width:640px;margin:.75rem auto 0;gap:.25rem">
       <button class="member-tab active" onclick="showMemberTab('uebersicht',this)">👤 Übersicht</button>
-      <button class="member-tab" onclick="showMemberTab('live',this)" id="member-live-tab">🎳 Live</button>
-      <button class="member-tab" onclick="showMemberTab('quiz-m',this)" id="member-quiz-tab">🧠 Quiz</button>
       <button class="member-tab" onclick="showMemberTab('termine',this)">📅 Termine</button>
       <button class="member-tab" onclick="showMemberTab('kasse',this)">💰 Kasse</button>
+      <button class="member-tab" onclick="showMemberTab('quiz-m',this)" id="member-quiz-tab">🧠 Quiz</button>
+      <button class="member-tab" onclick="showMemberTab('live',this)" id="member-live-tab">🎳 Live</button>
     </div>
   </div>
   <div class="member-content">
@@ -1577,12 +1577,27 @@ function renderMemberKasse() {
   const einnahmen = state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
   const ausgaben = state.kassenbuch.filter(b=>b.typ==='ausgabe').reduce((s,b)=>s+Number(b.betrag),0);
   const stand = einnahmen - ausgaben;
+  const offeneStrafen = state.strafen.filter(s => !s.bezahlt);
+  const offenBetrag = offeneStrafen.reduce((s,x) => s + Number(x.betrag), 0);
+  const prognosiert = stand + offenBetrag;
   const letzten = [...state.kassenbuch].sort((a,b)=>b.datum.localeCompare(a.datum)).slice(0,10);
 
   container.innerHTML = `
-    <div class="balance-box" style="margin-bottom:1rem">
-      <div class="lbl">Kassenstand</div>
+    <div class="balance-box" style="margin-bottom:.75rem">
+      <div class="lbl">Aktueller Kassenstand</div>
       <div class="amount">${formatEur(stand)}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem">
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:.875rem;text-align:center">
+        <div style="font-size:1.3rem;font-weight:800;color:#b91c1c">${offeneStrafen.length}</div>
+        <div style="font-size:.72rem;color:#b91c1c;font-weight:600;margin-top:.15rem">Strafen noch offen</div>
+        <div style="font-size:.8rem;color:#ef4444;font-weight:700;margin-top:.1rem">${formatEur(offenBetrag)}</div>
+      </div>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:.875rem;text-align:center">
+        <div style="font-size:1.3rem;font-weight:800;color:#15803d">${formatEur(prognosiert)}</div>
+        <div style="font-size:.72rem;color:#15803d;font-weight:600;margin-top:.15rem">Wenn alle zahlen</div>
+        <div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">Prognose</div>
+      </div>
     </div>
     <div class="overview-card">
       <h3>📋 Letzte Buchungen</h3>

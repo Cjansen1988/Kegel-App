@@ -1006,6 +1006,10 @@
     <div id="wa-keys-list"></div>
     <hr class="divider">
     <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.75rem">📤 Reminder senden</div>
+    <div style="margin-bottom:.75rem">
+      <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.35rem">💬 Zitat / Spruch (optional)</label>
+      <input type="text" id="wa-zitat-input" placeholder="z.B. Wer nicht kegelt, der rostet! 🎳" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.875rem;box-sizing:border-box">
+    </div>
     <div id="wa-next-termin" style="margin-bottom:.75rem"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
       <button class="btn btn-primary" onclick="sendWaReminder()" id="wa-send-btn">📲 Einzeln senden</button>
@@ -3354,6 +3358,7 @@ async function sendWaReminder() {
     <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Hinweis: Da CallMeBot keine CORS-Antwort erlaubt, kann der Erfolg nicht direkt bestätigt werden. Nachrichten kommen i.d.R. innerhalb weniger Sekunden an.</div>`;
 }
 
+
 function sendWaGruppe() {
   const nextTermin = (state.termine || []).filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum))[0];
   if (!nextTermin) { alert('Kein bevorstehender Termin gefunden.'); return; }
@@ -3373,7 +3378,8 @@ function sendWaGruppe() {
 
   const tage = Math.ceil((new Date(nextTermin.datum) - new Date(today())) / (1000 * 60 * 60 * 24));
   const tageText = tage === 0 ? '🎳 *Heute ist Kegeln!*' : tage === 1 ? '⏰ *Noch 1 Tag bis zum Kegeln!*' : `⏰ *Noch ${tage} Tage bis zum Kegeln!*`;
-  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\n${tageText}\n\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}`;
+  const zitat = (document.getElementById('wa-zitat-input')?.value || '').trim();
+  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\n${tageText}\n\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}${zitat ? '\n\n_💬 ' + zitat + '_' : ''}`;
 
   const url = 'https://wa.me/?text=' + encodeURIComponent(text);
   window.open(url, '_blank');
@@ -9585,6 +9591,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('setup-screen').style.display = 'flex';
   }
 });
+
+
+
 </script>
 </body>
 </html>

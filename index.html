@@ -981,6 +981,21 @@
       <div id="saison-settings"></div>
     </div>
   </div>
+
+  <!-- WhatsApp Reminder -->
+  <div class="card" style="margin-top:1rem">
+    <div class="card-title">📲 WhatsApp Reminder</div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:1rem">
+      Jedes Mitglied muss einmalig <strong>„I allow callmebot to send me messages"</strong> an
+      <strong>+34 644 59 79 17</strong> (WhatsApp) schicken und erhält dann seinen persönlichen API-Key.
+    </p>
+    <div id="wa-keys-list"></div>
+    <hr class="divider">
+    <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.75rem">📤 Reminder senden</div>
+    <div id="wa-next-termin" style="margin-bottom:.75rem"></div>
+    <button class="btn btn-primary" onclick="sendWaReminder()" id="wa-send-btn">📲 Reminder jetzt senden</button>
+    <div id="wa-send-status" style="margin-top:.75rem;font-size:.85rem"></div>
+  </div>
   <div class="card">
     <div class="card-title">👥 Mitgliederliste (<span id="m-count">0</span>)</div>
     <div class="table-wrap">
@@ -1008,7 +1023,8 @@ let state = {
     { id: uid(), name: 'Pumpenkegel vergessen', betrag: 5.00 },
     { id: uid(), name: 'Kegelshirt vergessen', betrag: 5.00 }
   ],
-  kassenbuch: []
+  kassenbuch: [],
+  waKeys: {}
 };
 let kasseFilter = 'alle';
 let unsubscribers = [];
@@ -1217,6 +1233,13 @@ function subscribeAll() {
     loaded.kassenbuch = true; checkAllLoaded();
     renderKassenbuch(); renderMemberKasse();
   }, () => { loaded.kassenbuch = true; checkAllLoaded(); }));
+
+  // WhatsApp Keys
+  unsubscribers.push(db.collection('wa_keys').onSnapshot(snap => {
+    state.waKeys = {};
+    snap.docs.forEach(d => { state.waKeys[d.id] = d.data(); });
+    renderWaSection();
+  }, () => {}));
 
   // Spielverluste
   unsubscribers.push(db.collection('spielverluste').orderBy('createdAt','desc').onSnapshot(snap => {
@@ -3198,6 +3221,81 @@ function renderMitglieder() {
   }).join('');
   const cfgName = document.getElementById('cfg-clubname');
   if (cfgName && !cfgName.value) cfgName.placeholder = state.clubName;
+}
+
+// ========== WHATSAPP REMINDER ==========
+function renderWaSection() {
+  const listEl = document.getElementById('wa-keys-list');
+  const nextEl = document.getElementById('wa-next-termin');
+  const sendBtn = document.getElementById('wa-send-btn');
+  if (!listEl) return;
+
+  const nextTermin = (state.termine || []).filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum))[0];
+  if (nextEl) {
+    nextEl.innerHTML = nextTermin
+      ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.6rem .875rem;font-size:.875rem">
+           📅 Nächster Termin: <strong>${nextTermin.name}</strong> · ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr
+         </div>`
+      : `<div style="color:var(--text-muted);font-size:.85rem">Kein bevorstehender Termin gefunden.</div>`;
+  }
+
+  const keysCount = Object.keys(state.waKeys || {}).length;
+  if (sendBtn) {
+    sendBtn.textContent = `📲 Reminder senden (${keysCount} Mitglied${keysCount !== 1 ? 'er' : ''})`;
+    sendBtn.disabled = !keysCount || !nextTermin;
+  }
+
+  listEl.innerHTML = (state.mitglieder || []).map(m => {
+    const sid = 'wa_' + m.name.replace(/\W/g, '_');
+    const key = (state.waKeys || {})[m.name] || {};
+    const hasKey = !!(key.phone && key.apiKey);
+    return `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+      <div style="font-size:.875rem;font-weight:600;min-width:110px;flex-shrink:0">${m.name}</div>
+      <input type="tel" id="${sid}_phone" value="${key.phone||''}" placeholder="+4917600000000"
+        style="flex:1;min-width:130px;font-size:.82rem;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px">
+      <input type="text" id="${sid}_key" value="${key.apiKey||''}" placeholder="API-Key"
+        style="width:90px;font-size:.82rem;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px">
+      <button class="btn btn-ghost btn-sm" onclick="saveWaKey('${m.name}','${sid}')">💾</button>
+      ${hasKey ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteWaKey('${m.name}')">🗑</button>
+        <span style="font-size:.75rem;color:var(--success)">✓</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function saveWaKey(name, sid) {
+  const phone = document.getElementById(sid + '_phone')?.value.trim();
+  const apiKey = document.getElementById(sid + '_key')?.value.trim();
+  if (!phone || !apiKey) { alert('Telefon und API-Key eingeben'); return; }
+  db.collection('wa_keys').doc(name).set({ phone, apiKey });
+}
+
+function deleteWaKey(name) {
+  if (!confirm(`WhatsApp-Key für ${name} löschen?`)) return;
+  db.collection('wa_keys').doc(name).delete();
+}
+
+async function sendWaReminder() {
+  const nextTermin = (state.termine || []).filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum))[0];
+  if (!nextTermin) { alert('Kein bevorstehender Termin gefunden.'); return; }
+  const keys = Object.entries(state.waKeys || {});
+  if (!keys.length) { alert('Noch keine WhatsApp-Keys eingetragen.'); return; }
+  if (!confirm(`Reminder an ${keys.length} Mitglied(er) senden?`)) return;
+
+  const text = `🎳 Blackout Boys – Erinnerung!\n\nDer nächste Kegelabend ist:\n📅 ${nextTermin.name}\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch an!`;
+
+  const statusEl = document.getElementById('wa-send-status');
+  statusEl.innerHTML = '<div style="color:var(--text-muted)">Sende…</div>';
+  const results = [];
+
+  for (const [name, { phone, apiKey }] of keys) {
+    const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
+    new Image().src = url; // fire-and-forget, bypasses CORS
+    results.push(name);
+    await new Promise(r => setTimeout(r, 600)); // kurze Pause zwischen Anfragen
+  }
+
+  statusEl.innerHTML = `<div style="color:var(--success);font-weight:600">✅ Gesendet an: ${results.join(', ')}</div>
+    <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Hinweis: Da CallMeBot keine CORS-Antwort erlaubt, kann der Erfolg nicht direkt bestätigt werden. Nachrichten kommen i.d.R. innerhalb weniger Sekunden an.</div>`;
 }
 
 function updateSelects() {
@@ -9314,7 +9412,7 @@ async function fuehreImportAus(popup, neuImport) {
   renderFunFacts();
 }
 
-function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); }
+function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); renderWaSection(); }
 
 // ========== BOOT ==========
 document.addEventListener('DOMContentLoaded', () => {

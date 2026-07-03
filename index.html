@@ -674,6 +674,15 @@
     </div>
     <button class="btn btn-primary" onclick="addTermin()">➕ Termin anlegen</button>
   </div>
+  <div class="card" style="background:#fffbeb;border:1.5px solid #f59e0b">
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="font-weight:700;color:#92400e;margin-bottom:.25rem">⚠️ Auto-Strafen (96h-Regel)</div>
+        <div style="font-size:.8rem;color:#78350f">Mitglieder ohne Rückmeldung bis 96h vor einem Termin erhalten automatisch 3€ Strafe. Wird beim Login automatisch geprüft.</div>
+      </div>
+      <button class="btn" onclick="checkAutoStrafen(true)" style="background:#f59e0b;color:#1c1917;font-weight:700;white-space:nowrap">🔍 Jetzt prüfen</button>
+    </div>
+  </div>
   <div id="termine-list"></div>
 </div>
 
@@ -1278,6 +1287,7 @@ function doLogin() {
     document.getElementById('page-termine').classList.add('active');
     document.querySelectorAll('input[type=date]').forEach(el => { if (!el.value) el.value = today(); });
     renderAll();
+    checkAutoStrafen();
   } else {
     document.getElementById('login-error').style.display = 'block';
   }
@@ -9459,6 +9469,78 @@ async function fuehreImportAus(popup, neuImport) {
 }
 
 function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); renderWaSection(); }
+
+// ========== AUTO-STRAFEN (96h-Regel) ==========
+async function checkAutoStrafen(manual = false) {
+  const now = new Date();
+  const in96h = new Date(now.getTime() + 96 * 60 * 60 * 1000);
+  const relevantTermine = state.termine.filter(t => {
+    if (t.ausfall) return false;
+    const terminDate = new Date(t.datum + 'T' + (t.zeit || '00:00'));
+    return terminDate > now && terminDate <= in96h;
+  });
+  if (!relevantTermine.length) {
+    if (manual) showNotification('Kein Termin innerhalb der nächsten 96 Stunden.', 'info');
+    return;
+  }
+  let count = 0;
+  const details = [];
+  for (const t of relevantTermine) {
+    const bereitsGesetzt = t.autoStrafeGesetzt || [];
+    const ohneRueckmeldung = state.mitglieder.filter(m => {
+      const name = m.name;
+      return !((t.anmeldungen||[]).includes(name) ||
+               (t.abmeldungen||[]).includes(name) ||
+               (t.vielleicht||[]).filter(x=>x===name).length > 0 ||
+               bereitsGesetzt.includes(name));
+    });
+    if (!ohneRueckmeldung.length) continue;
+    const batch = db.batch();
+    const neuGesetzt = [];
+    for (const m of ohneRueckmeldung) {
+      const ref = db.collection('strafen').doc();
+      batch.set(ref, {
+        mitglied: m.name,
+        kategorie: 'Keine Rückmeldung',
+        betrag: 3.00,
+        datum: today(),
+        notiz: `Automatisch: keine Rückmeldung bis 96h vor "${t.name}" (${formatDate(t.datum)})`,
+        bezahlt: false,
+        autoStrafe: true,
+        ...saisonMeta(),
+        createdAt: Date.now()
+      });
+      neuGesetzt.push(m.name);
+      count++;
+    }
+    await batch.commit();
+    await db.collection('termine').doc(t.id).update({
+      autoStrafeGesetzt: [...bereitsGesetzt, ...neuGesetzt]
+    });
+    details.push(`"${t.name}": ${neuGesetzt.join(', ')}`);
+  }
+  if (count > 0) {
+    showNotification(`⚠️ ${count} Auto-Strafe(n) eingetragen (3€ je):\n${details.join('\n')}`, 'warn');
+    renderStrafen();
+    renderStatistiken();
+    renderKassenbuch();
+  } else if (manual) {
+    showNotification('✅ Alle Mitglieder haben sich bereits gemeldet.', 'info');
+  }
+}
+
+function showNotification(msg, type = 'info') {
+  const existing = document.getElementById('auto-strafe-notify');
+  if (existing) existing.remove();
+  const colors = { info: { bg: '#eff6ff', border: '#3b82f6', text: '#1e40af' }, warn: { bg: '#fffbeb', border: '#f59e0b', text: '#92400e' }, success: { bg: '#f0fdf4', border: '#16a34a', text: '#14532d' } };
+  const c = colors[type] || colors.info;
+  const el = document.createElement('div');
+  el.id = 'auto-strafe-notify';
+  el.style.cssText = `position:fixed;top:70px;right:16px;z-index:9998;max-width:360px;background:${c.bg};border:1.5px solid ${c.border};color:${c.text};border-radius:12px;padding:14px 16px;font-size:.875rem;box-shadow:0 4px 16px rgba(0,0,0,.12);white-space:pre-line;line-height:1.5`;
+  el.innerHTML = `<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1">${msg.replace(/\n/g,'<br>')}</div><button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;cursor:pointer;font-size:1.1rem;line-height:1;color:${c.text};padding:0;flex-shrink:0">✕</button></div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el?.remove(), 8000);
+}
 
 // ========== BOOT ==========
 document.addEventListener('DOMContentLoaded', () => {

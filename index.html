@@ -1007,7 +1007,13 @@
     <hr class="divider">
     <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.75rem">📤 Reminder senden</div>
     <div id="wa-next-termin" style="margin-bottom:.75rem"></div>
-    <button class="btn btn-primary" onclick="sendWaReminder()" id="wa-send-btn">📲 Reminder jetzt senden</button>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
+      <button class="btn btn-primary" onclick="sendWaReminder()" id="wa-send-btn">📲 Einzeln senden</button>
+      <button class="btn" onclick="sendWaGruppe()" id="wa-gruppe-btn" style="background:#25d366;color:white;font-weight:700">💬 An Gruppe senden</button>
+    </div>
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.5rem">
+      <strong>Gruppe:</strong> WhatsApp öffnet sich mit fertig formulierter Nachricht — einfach Gruppe auswählen und senden.
+    </div>
     <div id="wa-send-status" style="margin-top:.75rem;font-size:.85rem"></div>
   </div>
   <div class="card">
@@ -3289,9 +3295,11 @@ function renderWaSection() {
 
   const keysCount = Object.keys(state.waKeys || {}).length;
   if (sendBtn) {
-    sendBtn.textContent = `📲 Reminder senden (${keysCount} Mitglied${keysCount !== 1 ? 'er' : ''})`;
+    sendBtn.textContent = `📲 Einzeln senden (${keysCount} Mitglied${keysCount !== 1 ? 'er' : ''})`;
     sendBtn.disabled = !keysCount || !nextTermin;
   }
+  const gruppeBtn = document.getElementById('wa-gruppe-btn');
+  if (gruppeBtn) gruppeBtn.disabled = !nextTermin;
 
   listEl.innerHTML = (state.mitglieder || []).map(m => {
     const sid = 'wa_' + m.name.replace(/\W/g, '_');
@@ -3344,6 +3352,29 @@ async function sendWaReminder() {
 
   statusEl.innerHTML = `<div style="color:var(--success);font-weight:600">✅ Gesendet an: ${results.join(', ')}</div>
     <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Hinweis: Da CallMeBot keine CORS-Antwort erlaubt, kann der Erfolg nicht direkt bestätigt werden. Nachrichten kommen i.d.R. innerhalb weniger Sekunden an.</div>`;
+}
+
+function sendWaGruppe() {
+  const nextTermin = (state.termine || []).filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum))[0];
+  if (!nextTermin) { alert('Kein bevorstehender Termin gefunden.'); return; }
+
+  // Anmeldestatus zusammenfassen
+  const alle = (state.mitglieder || []).map(m => m.name);
+  const anm = nextTermin.anmeldungen || [];
+  const vm  = nextTermin.vielleicht  || [];
+  const abm = nextTermin.abmeldungen || [];
+  const offen = alle.filter(n => !anm.includes(n) && !vm.includes(n) && !abm.includes(n));
+
+  let statusBlock = '';
+  if (anm.length)   statusBlock += `\n✅ Dabei: ${anm.join(', ')}`;
+  if (vm.length)    statusBlock += `\n🤔 Vielleicht: ${vm.join(', ')}`;
+  if (abm.length)   statusBlock += `\n❌ Nicht dabei: ${abm.join(', ')}`;
+  if (offen.length) statusBlock += `\n❓ Noch nicht gemeldet: ${offen.join(', ')}`;
+
+  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\nDer nächste Kegelabend steht an:\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}`;
+
+  const url = 'https://wa.me/?text=' + encodeURIComponent(text);
+  window.open(url, '_blank');
 }
 
 function updateSelects() {

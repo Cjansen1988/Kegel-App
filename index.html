@@ -1903,10 +1903,22 @@ function memberSetResponse(tid, status) {
       onkeydown="if(event.key==='Enter') memberConfirmResponse('${tid}','${status}')">
     <div style="display:flex;gap:.5rem">
       <button onclick="memberConfirmResponse('${tid}','${status}')" class="btn btn-primary btn-sm" style="flex:1">Bestätigen</button>
-      <button onclick="renderMemberTermine()" class="btn btn-ghost btn-sm">Abbrechen</button>
+      <button onclick="memberCancelResponse('${tid}')" class="btn btn-ghost btn-sm">Abbrechen</button>
     </div>
   </div>`;
   setTimeout(() => document.getElementById('resp-input-' + tid)?.focus(), 50);
+}
+
+function memberCancelResponse(tid) {
+  const form = document.getElementById('resp-form-' + tid);
+  if (!form) return;
+  const t = state.termine.find(x => x.id === tid);
+  if (!t) return;
+  const name = document.getElementById('member-name-sel').value;
+  const isAnm = (t.anmeldungen||[]).includes(name);
+  const isAbm = (t.abmeldungen||[]).includes(name);
+  const isVm  = (t.vielleicht||[]).includes(name);
+  form.outerHTML = _memberResponseButtons(tid, isAnm, isAbm, isVm);
 }
 
 function memberConfirmResponse(tid, status) {

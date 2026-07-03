@@ -3371,7 +3371,9 @@ function sendWaGruppe() {
   if (abm.length)   statusBlock += `\n❌ Nicht dabei: ${abm.join(', ')}`;
   if (offen.length) statusBlock += `\n❓ Noch nicht gemeldet: ${offen.join(', ')}`;
 
-  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\nDer nächste Kegelabend steht an:\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}`;
+  const tage = Math.ceil((new Date(nextTermin.datum) - new Date(today())) / (1000 * 60 * 60 * 24));
+  const tageText = tage === 0 ? '🎳 *Heute ist Kegeln!*' : tage === 1 ? '⏰ *Noch 1 Tag bis zum Kegeln!*' : `⏰ *Noch ${tage} Tage bis zum Kegeln!*`;
+  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\n${tageText}\n\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}`;
 
   const url = 'https://wa.me/?text=' + encodeURIComponent(text);
   window.open(url, '_blank');

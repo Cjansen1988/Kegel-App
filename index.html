@@ -1381,16 +1381,18 @@ function renderMemberOverview() {
       ${naechster ? `
         <div style="font-weight:700;font-size:1rem">${naechster.name}</div>
         <div style="color:var(--text-muted);font-size:.875rem;margin:.25rem 0">${formatDate(naechster.datum)} um ${naechster.zeit} Uhr${naechster.ort?' · 📍'+naechster.ort:''}</div>
-        <div style="margin-top:.5rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-          ${istAngemeldet
-            ? `<span class="tag tag-green">✓ Du bist angemeldet</span>
-               <button class="btn btn-ghost btn-sm" onclick="memberAbmelden('${naechster.id}')">Abmelden</button>`
-            : (naechster.abmeldungen||[]).includes(name)
-              ? `<span class="tag tag-red">✗ Du bist abgemeldet</span>
-                 <button class="btn btn-success btn-sm" onclick="memberAnmelden('${naechster.id}')">Wieder anmelden</button>`
-              : `<button class="btn btn-primary btn-sm" onclick="memberAnmelden('${naechster.id}')">✓ Anmelden</button>
-                 <button class="btn btn-ghost btn-sm" onclick="memberAbmelden('${naechster.id}')">✗ Abmelden</button>`}
-        </div>
+        ${(() => {
+          const isAnm = (naechster.anmeldungen||[]).includes(name);
+          const isAbm = (naechster.abmeldungen||[]).includes(name);
+          const isVm  = (naechster.vielleicht||[]).includes(name);
+          const btnStyle = (active, col) => `style="flex:1;padding:10px 4px;border-radius:10px;border:2px solid ${active?col:'#e2e8f0'};background:${active?col+'18':'white'};color:${active?col:'#64748b'};font-weight:700;font-size:.85rem;cursor:pointer;transition:all .15s"`;
+          return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-top:.6rem">
+            <button onclick="memberAnmelden('${naechster.id}')"   ${btnStyle(isAnm,'#16a34a')}>✓ Ja</button>
+            <button onclick="memberVielleicht('${naechster.id}')" ${btnStyle(isVm,'#d97706')}>? Vielleicht</button>
+            <button onclick="memberAbmelden('${naechster.id}')"   ${btnStyle(isAbm,'#dc2626')}>✗ Nein</button>
+          </div>
+          ${memberTerminTeilnehmerListe(naechster)}`;
+        })()}
       ` : '<div class="empty-state" style="padding:1rem 0">Keine Termine geplant</div>'}
     </div>
 
@@ -1839,6 +1841,19 @@ function renderMemberKasse() {
   `;
 }
 
+function memberTerminTeilnehmerListe(t) {
+  const alle = state.mitglieder.map(m => m.name);
+  const anm = t.anmeldungen || [], abm = t.abmeldungen || [], vm = t.vielleicht || [];
+  const offen = alle.filter(n => !anm.includes(n) && !abm.includes(n) && !vm.includes(n));
+  const rows = [
+    anm.length   ? `<div style="margin-bottom:.35rem"><span style="font-size:.72rem;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.05em">✅ Ja (${anm.length})</span><div style="font-size:.85rem;color:#1e293b;margin-top:.15rem">${anm.join(', ')}</div></div>` : '',
+    vm.length    ? `<div style="margin-bottom:.35rem"><span style="font-size:.72rem;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:.05em">🤔 Vielleicht (${vm.length})</span><div style="font-size:.85rem;color:#1e293b;margin-top:.15rem">${vm.join(', ')}</div></div>` : '',
+    abm.length   ? `<div style="margin-bottom:.35rem"><span style="font-size:.72rem;font-weight:700;color:#b91c1c;text-transform:uppercase;letter-spacing:.05em">❌ Nein (${abm.length})</span><div style="font-size:.85rem;color:#1e293b;margin-top:.15rem">${abm.join(', ')}</div></div>` : '',
+    offen.length ? `<div><span style="font-size:.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">⬜ Offen (${offen.length})</span><div style="font-size:.85rem;color:#94a3b8;margin-top:.15rem">${offen.join(', ')}</div></div>` : '',
+  ].filter(Boolean).join('');
+  return `<div style="background:#f8fafc;border-radius:10px;padding:.75rem .875rem;margin-top:.75rem">${rows || '<span style="font-size:.85rem;color:#94a3b8">Noch keine Rückmeldungen</span>'}</div>`;
+}
+
 function renderMemberTermine() {
   const name = document.getElementById('member-name-sel').value;
   const container = document.getElementById('member-termine-list');
@@ -1846,30 +1861,25 @@ function renderMemberTermine() {
   if (upcoming.length === 0) { container.innerHTML = '<div class="empty-state">Keine bevorstehenden Termine.</div>'; return; }
 
   container.innerHTML = upcoming.map(t => {
-    const angemeldet = (t.anmeldungen || []).includes(name);
-    const abgemeldet = (t.abmeldungen || []).includes(name);
-    const liste = (t.anmeldungen || []).join(', ') || 'Noch niemand';
-    let statusTag = '', actionBtns = '';
-    if (!name) {
-      actionBtns = '<span style="font-size:.8rem;color:var(--text-muted)">Name auswählen zum An-/Abmelden</span>';
-    } else if (angemeldet) {
-      statusTag = '<span class="tag tag-green">✓ Angemeldet</span>';
-      actionBtns = `<button class="btn btn-ghost btn-sm" onclick="memberAbmelden('${t.id}')">Abmelden</button>`;
-    } else if (abgemeldet) {
-      statusTag = '<span class="tag tag-red">✗ Abgemeldet</span>';
-      actionBtns = `<button class="btn btn-success btn-sm" onclick="memberAnmelden('${t.id}')">Wieder anmelden</button>`;
-    } else {
-      statusTag = '<span class="tag tag-yellow">? Noch offen</span>';
-      actionBtns = `<button class="btn btn-primary btn-sm" onclick="memberAnmelden('${t.id}')">✓ Anmelden</button>
-                    <button class="btn btn-ghost btn-sm" onclick="memberAbmelden('${t.id}')">✗ Abmelden</button>`;
-    }
+    const angemeldet  = (t.anmeldungen||[]).includes(name);
+    const abgemeldet  = (t.abmeldungen||[]).includes(name);
+    const vielleicht  = (t.vielleicht||[]).includes(name);
+
+    const btnStyle = (active, col) => `style="flex:1;padding:10px 4px;border-radius:10px;border:2px solid ${active?col:'#e2e8f0'};background:${active?col+'18':'white'};color:${active?col:'#64748b'};font-weight:700;font-size:.85rem;cursor:pointer;transition:all .15s"`;
+    const actionBtns = name ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-top:.6rem">
+        <button onclick="memberAnmelden('${t.id}')"    ${btnStyle(angemeldet,'#16a34a')}>✓ Ja</button>
+        <button onclick="memberVielleicht('${t.id}')"  ${btnStyle(vielleicht,'#d97706')}>? Vielleicht</button>
+        <button onclick="memberAbmelden('${t.id}')"    ${btnStyle(abgemeldet,'#dc2626')}>✗ Nein</button>
+      </div>` : '<span style="font-size:.8rem;color:var(--text-muted)">Name auswählen um zu antworten</span>';
+
     return `<div class="termin-card">
       <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:.5rem">
-        <h3>${t.name}</h3>${statusTag}
+        <h3>${t.name}</h3>
       </div>
       <div class="meta">📅 ${formatDate(t.datum)} um ${t.zeit} Uhr${t.ort?' · 📍'+t.ort:''}</div>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap">${actionBtns}</div>
-      <div class="member-names">✅ Angemeldet (${(t.anmeldungen||[]).length}): ${liste}</div>
+      ${actionBtns}
+      ${memberTerminTeilnehmerListe(t)}
     </div>`;
   }).join('');
 }
@@ -1879,10 +1889,11 @@ function memberAnmelden(id) {
   if (!name) { showMemberAlert('Bitte zuerst deinen Namen auswählen.','danger'); return; }
   const t = state.termine.find(x => x.id === id);
   if (!t) return;
-  const anm = [...new Set([...(t.anmeldungen||[]), name])];
-  const abm = (t.abmeldungen||[]).filter(x => x !== name);
-  db.collection('termine').doc(id).update({ anmeldungen: anm, abmeldungen: abm });
-  showMemberAlert(`✅ ${name} wurde angemeldet!`, 'success');
+  db.collection('termine').doc(id).update({
+    anmeldungen: [...new Set([...(t.anmeldungen||[]), name])],
+    abmeldungen: (t.abmeldungen||[]).filter(x => x !== name),
+    vielleicht:  (t.vielleicht||[]).filter(x => x !== name),
+  });
 }
 
 function memberAbmelden(id) {
@@ -1890,10 +1901,23 @@ function memberAbmelden(id) {
   if (!name) { showMemberAlert('Bitte zuerst deinen Namen auswählen.','danger'); return; }
   const t = state.termine.find(x => x.id === id);
   if (!t) return;
-  const abm = [...new Set([...(t.abmeldungen||[]), name])];
-  const anm = (t.anmeldungen||[]).filter(x => x !== name);
-  db.collection('termine').doc(id).update({ abmeldungen: abm, anmeldungen: anm });
-  showMemberAlert(`❌ ${name} wurde abgemeldet.`, 'success');
+  db.collection('termine').doc(id).update({
+    abmeldungen: [...new Set([...(t.abmeldungen||[]), name])],
+    anmeldungen: (t.anmeldungen||[]).filter(x => x !== name),
+    vielleicht:  (t.vielleicht||[]).filter(x => x !== name),
+  });
+}
+
+function memberVielleicht(id) {
+  const name = document.getElementById('member-name-sel').value;
+  if (!name) { showMemberAlert('Bitte zuerst deinen Namen auswählen.','danger'); return; }
+  const t = state.termine.find(x => x.id === id);
+  if (!t) return;
+  db.collection('termine').doc(id).update({
+    vielleicht:  [...new Set([...(t.vielleicht||[]), name])],
+    anmeldungen: (t.anmeldungen||[]).filter(x => x !== name),
+    abmeldungen: (t.abmeldungen||[]).filter(x => x !== name),
+  });
 }
 
 function showMemberAlert(msg, type) {
@@ -3028,11 +3052,11 @@ function renderTermine() {
 }
 
 function renderTerminCard(t, isPast) {
-  const anm = t.anmeldungen||[], abm = t.abmeldungen||[];
-  const offen = state.mitglieder.filter(m => !anm.includes(m.name) && !abm.includes(m.name));
+  const anm = t.anmeldungen||[], abm = t.abmeldungen||[], vm = t.vielleicht||[];
+  const offen = state.mitglieder.filter(m => !anm.includes(m.name) && !abm.includes(m.name) && !vm.includes(m.name));
   const memberRows = state.mitglieder.map(m => {
-    const isAnm = anm.includes(m.name), isAbm = abm.includes(m.name);
-    const tag = isAnm ? '<span class="tag tag-green">An</span>' : isAbm ? '<span class="tag tag-red">Ab</span>' : '<span class="tag tag-yellow">?</span>';
+    const isAnm = anm.includes(m.name), isAbm = abm.includes(m.name), isVm = vm.includes(m.name);
+    const tag = isAnm ? '<span class="tag tag-green">✅ Ja</span>' : isAbm ? '<span class="tag tag-red">❌ Nein</span>' : isVm ? '<span class="tag tag-yellow">🤔 Vmtl.</span>' : '<span class="tag" style="background:#f1f5f9;color:#94a3b8">⬜ Offen</span>';
     return `<tr><td>${m.name}</td><td>${tag}</td><td><button class="btn btn-ghost btn-sm" onclick="toggleAnmeldung('${t.id}','${m.name}')">${isAnm?'Abmelden':'Anmelden'}</button></td></tr>`;
   }).join('');
 
@@ -3052,9 +3076,10 @@ function renderTerminCard(t, isPast) {
     </div>
     ${ausfallBanner}
     <div style="display:flex;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
-      <span class="tag tag-green">✅ ${anm.length} angemeldet</span>
-      <span class="tag tag-red">❌ ${abm.length} abgemeldet</span>
-      <span class="tag tag-yellow">❓ ${offen.length} offen</span>
+      <span class="tag tag-green">✅ ${anm.length} Ja</span>
+      ${vm.length ? `<span class="tag tag-yellow">🤔 ${vm.length} Vmtl.</span>` : ''}
+      <span class="tag tag-red">❌ ${abm.length} Nein</span>
+      <span class="tag" style="background:#f1f5f9;color:#64748b">⬜ ${offen.length} offen</span>
     </div>
     ${!t.ausfall ? `<details><summary style="cursor:pointer;font-size:.85rem;color:var(--text-muted);font-weight:600">Mitglieder verwalten</summary>
     <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>Mitglied</th><th>Status</th><th></th></tr></thead><tbody>${memberRows}</tbody></table></div>

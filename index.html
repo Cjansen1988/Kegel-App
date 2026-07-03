@@ -374,6 +374,11 @@
 </head>
 <body>
 
+<!-- OFFLINE BANNER -->
+<div id="offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#1c1917;font-size:.82rem;font-weight:700;text-align:center;padding:7px 1rem;letter-spacing:.01em;box-shadow:0 2px 8px rgba(0,0,0,.15)">
+  📵 Kein Internet — Einträge werden lokal gespeichert und beim nächsten Online-Moment automatisch synchronisiert
+</div>
+
 <!-- LOADING -->
 <div class="loading-overlay" id="loading-overlay">
   <div class="spinner"></div>
@@ -1103,13 +1108,16 @@ function subscribeAll() {
       document.getElementById('loading-overlay').style.display = 'none';
       document.getElementById('login-screen').style.display = 'flex';
       const dot = document.getElementById('sync-dot');
+      const offlineBanner = document.getElementById('offline-banner');
       const updateDot = () => {
         if (!navigator.onLine) {
           dot.classList.add('offline');
-          dot.title = '📵 Offline – Änderungen werden gespeichert und beim nächsten Online-Moment synchronisiert';
+          dot.title = '📵 Offline';
+          if (offlineBanner) offlineBanner.style.display = 'block';
         } else {
           dot.classList.remove('offline');
           dot.title = '🟢 Verbunden';
+          if (offlineBanner) offlineBanner.style.display = 'none';
         }
       };
       updateDot();
@@ -3454,6 +3462,13 @@ function addStrafe() {
   });
   document.getElementById('s-notiz').value = '';
   document.getElementById('s-bezahlt').checked = false;
+  const btn = document.querySelector('[onclick="addStrafe()"]');
+  if (btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✓ Gespeichert' + (!navigator.onLine ? ' (offline)' : '');
+    btn.disabled = true;
+    setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1800);
+  }
 }
 
 function zeigeMultiStrafenPopup() {
@@ -3520,16 +3535,17 @@ function speichereMultiStrafe(popup) {
   const ausgewaehlt = [...document.querySelectorAll('#ms-chips .kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
   if (!kategorie || isNaN(betrag) || betrag <= 0) { alert('Kategorie und Betrag ausfüllen!'); return; }
   if (!ausgewaehlt.length) { alert('Mindestens eine Person auswählen!'); return; }
+  const saveBtn = popup.querySelector('[onclick^="speichereMultiStrafe"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Wird gespeichert…'; }
   const batch = db.batch();
   ausgewaehlt.forEach(mitglied => {
     batch.set(db.collection('strafen').doc(), {
-      mitglied, kategorie, betrag, notiz, datum: today(), bezahlt: false, createdAt: Date.now()
+      mitglied, kategorie, betrag, notiz, datum: today(), bezahlt: false, ...saisonMeta(), createdAt: Date.now()
     });
   });
-  batch.commit().then(() => {
-    popup.remove();
-    alert(`✅ Strafe an ${ausgewaehlt.length} Personen eingetragen.`);
-  });
+  batch.commit();
+  // Sofort schließen — Firebase schreibt lokal (auch offline)
+  popup.remove();
 }
 
 function alleStrafenBezahlt() {

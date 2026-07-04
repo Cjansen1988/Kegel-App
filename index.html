@@ -3399,7 +3399,23 @@ function sendWaGruppe() {
     }
   }
 
-  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\n${tageText}\n\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}${pumpenkönigBlock}${zitat ? '\n\n_💬 ' + zitat + '_' : ''}`;
+  // Offene Strafen pro Mitglied
+  let offeneStrafenBlock = '';
+  const offeneProMitglied = (state.mitglieder || []).map(m => {
+    const offen = (state.strafen || []).filter(s => s.mitglied === m.name && !s.bezahlt);
+    const betrag = offen.reduce((sum, s) => sum + Number(s.betrag), 0);
+    return { name: m.name, betrag };
+  }).filter(x => x.betrag > 0).sort((a,b) => b.betrag - a.betrag);
+
+  if (offeneProMitglied.length) {
+    offeneStrafenBlock = '\n\n💸 *Offene Strafen:*\n'
+      + offeneProMitglied.map(x => `• ${x.name}: *${formatEur(x.betrag)}*`).join('\n')
+      + '\n\n_Bitte bar beim nächsten Kegeln mitbringen oder per Überweisung an:_\n'
+      + '_Christian Jansen_\n'
+      + '_IBAN: DE61 1001 2345 0781 3535 11_';
+  }
+
+  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\n${tageText}\n\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}${pumpenkönigBlock}${offeneStrafenBlock}${zitat ? '\n\n_💬 ' + zitat + '_' : ''}`;
 
   const url = 'https://wa.me/?text=' + encodeURIComponent(text);
   window.open(url, '_blank');

@@ -1027,6 +1027,7 @@
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
       <button class="btn btn-primary" onclick="sendWaReminder()" id="wa-send-btn">📲 Einzeln senden</button>
       <button class="btn" onclick="sendWaGruppe()" id="wa-gruppe-btn" style="background:#25d366;color:white;font-weight:700">💬 An Gruppe senden</button>
+      <button class="btn" onclick="copyWaText()" id="wa-copy-btn" style="background:#128c7e;color:white;font-weight:700">📋 Text kopieren</button>
     </div>
     <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.5rem">
       <strong>Gruppe:</strong> WhatsApp öffnet sich mit fertig formulierter Nachricht — einfach Gruppe auswählen und senden.
@@ -3468,11 +3469,10 @@ async function sendWaReminder() {
 }
 
 
-function sendWaGruppe() {
+function buildWaText() {
   const nextTermin = (state.termine || []).filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum))[0];
-  if (!nextTermin) { alert('Kein bevorstehender Termin gefunden.'); return; }
+  if (!nextTermin) { alert('Kein bevorstehender Termin gefunden.'); return null; }
 
-  // Anmeldestatus zusammenfassen
   const alle = (state.mitglieder || []).map(m => m.name);
   const anm = nextTermin.anmeldungen || [];
   const vm  = nextTermin.vielleicht  || [];
@@ -3482,14 +3482,11 @@ function sendWaGruppe() {
   const tage = Math.ceil((new Date(nextTermin.datum) - new Date(today())) / (1000 * 60 * 60 * 24));
   const SEP = '\n―――――――――――――――';
 
-  // Kopfzeile
   const tageText = tage === 0 ? '📌 Heute ist Kegeln!' : tage === 1 ? '📌 Morgen ist Kegeln!' : `📌 Noch *${tage} Tage* bis zum Kegeln!`;
   let text = `🎳 *${state.clubName || 'Kegelclub'}*\n${tageText}`;
 
-  // Termin-Details
   text += `${SEP}\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)}  ·  ${nextTermin.zeit} Uhr${nextTermin.ort ? `  ·  📍 ${nextTermin.ort}` : ''}`;
 
-  // Anmeldestatus
   const statusLines = [];
   if (anm.length)   statusLines.push(`✅ *Dabei (${anm.length}):* ${anm.join(' · ')}`);
   if (vm.length)    statusLines.push(`🤔 *Vielleicht (${vm.length}):* ${vm.join(' · ')}`);
@@ -3497,7 +3494,6 @@ function sendWaGruppe() {
   if (offen.length) statusLines.push(`❓ *Offen (${offen.length}):* ${offen.join(' · ')}`);
   if (statusLines.length) text += `${SEP}\n${statusLines.join('\n')}\n\n👉 _Noch nicht gemeldet? Bitte in der App eintragen!_`;
 
-  // Pumpenkönig
   const letzteSession = (state.kegelsessions || []).slice().sort((a,b) => (b.datum||'').localeCompare(a.datum||''))[0];
   if (letzteSession) {
     const pumpenMap = {};
@@ -3508,7 +3504,6 @@ function sendWaGruppe() {
     if (top?.[1] > 0) text += `${SEP}\n👑 *Pumpenkönig: ${top[0]}* (${top[1]}× letztes Mal)\n_→ Bitte den Pumpenkegel mitbringen!_`;
   }
 
-  // Offene Strafen
   const offeneProMitglied = (state.mitglieder || []).map(m => {
     const betrag = (state.strafen || []).filter(s => s.mitglied === m.name && !s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
     return { name: m.name, betrag };
@@ -3519,8 +3514,28 @@ function sendWaGruppe() {
     text += `${SEP}\n💸 *Offene Strafen:*\n${strafenZeilen}\n\n_Bar beim Kegeln oder per Überweisung:_\n_Christian Jansen_\n_IBAN: DE61 1001 2345 0781 3535 11_`;
   }
 
-  const url = 'https://wa.me/?text=' + encodeURIComponent(text);
-  window.open(url, '_blank');
+  return text;
+}
+
+function sendWaGruppe() {
+  const text = buildWaText();
+  if (!text) return;
+  window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+}
+
+async function copyWaText() {
+  const text = buildWaText();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = document.getElementById('wa-copy-btn');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✅ Kopiert!';
+    btn.disabled = true;
+    setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 2000);
+  } catch(e) {
+    alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+  }
 }
 
 function updateSelects() {

@@ -2234,6 +2234,10 @@ function renderKgMatrix() {
   });
   thead += '<th class="sum-col">SUMME</th></tr></thead>';
 
+  // Pumpenkönig ermitteln
+  const pumpenZähler = spieler.map(m => ({ name: m.name, pumpen: aktiveSession.counts[m.name]?.['Pumpe'] || 0 }));
+  const maxPumpen = Math.max(...pumpenZähler.map(p => p.pumpen));
+
   // Body
   let tbody = '<tbody>';
   const angemeldet = aktiveSession.angemeldet || [];
@@ -2244,9 +2248,10 @@ function renderKgMatrix() {
     const col = avatarColor(m.name);
     const nichtAngemeldet = angemeldet.length > 0 && !angemeldet.includes(m.name);
     const rowStyle = nichtAngemeldet ? 'opacity:.35' : '';
+    const istPumpenkönig = maxPumpen > 0 && (aktiveSession.counts[m.name]?.['Pumpe'] || 0) === maxPumpen;
     tbody += `<tr style="${rowStyle}">
       <td class="name-col">
-        ${m.name}
+        ${istPumpenkönig ? '<span title="Pumpenkönig 👑" style="margin-right:3px">👑</span>' : ''}${m.name}
       </td>`;
     strafen.forEach(s => {
       const n = counts[s.name] || 0;
@@ -3379,7 +3384,22 @@ function sendWaGruppe() {
   const tage = Math.ceil((new Date(nextTermin.datum) - new Date(today())) / (1000 * 60 * 60 * 24));
   const tageText = tage === 0 ? '🎳 *Heute ist Kegeln!*' : tage === 1 ? '⏰ *Noch 1 Tag bis zum Kegeln!*' : `⏰ *Noch ${tage} Tage bis zum Kegeln!*`;
   const zitat = (document.getElementById('wa-zitat-input')?.value || '').trim();
-  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\n${tageText}\n\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}${zitat ? '\n\n_💬 ' + zitat + '_' : ''}`;
+
+  // Pumpenkönig der letzten Session ermitteln
+  let pumpenkönigBlock = '';
+  const letzteSession = (state.kegelsessions || []).slice().sort((a,b) => (b.datum||'').localeCompare(a.datum||''))[0];
+  if (letzteSession) {
+    const pumpenPerSpieler = {};
+    (letzteSession.eintraege || []).filter(e => e.kategorie === 'Pumpe').forEach(e => {
+      pumpenPerSpieler[e.mitglied] = (pumpenPerSpieler[e.mitglied] || 0) + (e.anzahl || 1);
+    });
+    const sorted = Object.entries(pumpenPerSpieler).sort((a,b) => b[1]-a[1]);
+    if (sorted.length && sorted[0][1] > 0) {
+      pumpenkönigBlock = `\n\n👑 *Aktueller Pumpenkönig: ${sorted[0][0]}* (${sorted[0][1]}× beim letzten Mal) — bitte den Pumpenkegel mitbringen!`;
+    }
+  }
+
+  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\n${tageText}\n\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}${pumpenkönigBlock}${zitat ? '\n\n_💬 ' + zitat + '_' : ''}`;
 
   const url = 'https://wa.me/?text=' + encodeURIComponent(text);
   window.open(url, '_blank');

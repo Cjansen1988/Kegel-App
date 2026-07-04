@@ -485,6 +485,22 @@
       ➜ Weiter
     </button>
 
+    <!-- Schreiber-Login -->
+    <div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1.25rem">
+      <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:.75rem">Kegelbuch schreiben</div>
+      <div id="schreiber-panel" style="display:none;margin-bottom:.75rem">
+        <div style="display:flex;gap:.5rem">
+          <input type="password" id="schreiber-pass" placeholder="Passwort…"
+            style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:inherit;outline:none"
+            onkeydown="if(event.key==='Enter')doSchreiberLogin()">
+          <button class="btn btn-primary" onclick="doSchreiberLogin()">Los</button>
+        </div>
+        <div id="schreiber-error" style="display:none;color:var(--danger);font-size:.8rem;margin-top:.4rem;font-weight:600">Falsches Passwort</div>
+      </div>
+      <button onclick="toggleSchreiberPanel()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:white;cursor:pointer;font-size:.875rem;font-weight:600;color:var(--text);display:flex;align-items:center;justify-content:center;gap:.4rem" id="schreiber-toggle-btn">
+        🎳 Als Schreiber einloggen
+      </button>
+    </div>
 
   </div>
 </div>
@@ -1283,21 +1299,81 @@ function subscribeAll() {
 // ========== LOGIN ==========
 function isMobile() { return window.innerWidth <= 640; }
 
+// ========== SCHREIBER-LOGIN ==========
+let currentRole = null; // 'admin' | 'schreiber'
+const SCHREIBER_PW = 'kegeln';
+
+function toggleSchreiberPanel() {
+  const panel = document.getElementById('schreiber-panel');
+  const btn = document.getElementById('schreiber-toggle-btn');
+  const visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : 'block';
+  btn.textContent = visible ? '🎳 Als Schreiber einloggen' : '✕ Abbrechen';
+  if (!visible) setTimeout(() => document.getElementById('schreiber-pass')?.focus(), 50);
+}
+
+function doSchreiberLogin() {
+  const pass = document.getElementById('schreiber-pass').value;
+  const errEl = document.getElementById('schreiber-error');
+  if (pass !== SCHREIBER_PW) {
+    errEl.style.display = 'block';
+    return;
+  }
+  errEl.style.display = 'none';
+  currentRole = 'schreiber';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('top-bar').style.display = 'flex';
+  if (isMobile()) document.getElementById('bottom-nav').style.display = 'block';
+  applyRoleNav();
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-kegeln').classList.add('active');
+  renderAll();
+  restoreLiveSession();
+}
+
+function applyRoleNav() {
+  const adminOnly = ['termine', 'kassenbuch', 'statistiken', 'quiz', 'mitglieder'];
+  if (currentRole === 'schreiber') {
+    // Desktop nav
+    document.querySelectorAll('.nav-tab').forEach(btn => {
+      const page = btn.getAttribute('onclick')?.match(/'(\w+)'/)?.[1];
+      if (page && adminOnly.includes(page)) btn.style.display = 'none';
+    });
+    // Mobile nav
+    document.querySelectorAll('.bnav-tab').forEach(btn => {
+      const page = btn.dataset.page;
+      if (page && adminOnly.includes(page)) btn.style.display = 'none';
+    });
+    // Rolle-Badge in Header einfügen
+    const h1 = document.querySelector('#top-bar h1');
+    if (h1 && !document.getElementById('schreiber-badge')) {
+      h1.insertAdjacentHTML('beforeend', '<span id="schreiber-badge" style="background:rgba(255,255,255,.2);font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:99px;margin-left:.4rem">Schreiber</span>');
+    }
+  } else {
+    // Admin: alle einblenden
+    document.querySelectorAll('.nav-tab, .bnav-tab').forEach(btn => btn.style.display = '');
+    document.getElementById('schreiber-badge')?.remove();
+  }
+}
+
 function doLogin() {
   const user = document.getElementById('login-user').value.trim().toLowerCase();
   const pass = document.getElementById('login-pass').value;
   if ((user === 'admin' || user === 'kegelclub') && pass === state.adminPw) {
+    currentRole = 'admin';
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('top-bar').style.display = 'flex';
     if (isMobile()) {
       document.getElementById('bottom-nav').style.display = 'block';
       document.getElementById('mobile-logout-card').style.display = 'block';
     }
+    applyRoleNav();
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-termine').classList.add('active');
     document.querySelectorAll('input[type=date]').forEach(el => { if (!el.value) el.value = today(); });
     renderAll();
     checkAutoStrafen();
+    restoreLiveSession();
   } else {
     document.getElementById('login-error').style.display = 'block';
   }
@@ -1305,11 +1381,18 @@ function doLogin() {
 document.getElementById('login-pass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
 
 function doLogout() {
+  currentRole = null;
   document.getElementById('top-bar').style.display = 'none';
   document.getElementById('bottom-nav').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
+  document.getElementById('schreiber-pass').value = '';
+  document.getElementById('schreiber-panel').style.display = 'none';
+  document.getElementById('schreiber-toggle-btn').textContent = '🎳 Als Schreiber einloggen';
+  // Nav-Tabs wieder alle einblenden für nächsten Login
+  document.querySelectorAll('.nav-tab, .bnav-tab').forEach(btn => btn.style.display = '');
+  document.getElementById('schreiber-badge')?.remove();
 }
 
 function saveSettings() {
@@ -2060,6 +2143,30 @@ function saveLiveSession() {
   db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], updatedAt: Date.now() });
 }
 function clearLiveSession() { db.collection('live').doc('session').set({ aktiv: false }); }
+
+async function restoreLiveSession() {
+  try {
+    const snap = await db.collection('live').doc('session').get();
+    if (!snap.exists) return;
+    const data = snap.data();
+    if (!data.aktiv) return;
+    // Session wiederherstellen
+    aktiveSession = {
+      id: uid(),
+      name: data.name || 'Wiederhergestellt',
+      counts: data.counts || {},
+      spieler: data.spieler || [],
+      angemeldet: data.angemeldet || []
+    };
+    aktiverKgTab = 'kegel';
+    document.getElementById('kegeln-start-screen').style.display = 'none';
+    document.getElementById('kegeln-aktiv-screen').style.display = 'block';
+    document.getElementById('kegeln-bestaetigung-screen').style.display = 'none';
+    document.getElementById('kg-aktiv-name').textContent = aktiveSession.name;
+    renderKgMatrix();
+    showNotification(`🔄 Laufendes Kegeln "${aktiveSession.name}" wiederhergestellt.`, 'info');
+  } catch(e) {}
+}
 
 function renderKgSpielerAuswahl() {
   const container = document.getElementById('kg-spieler-auswahl');

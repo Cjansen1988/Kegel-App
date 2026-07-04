@@ -3482,47 +3482,49 @@ function sendWaGruppe() {
   const abm = nextTermin.abmeldungen || [];
   const offen = alle.filter(n => !anm.includes(n) && !vm.includes(n) && !abm.includes(n));
 
-  let statusBlock = '';
-  if (anm.length)   statusBlock += `\n✅ Dabei: ${anm.join(', ')}`;
-  if (vm.length)    statusBlock += `\n🤔 Vielleicht: ${vm.join(', ')}`;
-  if (abm.length)   statusBlock += `\n❌ Nicht dabei: ${abm.join(', ')}`;
-  if (offen.length) statusBlock += `\n❓ Noch nicht gemeldet: ${offen.join(', ')}`;
-
   const tage = Math.ceil((new Date(nextTermin.datum) - new Date(today())) / (1000 * 60 * 60 * 24));
-  const tageText = tage === 0 ? '🎳 *Heute ist Kegeln!*' : tage === 1 ? '⏰ *Noch 1 Tag bis zum Kegeln!*' : `⏰ *Noch ${tage} Tage bis zum Kegeln!*`;
   const zitat = (document.getElementById('wa-zitat-input')?.value || '').trim();
+  const SEP = '\n―――――――――――――――';
 
-  // Pumpenkönig der letzten Session ermitteln
-  let pumpenkönigBlock = '';
+  // Kopfzeile
+  const tageText = tage === 0 ? '📌 Heute ist Kegeln!' : tage === 1 ? '📌 Morgen ist Kegeln!' : `📌 Noch *${tage} Tage* bis zum Kegeln!`;
+  let text = `🎳 *${state.clubName || 'Kegelclub'}*\n${tageText}`;
+
+  // Termin-Details
+  text += `${SEP}\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)}  ·  ${nextTermin.zeit} Uhr${nextTermin.ort ? `  ·  📍 ${nextTermin.ort}` : ''}`;
+
+  // Anmeldestatus
+  const statusLines = [];
+  if (anm.length)   statusLines.push(`✅ *Dabei (${anm.length}):* ${anm.join(' · ')}`);
+  if (vm.length)    statusLines.push(`🤔 *Vielleicht (${vm.length}):* ${vm.join(' · ')}`);
+  if (abm.length)   statusLines.push(`❌ *Nein (${abm.length}):* ${abm.join(' · ')}`);
+  if (offen.length) statusLines.push(`❓ *Offen (${offen.length}):* ${offen.join(' · ')}`);
+  if (statusLines.length) text += `${SEP}\n${statusLines.join('\n')}\n\n👉 _Noch nicht gemeldet? Bitte in der App eintragen!_`;
+
+  // Pumpenkönig
   const letzteSession = (state.kegelsessions || []).slice().sort((a,b) => (b.datum||'').localeCompare(a.datum||''))[0];
   if (letzteSession) {
-    const pumpenPerSpieler = {};
+    const pumpenMap = {};
     (letzteSession.eintraege || []).filter(e => e.kategorie === 'Pumpe').forEach(e => {
-      pumpenPerSpieler[e.mitglied] = (pumpenPerSpieler[e.mitglied] || 0) + (e.anzahl || 1);
+      pumpenMap[e.mitglied] = (pumpenMap[e.mitglied] || 0) + (e.anzahl || 1);
     });
-    const sorted = Object.entries(pumpenPerSpieler).sort((a,b) => b[1]-a[1]);
-    if (sorted.length && sorted[0][1] > 0) {
-      pumpenkönigBlock = `\n\n👑 *Aktueller Pumpenkönig: ${sorted[0][0]}* (${sorted[0][1]}× beim letzten Mal) — bitte den Pumpenkegel mitbringen!`;
-    }
+    const top = Object.entries(pumpenMap).sort((a,b) => b[1]-a[1])[0];
+    if (top?.[1] > 0) text += `${SEP}\n👑 *Pumpenkönig: ${top[0]}* (${top[1]}× letztes Mal)\n_→ Bitte den Pumpenkegel mitbringen!_`;
   }
 
-  // Offene Strafen pro Mitglied
-  let offeneStrafenBlock = '';
+  // Offene Strafen
   const offeneProMitglied = (state.mitglieder || []).map(m => {
-    const offen = (state.strafen || []).filter(s => s.mitglied === m.name && !s.bezahlt);
-    const betrag = offen.reduce((sum, s) => sum + Number(s.betrag), 0);
+    const betrag = (state.strafen || []).filter(s => s.mitglied === m.name && !s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
     return { name: m.name, betrag };
   }).filter(x => x.betrag > 0).sort((a,b) => b.betrag - a.betrag);
 
   if (offeneProMitglied.length) {
-    offeneStrafenBlock = '\n\n💸 *Offene Strafen:*\n'
-      + offeneProMitglied.map(x => `• ${x.name}: *${formatEur(x.betrag)}*`).join('\n')
-      + '\n\n_Bitte bar beim nächsten Kegeln mitbringen oder per Überweisung an:_\n'
-      + '_Christian Jansen_\n'
-      + '_IBAN: DE61 1001 2345 0781 3535 11_';
+    const strafenZeilen = offeneProMitglied.map(x => `  ${x.name}  →  *${formatEur(x.betrag)}*`).join('\n');
+    text += `${SEP}\n💸 *Offene Strafen:*\n${strafenZeilen}\n\n_Bar beim Kegeln oder per Überweisung:_\n_Christian Jansen_\n_IBAN: DE61 1001 2345 0781 3535 11_`;
   }
 
-  const text = `🎳 *${state.clubName || 'Kegelclub'} – Erinnerung!*\n\n${tageText}\n\n📅 *${nextTermin.name}*\n🗓 ${formatDate(nextTermin.datum)} um ${nextTermin.zeit} Uhr${nextTermin.ort ? '\n📍 ' + nextTermin.ort : ''}\n\nBitte meldet euch in der App an!${statusBlock ? '\n\n*Aktueller Stand:*' + statusBlock : ''}${pumpenkönigBlock}${offeneStrafenBlock}${zitat ? '\n\n_💬 ' + zitat + '_' : ''}`;
+  // Zitat
+  if (zitat) text += `${SEP}\n_💬 ${zitat}_`;
 
   const url = 'https://wa.me/?text=' + encodeURIComponent(text);
   window.open(url, '_blank');

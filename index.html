@@ -5443,6 +5443,33 @@ function starteSpiel(spielId) {
 // ---- TEAMSPIEL ----
 let teamSpielState = null;
 
+// ---- UNDO HELPERS ----
+function pushUndoSnapshot(stateObj) {
+  if (!stateObj._undo) stateObj._undo = [];
+  const snap = JSON.parse(JSON.stringify(
+    Object.fromEntries(Object.entries(stateObj).filter(([k]) => k !== '_undo'))
+  ));
+  stateObj._undo.push(snap);
+  if (stateObj._undo.length > 15) stateObj._undo.shift();
+}
+function applyUndoSnapshot(stateObj, renderFn) {
+  if (!stateObj?._undo?.length) return;
+  const snap = stateObj._undo.pop();
+  const hist = stateObj._undo;
+  Object.keys(stateObj).forEach(k => { if (k !== '_undo') delete stateObj[k]; });
+  Object.assign(stateObj, snap);
+  stateObj._undo = hist;
+  renderFn();
+}
+function undoTs()     { applyUndoSnapshot(teamSpielState, renderTeamSpiel); }
+function undoBt()     { applyUndoSnapshot(btState, renderBergTal); }
+function undoRr()     { applyUndoSnapshot(rrState, renderRussischRoulette); }
+function undoWdm()    { applyUndoSnapshot(wdmState, renderWieDuMir); }
+function undoBus()    { applyUndoSnapshot(busBauenState, renderBusBauen); }
+function undoMit()    { applyUndoSnapshot(miteinanderState, () => renderMiteinander(null)); }
+function undoRennen() { applyUndoSnapshot(rennenState, renderRennen); }
+function undoSetz()   { applyUndoSnapshot(setzSpiel, renderSetzSpiel); }
+
 function starteTeamSpiel(spielId) {
   const spieler = getAktiveSpieler().map(m => m.name);
   teamSpielState = { spielId, phase: 'teams', spieler, teamA: [], teamB: [], unverteilt: [...spieler] };
@@ -5512,7 +5539,10 @@ function renderTeamSpiel() {
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
           <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
-          <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+          <div style="display:flex;gap:.35rem;align-items:center">
+            ${ts._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoTs()" title="Letzten Zug rückgängig">↩</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+          </div>
         </div>
 
         <!-- Scoreboard -->
@@ -5688,7 +5718,10 @@ function renderTannenbaum() {
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
-      <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+      <div style="display:flex;gap:.35rem;align-items:center">
+        ${ts._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoTs()" title="Letzten Zug rückgängig">↩</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+      </div>
     </div>
     <div style="background:${aktiv==='A'?'#eff6ff':'#fff5f5'};border-radius:8px;padding:.5rem .75rem;margin-bottom:.75rem;font-size:.9rem;font-weight:700;color:${aktiv==='A'?'var(--primary)':'var(--danger)'}">
       ${aktiv==='A'?'🔵':'🔴'} Team ${aktiv} wirft
@@ -5710,6 +5743,7 @@ function tippeBaum(zahl) {
   const aktiv = ts.aktivesTeam;
   const eigenBaum = aktiv === 'A' ? ts.baumA : ts.baumB;
   const gegnerBaum = aktiv === 'A' ? ts.baumB : ts.baumA;
+  pushUndoSnapshot(ts);
 
   // Eigene Gruppe noch verfügbar → eigenen Baum
   if (eigenBaum[zahl] > 0) {
@@ -5748,6 +5782,7 @@ function tippeBaum(zahl) {
 
 function tippeBaumPumpe() {
   const ts = teamSpielState;
+  pushUndoSnapshot(ts);
   const aktiv = ts.aktivesTeam;
   const spieler = aktiv === 'A'
     ? ts.teamA[ts.aktiverSpielerA % ts.teamA.length]
@@ -5837,7 +5872,10 @@ function renderRennen() {
     container.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
         <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Tag ${tag} — ${tagName} (×${multi})</h3>
-        <button class="btn btn-ghost btn-sm" onclick="rennenState=null;renderSpieleListe()">✕</button>
+        <div style="display:flex;gap:.35rem;align-items:center">
+          ${rs._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoRennen()" title="Letzten Wurf rückgängig">↩</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="rennenState=null;renderSpieleListe()">✕</button>
+        </div>
       </div>
 
       <!-- Gesamtstand -->
@@ -6059,6 +6097,7 @@ function rennenTogglePin(idx) {
 
 function rennenBestaetigeWurf() {
   const rs = rennenState;
+  pushUndoSnapshot(rs);
   const teamIdx = rs.aktTeamIdx;
   const holzer = rs.pinAuswahl.length;
 
@@ -6250,7 +6289,10 @@ function renderBusBauen() {
     container.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
         <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} Bus bauen</h3>
-        <button class="btn btn-ghost btn-sm" onclick="busBauenState=null;renderSpieleListe()">✕</button>
+        <div style="display:flex;gap:.35rem;align-items:center">
+          ${bs._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoBus()" title="Letzten Wurf rückgängig">↩</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="busBauenState=null;renderSpieleListe()">✕</button>
+        </div>
       </div>
 
       <!-- Busse -->
@@ -6324,6 +6366,7 @@ function busBauenZuweisen(zahl) {
 
 function busBauenWurf(zahl) {
   const bs = busBauenState;
+  pushUndoSnapshot(bs);
   if (zahl === 0) {
     bs.letzterWurf = { text: '💨 Pumpe — kein Reifen' };
   } else if (bs.reifen[zahl] !== undefined) {
@@ -6415,7 +6458,10 @@ function renderMiteinander(container) {
     container.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
         <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
-        <button class="btn btn-ghost btn-sm" onclick="miteinanderState=null;renderSpieleListe()">✕</button>
+        <div style="display:flex;gap:.35rem;align-items:center">
+          ${ms._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoMit()" title="Letzten Wurf rückgängig">↩</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="miteinanderState=null;renderSpieleListe()">✕</button>
+        </div>
       </div>
       <div style="background:var(--bg);border-radius:8px;padding:.5rem .75rem;margin-bottom:.75rem;display:flex;justify-content:space-between;font-size:.82rem;font-weight:600">
         <span>Runde ${ms.aktuelleRunde} / ${ms.runden}</span>
@@ -6528,6 +6574,7 @@ function renderMiteinander(container) {
 
 function miteinanderWurf(zahl) {
   const ms = miteinanderState;
+  pushUndoSnapshot(ms);
   if (!ms.wurfeProRunde[ms.aktuelleRunde]) ms.wurfeProRunde[ms.aktuelleRunde] = {};
   ms.wurfeProRunde[ms.aktuelleRunde][ms.spieler[ms.aktuellerIdx]] = zahl;
   ms.aktuellerIdx++;
@@ -6621,7 +6668,10 @@ function renderBis100() {
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
-      <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+      <div style="display:flex;gap:.35rem;align-items:center">
+        ${ts._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoTs()" title="Letzten Zug rückgängig">↩</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+      </div>
     </div>
 
     <!-- Scoreboard -->
@@ -6656,6 +6706,7 @@ function renderBis100() {
 
 function bis100Wurf(zahl) {
   const ts = teamSpielState;
+  pushUndoSnapshot(ts);
   const aktiv = ts.aktivesTeam;
   const key = 'punkte' + aktiv;
   const neu = ts[key] + zahl;
@@ -6681,6 +6732,7 @@ function bis100Wurf(zahl) {
 
 function bis100Pumpe() {
   const ts = teamSpielState;
+  pushUndoSnapshot(ts);
   const aktiv = ts.aktivesTeam;
   ts.letzterZug = `Team ${aktiv}: Pumpe — 0 Punkte`;
   ts.aktivesTeam = aktiv === 'A' ? 'B' : 'A';
@@ -6708,6 +6760,7 @@ function starteBergTal(spielId) {
 
 function btWurf(zahl) {
   const bs = btState;
+  pushUndoSnapshot(bs);
   const spieler = bs.spieler[bs.aktuellerIdx];
   bs.wuerfe[spieler].push(zahl);
 
@@ -6810,7 +6863,10 @@ function renderBergTal() {
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.875rem">
           <h3 style="font-size:.9rem;font-weight:800">${spiel.emoji} ${spiel.name} — ${istBerg?'⛰️ Berg':'🏔️ Tal'} ${wurfImAbschnitt}/5</h3>
-          <button class="btn btn-ghost btn-sm" onclick="btState=null;renderSpieleListe()">✕</button>
+          <div style="display:flex;gap:.35rem;align-items:center">
+            ${bs._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoBt()" title="Letzten Wurf rückgängig">↩</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="btState=null;renderSpieleListe()">✕</button>
+          </div>
         </div>
 
         <!-- Player chips: show who already threw this round vs still to go -->
@@ -6971,6 +7027,7 @@ function rrStartGame() {
 
 function rrWurf(zahl) {
   const rs = rrState;
+  pushUndoSnapshot(rs);
   const alive = rs.spieler.filter(p => rs.lebenStand[p] > 0);
   const werferIdx = alive.indexOf(rs.aktuellerWerfer);
   const hitIdx = (werferIdx + zahl) % alive.length;
@@ -7087,7 +7144,10 @@ function renderRussischRoulette() {
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.875rem">
           <h3 style="font-size:.9rem;font-weight:800">${spiel.emoji} ${spiel.name} — ${alive.length} am Leben</h3>
-          <button class="btn btn-ghost btn-sm" onclick="rrState=null;renderSpieleListe()">✕</button>
+          <div style="display:flex;gap:.35rem;align-items:center">
+            ${rs._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoRr()" title="Letzten Wurf rückgängig">↩</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="rrState=null;renderSpieleListe()">✕</button>
+          </div>
         </div>
 
         ${hitInfo}
@@ -7191,6 +7251,7 @@ function wdmStartGame() {
 
 function wdmWurf(zahl) {
   const ws = wdmState;
+  pushUndoSnapshot(ws);
   const spieler = ws.spieler[ws.aktuellerIdx];
   ws.wurfeRunde[spieler] = zahl; // number 0–9 or 'ungueltig'
   if (ws.aktuellerIdx < ws.spieler.length - 1) {
@@ -7329,7 +7390,10 @@ function renderWieDuMir() {
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.875rem">
           <h3 style="font-size:.9rem;font-weight:800">${spiel.emoji} Runde ${ws.aktuelleRunde}/${ws.anzahlRunden}</h3>
-          <button class="btn btn-ghost btn-sm" onclick="wdmState=null;renderSpieleListe()">✕</button>
+          <div style="display:flex;gap:.35rem;align-items:center">
+            ${ws._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoWdm()" title="Letzten Wurf rückgängig">↩</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="wdmState=null;renderSpieleListe()">✕</button>
+          </div>
         </div>
 
         <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:1rem">
@@ -7506,6 +7570,7 @@ function starteVierGewinnt() {
 function vgDropCoin(col) {
   const ts = teamSpielState;
   if (ts.vgGewinner) return;
+  pushUndoSnapshot(ts);
   // Schwerkraft: unterste freie Zeile finden
   let row = -1;
   for (let r = VG_ROWS - 1; r >= 0; r--) {
@@ -7534,6 +7599,7 @@ function vgDropCoin(col) {
 
 function vgPumpe() {
   const ts = teamSpielState;
+  pushUndoSnapshot(ts);
   ts.aktivesTeam = ts.aktivesTeam === 'A' ? 'B' : 'A';
   renderTeamSpiel();
 }
@@ -7576,7 +7642,10 @@ function renderVierGewinnt() {
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h3 style="font-size:1rem;font-weight:800">${spiel.emoji} ${spiel.name}</h3>
-      <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+      <div style="display:flex;gap:.35rem;align-items:center">
+        ${ts._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoTs()" title="Letzten Zug rückgängig">↩</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="teamSpielState=null;renderSpieleListe()">✕</button>
+      </div>
     </div>
     <div style="display:flex;justify-content:space-between;margin-bottom:.5rem">
       <div style="font-size:.82rem;font-weight:700;color:var(--primary)">🔵 Team A: ${ts.teamA.join(', ')}</div>
@@ -7623,6 +7692,7 @@ function spieleAbraeuumen() {
 
 function versuchPlus() {
   const ts = teamSpielState;
+  pushUndoSnapshot(ts);
   const daten = ts.aktivesTeam === 'A' ? ts.datenA : ts.datenB;
   daten.versuche++;
   renderTeamSpiel();
@@ -7630,6 +7700,7 @@ function versuchPlus() {
 
 function abraeumen() {
   const ts = teamSpielState;
+  pushUndoSnapshot(ts);
   const daten = ts.aktivesTeam === 'A' ? ts.datenA : ts.datenB;
   daten.versuche++;
   daten.abraeumungen++;
@@ -7919,7 +7990,10 @@ function renderSetzSpiel() {
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h3 style="font-size:1rem;font-weight:800">🎯 Setzen</h3>
-      <button class="btn btn-ghost btn-sm" onclick="setzSpiel=null;renderSpieleListe()">✕</button>
+      <div style="display:flex;gap:.35rem;align-items:center">
+        ${setzSpiel._undo?.length ? `<button class="btn btn-ghost btn-sm" onclick="undoSetz()" title="Letzten Zug rückgängig">↩</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="setzSpiel=null;renderSpieleListe()">✕</button>
+      </div>
     </div>
     <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:.5rem">Runde ${runde} von ${totalRunden}</div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:.5rem">
@@ -7948,6 +8022,7 @@ function setzeWurf(n) {
 }
 
 function setzePlatzieren(spalteIdx) {
+  pushUndoSnapshot(setzSpiel);
   const { spieler, scores, runde, spielerIdx, pendingWurf } = setzSpiel;
   const aktiverSpieler = spieler[spielerIdx];
   scores[aktiverSpieler][spalteIdx] = pendingWurf;

@@ -9416,6 +9416,7 @@ function renderSaisonInfo() {
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:.4rem;width:100%" onclick="zeigeArchivListe()">📚 Archivierte Saisons anzeigen</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:.3rem" onclick="alteDatenZuweisen()">📥 Alte Daten dieser Saison zuweisen</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:.3rem;color:var(--danger)" onclick="alteDatenZuweisenRueckgaengig()">↩ Zuweisung rückgängig machen</button>
       <button class="btn btn-danger btn-sm" style="width:100%" onclick="saisionAbschliessen()">🏁 Saison abschließen & neu starten</button>
     ` : `
       <div style="background:#fef3c7;border-radius:8px;padding:.6rem .875rem;margin-bottom:.5rem;font-size:.82rem;color:#92400e">
@@ -9454,6 +9455,31 @@ async function alteDatenZuweisen() {
   if (count === 0) { alert('Keine Daten ohne Saison-Zuordnung gefunden.'); return; }
   await batch.commit();
   alert(`✅ ${count} Dokumente der Saison "${s.name}" zugewiesen.`);
+}
+
+async function alteDatenZuweisenRueckgaengig() {
+  const s = state.aktiveSaison;
+  if (!s) { alert('Keine aktive Saison.'); return; }
+  if (!confirm(`Zuweisung rückgängig machen?\n\nAlle Strafen und Sessions die vor dem ${formatDate(s.startDatum)} liegen und der Saison "${s.name}" zugewiesen wurden, werden wieder herausgelöst.`)) return;
+
+  const saisonId = s.id;
+  const [strafen, sessions] = await Promise.all([
+    db.collection('strafen').where('saisonId', '==', saisonId).get(),
+    db.collection('kegelsessions').where('saisonId', '==', saisonId).get()
+  ]);
+
+  const batch = db.batch();
+  let count = 0;
+  strafen.docs.filter(d => (d.data().datum || '') < s.startDatum).forEach(d => {
+    batch.update(d.ref, { saisonId: firebase.firestore.FieldValue.delete() }); count++;
+  });
+  sessions.docs.filter(d => (d.data().datum || '') < s.startDatum).forEach(d => {
+    batch.update(d.ref, { saisonId: firebase.firestore.FieldValue.delete() }); count++;
+  });
+
+  if (count === 0) { alert('Keine Daten vor dem Saison-Startdatum gefunden.'); return; }
+  await batch.commit();
+  alert(`✅ ${count} Dokumente wurden aus der Saison herausgelöst.`);
 }
 
 function starteNeueSaison() {

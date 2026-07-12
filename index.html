@@ -2333,12 +2333,15 @@ function renderKgMatrix() {
   const spieler = spielerRaw.map(name => state.mitglieder.find(m => m.name === name)).filter(Boolean);
   const gesamtTotal = spieler.reduce((s,m) => s + kgSpielerTotal(m.name), 0);
 
+  const hatAlle9 = strafen.some(s => s.invertiert);
+
   // Header
   let thead = '<thead><tr><th class="name-col">NAME</th>';
   strafen.forEach(s => {
     thead += `<th style="min-width:52px${s.invertiert?';background:#fef3c7':''}">`
       + `<div>${s.name}${s.invertiert?' <span title="Alle anderen bekommen die Strafe" style="font-size:.65rem">🔄</span>':''}</div>`
       + `<div style="color:var(--primary);font-weight:800">${formatEur(s.betrag)}</div></th>`;
+    if (s.invertiert) thead += `<th style="min-width:44px;background:#dcfce7" title="Wie oft selbst geworfen"><div>🎳</div><div style="color:#16a34a;font-weight:800;font-size:.65rem">geworfen</div></th>`;
   });
   thead += '<th class="sum-col">SUMME</th></tr></thead>';
 
@@ -2371,14 +2374,24 @@ function renderKgMatrix() {
           ${n > 0 ? n : '·'}
         </div>
       </td>`;
+      if (s.invertiert) {
+        const g = counts[s.name + ' (geworfen)'] || 0;
+        tbody += `<td style="background:#f0fdf4;text-align:center;padding:4px 2px;font-weight:${g>0?'700':'400'};color:${g>0?'#16a34a':'var(--text-muted)'};font-size:.8rem">${g > 0 ? g : '·'}</td>`;
+      }
     });
     tbody += `<td class="sum-col ${total>0?'hat-wert':''}">${total > 0 ? formatEur(total) : '—'}</td></tr>`;
   });
   // Gesamt-Zeile
   tbody += `<tr style="font-weight:700;background:var(--bg)"><td class="name-col" style="font-weight:700;background:var(--bg)">GESAMT</td>`;
   strafen.forEach(s => {
-    const colTotal = spieler.reduce((sum,m) => sum + (aktiveSession.counts[m.name]?.[s.name]||0), 0);
+    const colTotal = s.invertiert
+      ? spieler.reduce((sum,m) => sum + (aktiveSession.counts[m.name]?.[s.name + ' (geworfen)']||0), 0)
+      : spieler.reduce((sum,m) => sum + (aktiveSession.counts[m.name]?.[s.name]||0), 0);
     tbody += `<td style="text-align:center;padding:8px 4px;font-weight:700;color:${colTotal>0?'var(--primary)':'var(--text-muted)'};">${colTotal > 0 ? colTotal : '·'}</td>`;
+    if (s.invertiert) {
+      const chargesTotal = spieler.reduce((sum,m) => sum + (aktiveSession.counts[m.name]?.[s.name]||0), 0);
+      tbody += `<td style="background:#f0fdf4;text-align:center;padding:8px 4px;font-weight:700;color:${chargesTotal>0?'#16a34a':'var(--text-muted)'};">${chargesTotal > 0 ? chargesTotal : '·'}</td>`;
+    }
   });
   tbody += `<td class="sum-col" style="background:#eff6ff;font-weight:800;color:var(--primary)">${formatEur(gesamtTotal)}</td></tr>`;
   tbody += '</tbody>';
@@ -2630,6 +2643,9 @@ function bestaetigeKegelSession() {
       const beschreibung = spieleDetail.map(d => d.beschreibung).join(', ') || 'Spiele';
       eintraegeFlach.push({ mitglied: m.name, kategorie: 'Spiele', betrag: spieleBetrag, anzahl: spieleDetail.length || 1, notiz: beschreibung });
     }
+    // "Alle 9 (geworfen)" separat mitspeichern
+    const g9 = counts['Alle 9 (geworfen)'] || 0;
+    if (g9 > 0) eintraegeFlach.push({ mitglied: m.name, kategorie: 'Alle 9 (geworfen)', betrag: 0, anzahl: g9 });
   });
 
   // Strafen speichern (mit sessionId für späteres Rückgängig-Machen)
@@ -2650,6 +2666,12 @@ function bestaetigeKegelSession() {
   const gesamtEinnahmen = Math.round(alleAuswertung.reduce((s, m) => s + m.kegelbuch + 3.00, 0) * 100) / 100;
 
   // Session-Dokument im selben Batch speichern
+  const alle9Wuerfe = {};
+  state.mitglieder.forEach(m => {
+    const g = aktiveSession.counts[m.name]?.['Alle 9 (geworfen)'] || 0;
+    if (g > 0) alle9Wuerfe[m.name] = g;
+  });
+
   batch.set(sessionRef, {
     name: aktiveSession.name, datum: today(),
     eintraege: eintraegeFlach, ...saisonMeta(),
@@ -2657,6 +2679,7 @@ function bestaetigeKegelSession() {
     spieler: aktiveSession.spieler || [],
     gesamtEinnahmen,
     mitgliederAnzahl: state.mitglieder.length,
+    alle9Wuerfe,
     createdAt: Date.now()
   });
 
@@ -2992,7 +3015,10 @@ function zeigeSessionDetail(sessionId) {
 
     // Alle Kategorien mit Daten ermitteln
     const katsSet = new Set();
-    eintraege.forEach(e => { if (Number(e.betrag) > 0 || Number(e.anzahl) > 0) katsSet.add(e.kategorie); });
+    eintraege.forEach(e => {
+      if (e.kategorie.includes('(geworfen)')) return; // separat anzeigen
+      if (Number(e.betrag) > 0 || Number(e.anzahl) > 0) katsSet.add(e.kategorie);
+    });
     const kats = [...katsSet];
 
     // Aufbau: perSpieler[name][kat] = { anzahl, betrag }
@@ -3022,6 +3048,21 @@ function zeigeSessionDetail(sessionId) {
       Math.round((gesamtKegelbuch + strafenAbwesend + bahnGesamt) * 100) / 100;
 
     const overlayId = 'sd-overlay-' + sessionId;
+
+    // Alle 9 (geworfen) aus alle9Wuerfe-Feld oder eintraege lesen
+    const alle9Map = s.alle9Wuerfe || {};
+    eintraege.filter(e => e.kategorie === 'Alle 9 (geworfen)' && e.anzahl > 0)
+      .forEach(e => { if (!alle9Map[e.mitglied]) alle9Map[e.mitglied] = e.anzahl; });
+    const alle9Sorted = Object.entries(alle9Map).sort((a,b) => b[1]-a[1]);
+    const alle9Html = alle9Sorted.length === 0 ? '' : `
+      <div style="margin-top:1rem">
+        <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:.4rem">🎳 Alle 9 geworfen</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.35rem">
+          ${alle9Sorted.map(([name,count]) =>
+            `<span style="background:#dcfce7;border:1px solid #bbf7d0;border-radius:99px;padding:3px 10px;font-size:.8rem;font-weight:600;color:#15803d">${name} ×${count}</span>`
+          ).join('')}
+        </div>
+      </div>`;
 
     // Matrix-Tab: Tabelle mit Kategorien als Spalten
     const matrixHtml = kats.length === 0 ? '<div style="color:var(--text-muted);padding:1rem 0;text-align:center;font-size:.875rem">Keine Kegelbuch-Einträge gespeichert.</div>' : `
@@ -3065,7 +3106,8 @@ function zeigeSessionDetail(sessionId) {
             </tr>
           </tbody>
         </table>
-      </div>`;
+      </div>
+      ${alle9Html}`;
 
     // Zusammenfassung-Tab
     const summaryHtml = `

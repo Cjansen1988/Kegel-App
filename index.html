@@ -9011,7 +9011,7 @@ function starteOfflineQuiz() {
   quizOfflineState = {
     phase: 'setup',
     spieler: state.mitglieder.map(m => m.name),
-    fragenPool: [...QUIZ_OFFLINE_FRAGEN, ...getDynamischeQuizFragen()].sort(() => Math.random() - .5),
+    fragenPool: [...QUIZ_OFFLINE_FRAGEN, ...getDynamischeQuizFragen()].filter(f => f.quelle === 'club').sort(() => Math.random() - .5),
     fragenAusgewaehlt: [],
     fragen: null,
     aktuelleQ: 0,
@@ -9039,9 +9039,10 @@ function offlineQuizFragenAuswahl() {
 
 function offlineToggleFrage(idx) {
   const os = quizOfflineState;
+  const max = Math.min(os.fragenPool.length, 10);
   if (os.fragenAusgewaehlt.includes(idx)) {
     os.fragenAusgewaehlt = os.fragenAusgewaehlt.filter(i => i !== idx);
-  } else if (os.fragenAusgewaehlt.length < 10) {
+  } else if (os.fragenAusgewaehlt.length < max) {
     os.fragenAusgewaehlt = [...os.fragenAusgewaehlt, idx];
   }
   renderOfflineQuiz();
@@ -9049,7 +9050,8 @@ function offlineToggleFrage(idx) {
 
 function offlineQuizStarten() {
   const os = quizOfflineState;
-  if (os.fragenAusgewaehlt.length !== 10) return;
+  const max = Math.min(os.fragenPool.length, 10);
+  if (os.fragenAusgewaehlt.length !== max) return;
   os.fragen = os.fragenAusgewaehlt.map(i => os.fragenPool[i]);
   os.aktuelleQ = 0;
   os.phase = 'fakten';
@@ -9243,13 +9245,14 @@ function renderOfflineQuiz() {
   if (os.phase === 'fragenauswahl') {
     const pool = os.fragenPool;
     const sel = os.fragenAusgewaehlt;
+    const maxSel = Math.min(pool.length, 10);
     container.innerHTML = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
           <div class="card-title" style="margin:0">Fragen auswählen</div>
-          <span class="tag ${sel.length===10?'tag-green':'tag-yellow'}">${sel.length} / 10 gewählt</span>
+          <span class="tag ${sel.length===maxSel?'tag-green':'tag-yellow'}">${sel.length} / ${maxSel} gewählt</span>
         </div>
-        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe zum Aus- oder Abwählen. Genau 10 auswählen.</p>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe zum Aus- oder Abwählen. Alle ${maxSel} auswählen.</p>
         ${pool.map((f, i) => {
           const isSelected = sel.includes(i);
           const detailsHTML = f.typ === 'mc'
@@ -9271,7 +9274,7 @@ function renderOfflineQuiz() {
         }).join('')}
         <div style="display:flex;gap:.75rem;margin-top:1rem">
           <button class="btn btn-ghost" onclick="quizOfflineState.phase='setup';renderOfflineQuiz()">← Zurück</button>
-          <button class="btn btn-primary" style="flex:1" onclick="offlineQuizStarten()" ${sel.length!==10?'disabled style="opacity:.5"':''}>🔌 Quiz starten (${sel.length}/10)</button>
+          <button class="btn btn-primary" style="flex:1" onclick="offlineQuizStarten()" ${sel.length!==maxSel?'disabled style="opacity:.5"':''}>🔌 Quiz starten (${sel.length}/${maxSel})</button>
         </div>
       </div>`;
     return;
@@ -9471,13 +9474,14 @@ function renderQuizAdmin() {
   if (q.phase === 'fragenauswahl') {
     const kandidaten = q.fragenKandidaten || [];
     const ausgewaehlt = q.fragenAusgewaehlt || [];
+    const maxSel = Math.min(kandidaten.length, 10);
     container.innerHTML = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
           <div class="card-title" style="margin:0">Fragen auswählen</div>
-          <span class="tag ${ausgewaehlt.length===10?'tag-green':'tag-yellow'}">${ausgewaehlt.length} / 10 gewählt</span>
+          <span class="tag ${ausgewaehlt.length===maxSel?'tag-green':'tag-yellow'}">${ausgewaehlt.length} / ${maxSel} gewählt</span>
         </div>
-        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe auf eine Frage um sie aus- oder abzuwählen. Wähle genau 10.</p>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe auf eine Frage um sie aus- oder abzuwählen. Alle ${maxSel} auswählen.</p>
         ${kandidaten.map((f, i) => {
           const sel = ausgewaehlt.includes(i);
           const detailsHTML = f.typ === 'mc'
@@ -9500,8 +9504,8 @@ function renderQuizAdmin() {
         <div style="display:flex;gap:.75rem;margin-top:1rem">
           <button class="btn btn-ghost" onclick="quizZurueck()">← Zurück</button>
           <button class="btn btn-primary" style="flex:1" onclick="starteQuizMitAuswahl()"
-            ${ausgewaehlt.length!==10?'disabled style="opacity:.5"':''}>
-            🧠 Quiz starten (${ausgewaehlt.length}/10)
+            ${ausgewaehlt.length!==maxSel?'disabled style="opacity:.5"':''}>
+            🧠 Quiz starten (${ausgewaehlt.length}/${maxSel})
           </button>
         </div>
       </div>`;
@@ -9674,9 +9678,9 @@ function memberSchaetzungAbgeben(name) {
 function zeigeFragenAuswahl() {
   const spieler = [...document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
   if (spieler.length < 2) { alert('Mindestens 2 Spieler auswählen!'); return; }
-  // Dynamische Saison-Fragen + statische Standardfragen + Club-Fragen
-  const dynamisch = generiereQuizFragen(15);
-  const kandidaten = [...dynamisch, ...QUIZ_OFFLINE_FRAGEN, ...getDynamischeQuizFragen()]
+  // Nur handgemachte Club-Fragen
+  const kandidaten = [...QUIZ_OFFLINE_FRAGEN, ...getDynamischeQuizFragen()]
+    .filter(f => f.quelle === 'club')
     .sort(() => Math.random() - .5);
   if (kandidaten.length < 5) { alert('Nicht genug Daten für ein Quiz. Spielt erst ein paar Kegel-Abende!'); return; }
   db.collection('quiz').doc('aktiv').set({
@@ -9693,7 +9697,7 @@ function toggleFrageAuswahl(idx) {
   if (ausgewaehlt.includes(idx)) {
     ausgewaehlt = ausgewaehlt.filter(i => i !== idx);
   } else {
-    if (ausgewaehlt.length >= 10) return; // max 10
+    if (ausgewaehlt.length >= Math.min((q.fragenKandidaten||[]).length, 10)) return;
     ausgewaehlt.push(idx);
   }
   db.collection('quiz').doc('aktiv').update({ fragenAusgewaehlt: ausgewaehlt });
@@ -9705,7 +9709,8 @@ function quizZurueck() {
 
 function starteQuizMitAuswahl() {
   const q = state.quiz;
-  if ((q.fragenAusgewaehlt||[]).length !== 10) { alert('Genau 10 Fragen auswählen!'); return; }
+  const maxSel = Math.min((q.fragenKandidaten||[]).length, 10);
+  if ((q.fragenAusgewaehlt||[]).length !== maxSel) { alert(`Genau ${maxSel} Fragen auswählen!`); return; }
   const fragen = q.fragenAusgewaehlt.map(i => q.fragenKandidaten[i]);
   db.collection('quiz').doc('aktiv').update({
     phase: 'frage', fragen, aktuelleQ: 0,

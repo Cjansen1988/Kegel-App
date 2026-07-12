@@ -1037,6 +1037,15 @@
     </div>
     <div id="wa-send-status" style="margin-top:.75rem;font-size:.85rem"></div>
   </div>
+  <!-- After-Kegeln Nachricht -->
+  <div class="card" style="margin-top:1rem">
+    <div class="card-title">🎳 After-Kegeln Nachricht</div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:1rem">
+      Zusammenfassung nach dem Kegeln — Strafen des Abends, offene Beträge und nächster Termin.
+    </p>
+    <div id="after-kegeln-container"></div>
+  </div>
+
   <div class="card">
     <div class="card-title">👥 Mitgliederliste (<span id="m-count">0</span>)</div>
     <div class="table-wrap">
@@ -1250,6 +1259,7 @@ function subscribeAll() {
     renderKgStatistiken();
     renderFunFacts();
     renderKegelHistorie();
+    renderAfterKegelnSection();
   }, () => {}));
 
   // Ist-Bestand
@@ -3566,6 +3576,133 @@ function sendWaGruppe() {
   const text = buildWaText();
   if (!text) return;
   window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+}
+
+// ========== AFTER-KEGELN NACHRICHT ==========
+function renderAfterKegelnSection() {
+  const container = document.getElementById('after-kegeln-container');
+  if (!container) return;
+  const sessions = (state.kegelsessions || []).slice().sort((a,b) => (b.datum||'').localeCompare(a.datum||'')).slice(0,10);
+  if (!sessions.length) {
+    container.innerHTML = `<div style="color:var(--text-muted);font-size:.85rem">Noch keine Kegelsessions vorhanden.</div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div style="margin-bottom:.75rem">
+      <label style="font-size:.82rem;font-weight:700;color:var(--text-muted);display:block;margin-bottom:.4rem">Session auswählen</label>
+      <select id="after-session-sel" onchange="renderAfterKegelnVorschau()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.87rem">
+        ${sessions.map((s,i) => `<option value="${s.id}">${s.name} · ${formatDate(s.datum)}${i===0?' (letzte)':''}</option>`).join('')}
+      </select>
+    </div>
+    <div id="after-kegeln-vorschau" style="margin-bottom:.75rem"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn" onclick="sendAfterKegelnGruppe()" style="background:#25d366;color:white;font-weight:700">💬 An Gruppe senden</button>
+      <button class="btn" id="after-copy-btn" onclick="copyAfterKegelnText()" style="background:#128c7e;color:white;font-weight:700">📋 Text kopieren</button>
+    </div>`;
+  renderAfterKegelnVorschau();
+}
+
+function buildAfterKegelnText() {
+  const sel = document.getElementById('after-session-sel');
+  const sessionId = sel?.value;
+  const session = (state.kegelsessions || []).find(s => s.id === sessionId);
+  if (!session) return null;
+
+  const SEP = '\n―――――――――――――――';
+
+  // Strafen dieser Session
+  const sessStr = (state.strafen || []).filter(s =>
+    s.sessionId === sessionId ||
+    (!s.sessionId && s.datum === session.datum && s.kategorie !== 'Termin Ausfall')
+  );
+
+  // Gruppiert nach Mitglied
+  const heuteProSpieler = {};
+  sessStr.forEach(s => {
+    if (!heuteProSpieler[s.mitglied]) heuteProSpieler[s.mitglied] = { total: 0, posten: [] };
+    heuteProSpieler[s.mitglied].total += Number(s.betrag);
+    if (s.kategorie !== 'Kegelbuch') {
+      heuteProSpieler[s.mitglied].posten.push(`${s.kategorie} ${formatEur(s.betrag)}`);
+    }
+  });
+
+  // Sicherstellen: alle Teilnehmer in heuteProSpieler (auch ohne Strafen)
+  (session.angemeldet || []).forEach(name => {
+    if (!heuteProSpieler[name]) heuteProSpieler[name] = { total: 0, posten: [] };
+  });
+
+  const teilnehmer = Object.entries(heuteProSpieler).sort((a,b) => b[1].total - a[1].total);
+
+  // Offene Strafen gesamt
+  const offeneProMitglied = (state.mitglieder || []).map(m => {
+    const betrag = (state.strafen || []).filter(s => s.mitglied === m.name && !s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
+    return { name: m.name, betrag };
+  }).filter(x => x.betrag > 0).sort((a,b) => b.betrag - a.betrag);
+
+  // Nächster nicht-ausgefallener Termin
+  const nextTermine = (state.termine || [])
+    .filter(t => t.datum > session.datum && !t.ausfall)
+    .sort((a,b) => a.datum.localeCompare(b.datum));
+  const nextTermin = nextTermine[0];
+
+  let text = `🎳 *${state.clubName || 'Blackout Boys'}* – Danke für heute!`;
+  text += `${SEP}\n📅 *${session.name}*  ·  ${formatDate(session.datum)}`;
+
+  // Strafen heute
+  if (teilnehmer.length) {
+    text += `${SEP}\n💸 *Strafen dieses Abends:*\n`;
+    text += teilnehmer.map(([name, d]) => {
+      const extras = d.posten.length ? ` _(inkl. ${d.posten.join(', ')})_` : '';
+      return `  ${name}  →  *${formatEur(d.total)}*${extras}`;
+    }).join('\n');
+  }
+
+  // Offene Strafen gesamt
+  if (offeneProMitglied.length) {
+    text += `${SEP}\n📊 *Offene Strafen gesamt:*\n`;
+    text += offeneProMitglied.map(x => `  ${x.name}  →  *${formatEur(x.betrag)}*`).join('\n');
+  }
+
+  // Kontodaten
+  text += `${SEP}\n💳 *Bitte überweisen an:*\n  Christian Jansen\n  IBAN: DE61 1001 2345 0781 3535 11\n  _Verwendungszweck: Blackout Boys Strafen_`;
+
+  // Nächster Termin
+  if (nextTermin) {
+    text += `${SEP}\n📅 *Nächster Kegelabend:*\n  *${nextTermin.name}*  ·  ${formatDate(nextTermin.datum)}${nextTermin.zeit ? '  um  *' + nextTermin.zeit + ' Uhr*' : ''}${nextTermin.ort ? '\n  📍 ' + nextTermin.ort : ''}`;
+  }
+
+  return text;
+}
+
+function renderAfterKegelnVorschau() {
+  const el = document.getElementById('after-kegeln-vorschau');
+  if (!el) return;
+  const text = buildAfterKegelnText();
+  if (!text) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div style="background:var(--bg);border-radius:8px;padding:.75rem;font-size:.78rem;color:var(--text);font-family:monospace;white-space:pre-wrap;max-height:220px;overflow-y:auto;border:1px solid var(--border)">${text.replace(/</g,'&lt;').replace(/\*/g,'<b>').replace(/<b>/g,'<b>').replace(/<\/b>/g,'</b>')}</div>`;
+  // Simpler: just show plain text
+  el.innerHTML = `<div style="background:var(--bg);border-radius:8px;padding:.75rem;font-size:.78rem;color:var(--text);font-family:monospace;white-space:pre-wrap;max-height:220px;overflow-y:auto;border:1px solid var(--border)">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
+}
+
+function sendAfterKegelnGruppe() {
+  const text = buildAfterKegelnText();
+  if (!text) return;
+  window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+}
+
+async function copyAfterKegelnText() {
+  const text = buildAfterKegelnText();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = document.getElementById('after-copy-btn');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✅ Kopiert!';
+    btn.disabled = true;
+    setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 2000);
+  } catch(e) {
+    alert('Kopieren fehlgeschlagen.');
+  }
 }
 
 async function copyWaText() {
@@ -9925,7 +10062,7 @@ async function fuehreImportAus(popup, neuImport) {
   renderFunFacts();
 }
 
-function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); renderWaSection(); }
+function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); renderWaSection(); renderAfterKegelnSection(); }
 
 // ========== AUTO-STRAFEN (96h-Regel) ==========
 async function checkAutoStrafen(manual = false) {

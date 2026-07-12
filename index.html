@@ -4558,7 +4558,7 @@ function renderStatistiken() {
     `<div style="margin-top:.5rem">` +
     strafSummen.map((m,i) => `<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:.15rem 0;border-top:1px solid var(--border)">
       <span><strong>${i+1}.</strong> ${m.fullName}</span>
-      <span style="color:var(--text-muted)">${m.count} Einträge</span>
+      <span><strong>${formatEur(m.total)}</strong> <span style="color:var(--text-muted);font-size:.72rem">(${m.count}×)</span></span>
     </div>`).join('') + `</div>`;
 
   // Anwesenheitsranking — nur tatsächlich gespielte Sessions

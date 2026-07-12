@@ -657,6 +657,7 @@
 
 <!-- SPIELE -->
 <div class="page" id="page-spiele">
+  <div id="abend-teams-container"></div>
   <div id="spiele-liste"></div>
 </div>
 
@@ -2151,7 +2152,7 @@ let aktiverKgTab = 'kegel';
 
 function saveLiveSession() {
   if (!aktiveSession) return;
-  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], updatedAt: Date.now() });
+  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], abendTeams: aktiveSession.abendTeams || null, updatedAt: Date.now() });
 }
 function clearLiveSession() { db.collection('live').doc('session').set({ aktiv: false }); }
 
@@ -2167,7 +2168,8 @@ async function restoreLiveSession() {
       name: data.name || 'Wiederhergestellt',
       counts: data.counts || {},
       spieler: data.spieler || [],
-      angemeldet: data.angemeldet || []
+      angemeldet: data.angemeldet || [],
+      abendTeams: data.abendTeams || null
     };
     aktiverKgTab = 'kegel';
     document.getElementById('kegeln-start-screen').style.display = 'none';
@@ -5529,6 +5531,7 @@ function renderSpieleListe() {
   if (setzSpiel)       { renderSetzSpiel(); return; }
   if (aktivesSpiel)    { renderAktivesSpiel(); return; }
 
+  renderAbendTeams();
   const aktiveSpielerListe = getAktiveSpieler();
 
   const einzelspiele = SPIELE_KATALOG.filter(s => s.typ !== 'team' && s.typ !== 'rennen' && s.typ !== 'einzeln_special');
@@ -5634,8 +5637,156 @@ function undoMit()    { applyUndoSnapshot(miteinanderState, () => renderMiteinan
 function undoRennen() { applyUndoSnapshot(rennenState, renderRennen); }
 function undoSetz()   { applyUndoSnapshot(setzSpiel, renderSetzSpiel); }
 
+// ========== ABEND-TEAMS ==========
+
+function renderAbendTeams() {
+  const container = document.getElementById('abend-teams-container');
+  if (!container) return;
+  // Nur anzeigen wenn kein aktives Spiel läuft
+  const spielLaeuft = rrState || bjState || wdmState || btState || busBauenState || miteinanderState || rennenState || teamSpielState || setzSpiel || aktivesSpiel;
+  if (spielLaeuft) { container.innerHTML = ''; return; }
+
+  const teams = aktiveSession?.abendTeams;
+  const alleSpieler = getAktiveSpieler().map(m => m.name);
+  const istGesetzt = teams && (teams.teamA?.length > 0 || teams.teamB?.length > 0);
+
+  if (!istGesetzt) {
+    container.innerHTML = `
+      <div class="card" style="margin-bottom:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:.92rem;font-weight:800">🏆 Teams für heute</div>
+            <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">Einmal definieren — alle Teamspiele starten direkt</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="zeigeAbendTeamsSetup()">Teams festlegen</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const tA = teams.teamA || [];
+  const tB = teams.teamB || [];
+  container.innerHTML = `
+    <div class="card" style="margin-bottom:.75rem;border:2px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+        <div style="font-size:.92rem;font-weight:800">🏆 Teams für heute</div>
+        <div style="display:flex;gap:.35rem">
+          <button class="btn btn-ghost btn-sm" onclick="zeigeAbendTeamsSetup()">✏️ Ändern</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="loescheAbendTeams()">✕</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <div>
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#2563eb;margin-bottom:.3rem">Team A</div>
+          <div style="display:flex;flex-wrap:wrap;gap:.3rem">
+            ${tA.map(n => `<span style="background:#dbeafe;color:#1e40af;border-radius:20px;padding:3px 10px;font-size:.82rem;font-weight:600">${n}</span>`).join('') || '<span style="color:var(--text-muted);font-size:.78rem">Leer</span>'}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#dc2626;margin-bottom:.3rem">Team B</div>
+          <div style="display:flex;flex-wrap:wrap;gap:.3rem">
+            ${tB.map(n => `<span style="background:#fee2e2;color:#991b1b;border-radius:20px;padding:3px 10px;font-size:.82rem;font-weight:600">${n}</span>`).join('') || '<span style="color:var(--text-muted);font-size:.78rem">Leer</span>'}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function zeigeAbendTeamsSetup() {
+  const container = document.getElementById('abend-teams-container');
+  if (!container) return;
+  const alleSpieler = getAktiveSpieler().map(m => m.name);
+  const existing = aktiveSession?.abendTeams || { teamA: [], teamB: [] };
+  // Sicherstellen dass nur aktive Spieler drin sind
+  let tA = (existing.teamA || []).filter(n => alleSpieler.includes(n));
+  let tB = (existing.teamB || []).filter(n => alleSpieler.includes(n));
+  let pool = alleSpieler.filter(n => !tA.includes(n) && !tB.includes(n));
+
+  const renderSetup = () => {
+    container.innerHTML = `
+      <div class="card" style="margin-bottom:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <div style="font-size:.92rem;font-weight:800">🏆 Teams festlegen</div>
+          <button class="btn btn-ghost btn-sm" onclick="renderAbendTeams()">← Abbrechen</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-bottom:1rem;width:100%" onclick="abendTeamsLosen()">🎲 Auslosen</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+          <div>
+            <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#2563eb;margin-bottom:.4rem">Team A</div>
+            <div style="min-height:36px;background:#eff6ff;border-radius:8px;padding:.4rem;display:flex;flex-wrap:wrap;gap:.3rem">
+              ${tA.map(n => `<button onclick="abendTeamVerschieben('${n}','a','pool')" style="background:#dbeafe;color:#1e40af;border:none;border-radius:20px;padding:3px 10px;font-size:.82rem;font-weight:600;cursor:pointer">${n} ✕</button>`).join('') || '<span style="color:var(--text-muted);font-size:.75rem">Leer</span>'}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#dc2626;margin-bottom:.4rem">Team B</div>
+            <div style="min-height:36px;background:#fef2f2;border-radius:8px;padding:.4rem;display:flex;flex-wrap:wrap;gap:.3rem">
+              ${tB.map(n => `<button onclick="abendTeamVerschieben('${n}','b','pool')" style="background:#fee2e2;color:#991b1b;border:none;border-radius:20px;padding:3px 10px;font-size:.82rem;font-weight:600;cursor:pointer">${n} ✕</button>`).join('') || '<span style="color:var(--text-muted);font-size:.75rem">Leer</span>'}
+            </div>
+          </div>
+        </div>
+        ${pool.length ? `
+          <div style="font-size:.75rem;font-weight:700;color:var(--text-muted);margin-bottom:.4rem">Nicht zugeteilt</div>
+          <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:1rem">
+            ${pool.map(n => `
+              <div style="display:flex;gap:.2rem">
+                <button onclick="abendTeamVerschieben('${n}','pool','a')" style="background:#dbeafe;color:#1e40af;border:none;border-radius:20px 0 0 20px;padding:3px 8px;font-size:.78rem;font-weight:600;cursor:pointer;border-right:1px solid #bfdbfe">A</button>
+                <button onclick="abendTeamVerschieben('${n}','pool','b')" style="background:#fee2e2;color:#991b1b;border:none;border-radius:0 20px 20px 0;padding:3px 8px;font-size:.78rem;font-weight:600;cursor:pointer">${n} → B</button>
+              </div>`).join('')}
+          </div>` : ''}
+        <button class="btn btn-primary btn-full" onclick="speichereAbendTeams()" ${(tA.length===0||tB.length===0)?'disabled style="opacity:.5"':''}>
+          ✅ Teams speichern
+        </button>
+      </div>`;
+  };
+
+  // Globale Hilfsfunktionen für diese Setup-Session
+  window.abendTeamVerschieben = (name, von, nach) => {
+    if (von === 'a') tA = tA.filter(n => n !== name);
+    else if (von === 'b') tB = tB.filter(n => n !== name);
+    else pool = pool.filter(n => n !== name);
+    if (nach === 'a') tA.push(name);
+    else if (nach === 'b') tB.push(name);
+    else pool.push(name);
+    renderSetup();
+  };
+  window.abendTeamsLosen = () => {
+    const alle = [...alleSpieler].sort(() => Math.random() - .5);
+    const mitte = Math.ceil(alle.length / 2);
+    tA = alle.slice(0, mitte);
+    tB = alle.slice(mitte);
+    pool = [];
+    renderSetup();
+  };
+  window.speichereAbendTeams = () => {
+    if (!aktiveSession) return;
+    aktiveSession.abendTeams = { teamA: [...tA], teamB: [...tB] };
+    saveLiveSession();
+    renderAbendTeams();
+  };
+
+  renderSetup();
+}
+
+function loescheAbendTeams() {
+  if (!aktiveSession) return;
+  aktiveSession.abendTeams = null;
+  saveLiveSession();
+  renderAbendTeams();
+}
+
 function starteTeamSpiel(spielId) {
   const spieler = getAktiveSpieler().map(m => m.name);
+  const teams = aktiveSession?.abendTeams;
+  // Wenn Abend-Teams gesetzt sind: direkt starten ohne Team-Auswahl
+  if (teams?.teamA?.length > 0 && teams?.teamB?.length > 0) {
+    const tA = teams.teamA.filter(n => spieler.includes(n));
+    const tB = teams.teamB.filter(n => spieler.includes(n));
+    if (tA.length > 0 && tB.length > 0) {
+      teamSpielState = { spielId, phase: 'teams', spieler, teamA: tA, teamB: tB, unverteilt: spieler.filter(n => !tA.includes(n) && !tB.includes(n)) };
+      starteTeamSpielPhase();
+      return;
+    }
+  }
   teamSpielState = { spielId, phase: 'teams', spieler, teamA: [], teamB: [], unverteilt: [...spieler] };
   renderTeamSpiel();
 }
@@ -10093,7 +10244,7 @@ async function fuehreImportAus(popup, neuImport) {
   renderFunFacts();
 }
 
-function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); renderWaSection(); renderAfterKegelnSection(); }
+function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); renderWaSection(); renderAfterKegelnSection(); renderAbendTeams(); }
 
 // ========== AUTO-STRAFEN (96h-Regel) ==========
 async function checkAutoStrafen(manual = false) {

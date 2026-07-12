@@ -9471,11 +9471,17 @@ function renderQuizAdmin() {
         <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe auf eine Frage um sie aus- oder abzuwählen. Wähle genau 10.</p>
         ${kandidaten.map((f, i) => {
           const sel = ausgewaehlt.includes(i);
+          const detailsHTML = f.typ === 'mc'
+            ? `<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem">
+                ${(f.antworten||[]).map(a => `<span style="font-size:.72rem;padding:2px 7px;border-radius:20px;background:${sel?'#dbeafe':'var(--bg-page)'};color:var(--text-muted);border:1px solid ${sel?'#bfdbfe':'var(--border)'}">${a}</span>`).join('')}
+               </div>`
+            : `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem">Schätzung${f.einheit ? ' in ' + f.einheit : ''}</div>`;
           return `<div onclick="toggleFrageAuswahl(${i})" style="display:flex;align-items:start;gap:.75rem;padding:.75rem;border-radius:10px;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'#eff6ff':'white'};margin-bottom:.4rem;cursor:pointer">
-            <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.75rem;font-weight:800;color:white">${sel?ausgewaehlt.indexOf(i)+1:''}</div>
+            <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:.75rem;font-weight:800;color:white">${sel?ausgewaehlt.indexOf(i)+1:''}</div>
             <div style="flex:1">
               <div style="font-size:.78rem;font-weight:700;color:${sel?'var(--primary)':'var(--text-muted)'};margin-bottom:.15rem">${f.typ==='mc'?'🔤 Multiple Choice':'🔢 Schätzfrage'}</div>
               <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
+              ${detailsHTML}
             </div>
           </div>`;
         }).join('')}
@@ -9656,8 +9662,10 @@ function memberSchaetzungAbgeben(name) {
 function zeigeFragenAuswahl() {
   const spieler = [...document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
   if (spieler.length < 2) { alert('Mindestens 2 Spieler auswählen!'); return; }
-  // ~15 Kandidaten generieren (shuffle erzeugt Variation)
-  const kandidaten = generiereQuizFragen(15);
+  // Dynamische Saison-Fragen + statische Standardfragen + Club-Fragen
+  const dynamisch = generiereQuizFragen(15);
+  const kandidaten = [...dynamisch, ...QUIZ_OFFLINE_FRAGEN, ...getDynamischeQuizFragen()]
+    .sort(() => Math.random() - .5);
   if (kandidaten.length < 5) { alert('Nicht genug Daten für ein Quiz. Spielt erst ein paar Kegel-Abende!'); return; }
   db.collection('quiz').doc('aktiv').set({
     phase: 'fragenauswahl', spieler,

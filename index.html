@@ -1009,6 +1009,9 @@
       <button class="btn btn-ghost btn-sm" onclick="zeigeImportVorschau()">📥 Alte Sessions importieren (2025/26)</button>
       <hr class="divider">
       <div id="saison-settings"></div>
+      <hr class="divider">
+      <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">🧹 Daten bereinigen</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--danger)" onclick="duplikateStrafen()">🗑 Doppelte Kegelbuch-Strafen entfernen</button>
     </div>
   </div>
 
@@ -9480,6 +9483,36 @@ async function alteDatenZuweisenRueckgaengig() {
   if (count === 0) { alert('Keine Daten vor dem Saison-Startdatum gefunden.'); return; }
   await batch.commit();
   alert(`✅ ${count} Dokumente wurden aus der Saison herausgelöst.`);
+}
+
+async function duplikateStrafen() {
+  if (!confirm('Doppelte Kegelbuch-Strafen entfernen?\n\nEs werden alle Duplikate gelöscht — jeweils ein Eintrag pro Spieler und Session bleibt erhalten.')) return;
+
+  const snap = await db.collection('strafen').where('kategorie', '==', 'Kegelbuch').get();
+  const alle = snap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
+
+  // Gruppieren nach sessionId + mitglied; Duplikate = alle außer dem ersten
+  const gesehen = new Set();
+  const zuLoeschen = [];
+  alle.forEach(s => {
+    const key = (s.sessionId || '') + '|' + s.mitglied + '|' + s.datum;
+    if (gesehen.has(key)) {
+      zuLoeschen.push(s.ref);
+    } else {
+      gesehen.add(key);
+    }
+  });
+
+  if (zuLoeschen.length === 0) { alert('Keine Duplikate gefunden.'); return; }
+
+  // In Batches von 500 löschen
+  for (let i = 0; i < zuLoeschen.length; i += 500) {
+    const batch = db.batch();
+    zuLoeschen.slice(i, i + 500).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+
+  alert(`✅ ${zuLoeschen.length} doppelte Einträge gelöscht.`);
 }
 
 function starteNeueSaison() {

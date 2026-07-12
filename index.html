@@ -4211,6 +4211,21 @@ function renderKgStatistiken() {
     return best ? { strafe: s.name, ...best } : null;
   }).filter(Boolean).sort((a,b) => b.anzahl - a.anzahl);
 
+  // Wenigste Pumpen in einem Kegeln (bestes Ergebnis je Spieler in einer Session)
+  const wenigstePumpenPerSpieler = {};
+  sessions.forEach(sess => {
+    (sess.angemeldet || []).forEach(name => {
+      const pumpen = (sess.eintraege || [])
+        .filter(e => e.mitglied === name && e.kategorie === 'Pumpe')
+        .reduce((s, e) => s + (e.anzahl || 1), 0);
+      if (!wenigstePumpenPerSpieler[name] || pumpen < wenigstePumpenPerSpieler[name].pumpen) {
+        wenigstePumpenPerSpieler[name] = { name, pumpen, session: sess.name, datum: sess.datum };
+      }
+    });
+  });
+  const wenigstePumpenRanking = Object.values(wenigstePumpenPerSpieler)
+    .sort((a, b) => a.pumpen - b.pumpen || (b.datum||'').localeCompare(a.datum||''));
+
   // Schlimmste Session pro Spieler (höchste Gesamtstrafe in einer Session)
   const schliммsteSession = {};
   sessions.forEach(sess => {
@@ -4303,6 +4318,18 @@ function renderKgStatistiken() {
           <div style="font-weight:800;font-size:1.3rem;color:var(--danger)">${r.anzahl}×</div>
           <div style="font-size:.82rem;font-weight:600">${r.name}</div>
           <div style="font-size:.72rem;color:var(--text-muted)">${formatDate(r.datum)}</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- Wenigste Pumpen in einem Kegeln -->
+    <div class="section-title">🍀 Wenigste Pumpen in einem Kegeln</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem;margin-bottom:1.5rem">
+      ${wenigstePumpenRanking.slice(0,6).map((r,i) => `
+        <div style="background:var(--bg);border-radius:10px;padding:.75rem;border:2px solid ${i===0?'#86efac':r.pumpen===0?'#d1fae5':'var(--border)'}">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:.2rem">Beste Session</div>
+          <div style="font-weight:800;font-size:1.3rem;color:${r.pumpen===0?'#16a34a':i===0?'#ca8a04':'var(--primary)'}">${r.pumpen === 0 ? '0 🌟' : r.pumpen+'×'}</div>
+          <div style="font-size:.82rem;font-weight:600">${r.name}</div>
+          <div style="font-size:.72rem;color:var(--text-muted)">${r.session ? r.session+' · ' : ''}${formatDate(r.datum)}</div>
         </div>`).join('')}
     </div>
 
@@ -8777,26 +8804,6 @@ const QUIZ_OFFLINE_FRAGEN = [
     richtig:'Der letzte Überlebende',
     erklaerung:'Bei Russisch Roulette gewinnt der letzte Spieler, der noch Leben übrig hat!' },
 
-  { typ:'mc', frage:'Was passiert bei "Wie du mir so ich dir" wenn zwei Spieler gleichauf sind?',
-    antworten:['Beide bekommen einen Strich','Der Jüngere bekommt einen Strich','Beide werfen nochmal','Kein Strich für niemanden'],
-    richtig:'Kein Strich für niemanden',
-    erklaerung:'Gleichstand = kein Strich für niemanden.' },
-
-  { typ:'mc', frage:'Was zählt "Pumpe" beim BERG-Abschnitt bei "Berg & Tal"?',
-    antworten:['−5 Punkte','−10 Punkte','+5 Punkte','+0 Punkte'],
-    richtig:'+0 Punkte',
-    erklaerung:'Im Berg-Abschnitt zählt Pumpe +0 — nicht ideal, aber auch keine Strafe wie im Tal!' },
-
-  { typ:'mc', frage:'Was passiert bei "Miteinander" wenn 2 Spieler die gleiche Zahl werfen?',
-    antworten:['Beide bekommen 0','Nur der erste bekommt Punkte','Beide halbieren ihre Punkte','Beide werden Partner und bekommen die Summe'],
-    richtig:'Beide werden Partner und bekommen die Summe',
-    erklaerung:'Gleiche Zahl = Partner! Z.B. 2×6 = je 12 Punkte für beide.' },
-
-  { typ:'mc', frage:'Was ist der Unterschied zwischen deutschem Kegeln und Bowling?',
-    antworten:['Beide haben 9 Pins','Kegeln hat 10 Pins, Bowling 9','Beide haben 10 Pins','Kegeln hat 9 Pins in Raute, Bowling 10 im Dreieck'],
-    richtig:'Kegeln hat 9 Pins in Raute, Bowling 10 im Dreieck',
-    erklaerung:'Deutsches Kegeln: 9 Kegel in Raute. Bowling: 10 Pins im Dreieck.' },
-
   // ── Schätzfragen ──────────────────────────────────────────────
   { typ:'schaetzung', frage:'Wie viele Würfe hat jeder Spieler beim Spiel "Berg & Tal" insgesamt?',
     richtig:10, einheit:'Würfe',
@@ -8813,23 +8820,47 @@ const QUIZ_OFFLINE_FRAGEN = [
   { typ:'schaetzung', frage:'Wie hoch ist der maximale Punktestand aus den 5 Berg-Würfen bei "Berg & Tal"?',
     richtig:45, einheit:'Punkte',
     erklaerung:'5 × 9 Hölzer = 45 Punkte — nur mit fünfmal "Alle 9" erreichbar!' },
-
-  { typ:'schaetzung', frage:'Beim 6-Tage-Rennen: Wie hoch ist der Tagesmultiplikator am Samstag (letzter Tag)?',
-    richtig:6, einheit:'',
-    erklaerung:'Mo=1, Di=2, Mi=3, Do=4, Fr=5, Sa=6 — Samstag hat den höchsten Multiplikator!' },
-
-  { typ:'schaetzung', frage:'Wie viele Punkte bekommt jeder Spieler bei "Miteinander" wenn 3 Spieler alle eine 7 werfen?',
-    richtig:21, einheit:'Punkte',
-    erklaerung:'3 Partner × 7 = 21 Punkte für jeden in der Gruppe.' },
-
-  { typ:'schaetzung', frage:'Wie viele Runden werden bei "Wie du mir so ich dir" standardmäßig gespielt?',
-    richtig:5, einheit:'Runden',
-    erklaerung:'Standard-Einstellung sind 5 Runden — aber 3, 7 oder 10 sind wählbar.' },
-
-  { typ:'schaetzung', frage:'Wie viele Leben hat jeder Spieler bei "Russisch Roulette" in der Standardeinstellung?',
-    richtig:3, einheit:'Leben',
-    erklaerung:'Standard sind 3 Leben — aber 1 bis 5 sind im Setup wählbar.' },
 ];
+
+function getDynamischeQuizFragen() {
+  const sessions = state.kegelsessions || [];
+  const alle = sessions.flatMap(s => s.eintraege || []);
+
+  // 1. Pumpen insgesamt
+  const pumpenTotal = alle.filter(e => e.kategorie === 'Pumpe').reduce((s,e) => s+(e.anzahl||1), 0);
+
+  // 2. Lucas Kossen Klingeln Ø
+  const lucasKlingeln = alle.filter(e => e.mitglied === 'Lucas Kossen' && e.kategorie === 'Klingel').reduce((s,e) => s+(e.anzahl||1), 0);
+  const lucasSessions = sessions.filter(s => (s.angemeldet||[]).includes('Lucas Kossen')).length;
+  const lucasAvg = lucasSessions > 0 ? Math.round(lucasKlingeln / lucasSessions) : 7;
+
+  return [
+    {
+      typ: 'schaetzung',
+      frage: 'Wie viele Pumpen wurden bei den Blackout Boys insgesamt geworfen?',
+      richtig: pumpenTotal || 1,
+      einheit: 'Pumpen',
+      erklaerung: `${pumpenTotal} Pumpen über alle Kegelabende — das ist der Fluch der Bahn!`,
+      fakt: `💡 Das sind durchschnittlich 91,3 Pumpen pro Kegelabend. Ein verlässlicher Wert! 🎳`
+    },
+    {
+      typ: 'schaetzung',
+      frage: 'Wie viele Klingeln hat Lucas Kossen durchschnittlich pro Kegeln (an dem er da war) geworfen?',
+      richtig: lucasAvg || 7,
+      einheit: 'Klingeln',
+      erklaerung: `Lucas war ${lucasSessions} mal dabei und hat ${lucasKlingeln} mal die Klingel abgeräumt — im Schnitt ${lucasAvg} pro Abend.`,
+      fakt: `🔔 Lucas Kossen: ${lucasSessions}x dabei, ${lucasKlingeln}x die Klingel — das sind 25% aller Klingeln!\n📊 Platz 2: Lukas Cordes (9×) · Platz 3: Michael Runde (6×)`
+    },
+    {
+      typ: 'mc',
+      frage: 'Wer hält den Rekord für die meisten Pumpen in einem einzigen Kegelabend?',
+      antworten: ['Dimi Renje', 'Thorben Kloppe', 'Christian Wübben', 'Lucas Kossen'],
+      richtig: 'Dimi Renje',
+      erklaerung: 'Dimi Renje hat am 05.06.2026 mit 23 Pumpen an einem Abend absolute Geschichte geschrieben.',
+      fakt: `🤯 Dimi hat am 05.06.2026 grandiose 23 Pumpen an einem einzigen Abend geworfen — unangefochtener Pumpen-König!`
+    },
+  ];
+}
 
 let quizOfflineState = null;
 
@@ -8837,7 +8868,7 @@ function starteOfflineQuiz() {
   quizOfflineState = {
     phase: 'setup',
     spieler: state.mitglieder.map(m => m.name),
-    fragenPool: [...QUIZ_OFFLINE_FRAGEN].sort(() => Math.random() - .5),
+    fragenPool: [...QUIZ_OFFLINE_FRAGEN, ...getDynamischeQuizFragen()].sort(() => Math.random() - .5),
     fragenAusgewaehlt: [],
     fragen: null,
     aktuelleQ: 0,
@@ -8878,6 +8909,12 @@ function offlineQuizStarten() {
   if (os.fragenAusgewaehlt.length !== 10) return;
   os.fragen = os.fragenAusgewaehlt.map(i => os.fragenPool[i]);
   os.aktuelleQ = 0;
+  os.phase = 'fakten';
+  renderOfflineQuiz();
+}
+
+function offlineQuizFaktenWeiter() {
+  const os = quizOfflineState;
   os.phase = 'antwort';
   offlineInitFrageRunde();
   renderOfflineQuiz();
@@ -9000,6 +9037,61 @@ function renderOfflineQuiz() {
           <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#oq-spieler-auswahl .kg-auswahl-chip').forEach(c=>{c.classList.remove('aktiv');c.textContent='✗ '+c.dataset.name})">Keiner</button>
         </div>
         <button class="btn btn-primary btn-full" onclick="offlineQuizFragenAuswahl()">➡ Fragen auswählen</button>
+      </div>`;
+    return;
+  }
+
+  // ── FAKTEN ─────────────────────────────────────────────────────
+  if (os.phase === 'fakten') {
+    const anzahlSessions = (state.kegelsessions || []).length;
+    const aktiveSaison = state.aktiveSaison;
+    const saisonSessions = aktiveSaison
+      ? (state.kegelsessions || []).filter(s => s.saisonId === aktiveSaison.id).length
+      : null;
+
+    container.innerHTML = `
+      <div class="card">
+        <div style="text-align:center;margin-bottom:1.25rem">
+          <div style="font-size:1.6rem;margin-bottom:.4rem">🎳</div>
+          <div style="font-size:1.1rem;font-weight:800">Bevor's losgeht…</div>
+        </div>
+
+        <!-- Kegelstats -->
+        <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:12px;padding:1rem;margin-bottom:.75rem;color:white;text-align:center">
+          <div style="font-size:.75rem;opacity:.8;margin-bottom:.25rem;text-transform:uppercase;letter-spacing:.06em">Wir haben schon gekegelt</div>
+          <div style="font-size:2.4rem;font-weight:900;line-height:1">${anzahlSessions}</div>
+          <div style="font-size:.8rem;opacity:.85;margin-top:.15rem">Kegelabende insgesamt</div>
+          ${saisonSessions !== null ? `<div style="margin-top:.5rem;font-size:.78rem;background:rgba(255,255,255,.15);border-radius:8px;padding:.3rem .6rem;display:inline-block">davon ${saisonSessions} in dieser Saison</div>` : ''}
+        </div>
+
+        <!-- Punkteverteilung -->
+        <div style="background:var(--bg);border-radius:12px;padding:1rem;margin-bottom:1rem">
+          <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.6rem">📊 So werden Punkte vergeben</div>
+
+          <div style="font-size:.82rem;font-weight:700;color:var(--primary);margin-bottom:.3rem">🔤 Multiple-Choice-Fragen</div>
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+            <span style="background:#dbeafe;color:#1d4ed8;font-weight:800;font-size:1rem;border-radius:8px;padding:.25rem .6rem">+3</span>
+            <span style="font-size:.83rem">Punkte für die richtige Antwort</span>
+          </div>
+
+          <div style="font-size:.82rem;font-weight:700;color:var(--primary);margin-bottom:.3rem">🔢 Schätzfragen</div>
+          <div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.4rem">
+            ${[['1.','#16a34a','5'],['2.','#2563eb','3'],['3.','#d97706','2'],['4.+','#6b7280','1']].map(([platz,col,pts]) =>
+              `<div style="background:white;border:1.5px solid ${col};border-radius:8px;padding:.3rem .55rem;display:flex;align-items:center;gap:.35rem">
+                <span style="font-size:.72rem;font-weight:700;color:${col}">${platz}</span>
+                <span style="font-weight:800;font-size:.9rem;color:${col}">+${pts}</span>
+              </div>`
+            ).join('')}
+          </div>
+          <div style="display:flex;align-items:center;gap:.4rem">
+            <span style="background:#fef3c7;color:#92400e;font-weight:800;font-size:.85rem;border-radius:8px;padding:.2rem .5rem">+2</span>
+            <span style="font-size:.78rem;color:var(--text-muted)">Bonuspunkte bei exakter Antwort</span>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-full" onclick="offlineQuizFaktenWeiter()" style="font-size:1rem;padding:.75rem">
+          🚀 Los geht's! (${os.fragen.length} Fragen)
+        </button>
       </div>`;
     return;
   }
@@ -9135,7 +9227,9 @@ function renderOfflineQuiz() {
           </div>
         `}
 
-        <div style="background:#f0fdf4;border-radius:8px;padding:.6rem .75rem;margin-bottom:1rem;font-size:.83rem;color:#15803d">💡 ${frage.erklaerung}</div>
+        <div style="background:#f0fdf4;border-radius:8px;padding:.6rem .75rem;margin-bottom:${frage.fakt?'.5rem':'1rem'};font-size:.83rem;color:#15803d">💡 ${frage.erklaerung}</div>
+
+        ${frage.fakt ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem .75rem;margin-bottom:1rem;font-size:.83rem;color:#92400e;white-space:pre-line">📌 ${frage.fakt}</div>` : ''}
 
         <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">Antworten & Punkte</div>
         ${os.reihenfolge.map(p => {

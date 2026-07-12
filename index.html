@@ -9246,11 +9246,17 @@ function renderOfflineQuiz() {
         <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe zum Aus- oder Abwählen. Genau 10 auswählen.</p>
         ${pool.map((f, i) => {
           const isSelected = sel.includes(i);
+          const detailsHTML = f.typ === 'mc'
+            ? `<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem">
+                ${f.antworten.map(a => `<span style="font-size:.72rem;padding:2px 7px;border-radius:20px;background:${isSelected?'#dbeafe':'var(--bg-page)'};color:var(--text-muted);border:1px solid ${isSelected?'#bfdbfe':'var(--border)'}">${a}</span>`).join('')}
+               </div>`
+            : `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem">Schätzung in ${f.einheit||'Einheiten'}</div>`;
           return `<div onclick="offlineToggleFrage(${i})" style="display:flex;align-items:start;gap:.75rem;padding:.75rem;border-radius:10px;border:2px solid ${isSelected?'var(--primary)':'var(--border)'};background:${isSelected?'#eff6ff':'white'};margin-bottom:.4rem;cursor:pointer">
-            <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${isSelected?'var(--primary)':'var(--border)'};background:${isSelected?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.75rem;font-weight:800;color:white">${isSelected?sel.indexOf(i)+1:''}</div>
+            <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${isSelected?'var(--primary)':'var(--border)'};background:${isSelected?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:.75rem;font-weight:800;color:white">${isSelected?sel.indexOf(i)+1:''}</div>
             <div style="flex:1">
               <div style="font-size:.78rem;font-weight:700;color:${isSelected?'var(--primary)':'var(--text-muted)'};margin-bottom:.15rem">${f.typ==='mc'?'🔤 Multiple Choice':'🔢 Schätzfrage'}</div>
               <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
+              ${detailsHTML}
             </div>
           </div>`;
         }).join('')}

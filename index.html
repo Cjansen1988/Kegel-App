@@ -2385,12 +2385,12 @@ function renderKgMatrix() {
   tbody += `<tr style="font-weight:700;background:var(--bg)"><td class="name-col" style="font-weight:700;background:var(--bg)">GESAMT</td>`;
   strafen.forEach(s => {
     const colTotal = s.invertiert
-      ? spieler.reduce((sum,m) => sum + (aktiveSession.counts[m.name]?.[s.name + ' (geworfen)']||0), 0)
+      ? 0
       : spieler.reduce((sum,m) => sum + (aktiveSession.counts[m.name]?.[s.name]||0), 0);
     tbody += `<td style="text-align:center;padding:8px 4px;font-weight:700;color:${colTotal>0?'var(--primary)':'var(--text-muted)'};">${colTotal > 0 ? colTotal : '·'}</td>`;
     if (s.invertiert) {
-      const chargesTotal = spieler.reduce((sum,m) => sum + (aktiveSession.counts[m.name]?.[s.name]||0), 0);
-      tbody += `<td style="background:#f0fdf4;text-align:center;padding:8px 4px;font-weight:700;color:${chargesTotal>0?'#16a34a':'var(--text-muted)'};">${chargesTotal > 0 ? chargesTotal : '·'}</td>`;
+      const geworfenAnzahl = spieler.filter(m => (aktiveSession.counts[m.name]?.[s.name + ' (geworfen)']||0) > 0).length;
+      tbody += `<td style="background:#f0fdf4;text-align:center;padding:8px 4px;font-weight:700;color:${geworfenAnzahl>0?'#16a34a':'var(--text-muted)'};">${geworfenAnzahl > 0 ? geworfenAnzahl : '·'}</td>`;
     }
   });
   tbody += `<td class="sum-col" style="background:#eff6ff;font-weight:800;color:var(--primary)">${formatEur(gesamtTotal)}</td></tr>`;
@@ -7957,15 +7957,16 @@ function renderSetzSpiel() {
   }).join('');
 
   // Pending: nach Wurf Spalte wählen
+  const einEuroFrei = scores[aktiverSpieler][4] === null;
   const spaltenwahl = pendingWurf !== null ? `
     <div style="background:#fef3c7;border-radius:8px;padding:.75rem;margin-top:.75rem">
       <div style="font-size:.85rem;font-weight:700;margin-bottom:.5rem;color:#92400e">
-        ${aktiverSpieler} hat <strong>${pendingWurf}</strong> geworfen — Spalte wählen:
+        ${aktiverSpieler} hat <strong>${pendingWurf}</strong> geworfen${pendingWurf === 9 && !einEuroFrei ? ' <span style="font-weight:400">(1€ belegt — freie Spalte wählen)</span>' : ' — Spalte wählen:'}
       </div>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap">
         ${SETZEN_SPALTEN.map((sp, i) => {
           const besetzt = scores[aktiverSpieler][i] !== null;
-          const muss1euro = pendingWurf === 9 && i !== 4;
+          const muss1euro = pendingWurf === 9 && i !== 4 && einEuroFrei;
           const disabled = besetzt || muss1euro;
           const grund = besetzt ? 'belegt' : muss1euro ? '9→1€' : '';
           return `<button onclick="setzePlatzieren(${i})"

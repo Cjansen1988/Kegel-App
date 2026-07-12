@@ -4529,7 +4529,7 @@ function renderStatistiken() {
   const gesamtBetrag   = strafen.reduce((s,x) => s + Number(x.betrag), 0);
   const offenBetrag    = strafen.filter(s => !s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
   const bezahltBetrag  = strafen.filter(s => s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
-  const anzAbende      = pastTermine.length + sessions.length;
+  const anzAbende      = sessions.length;
   const avgProAbend    = anzAbende > 0 ? gesamtBetrag / anzAbende : 0;
   const hochsteStrafe  = strafen.reduce((m,s) => Number(s.betrag) > m ? Number(s.betrag) : m, 0);
   const spielVerl      = (state.spielverluste||[]).length;
@@ -4561,11 +4561,8 @@ function renderStatistiken() {
       <span style="color:var(--text-muted)">${m.count} Einträge</span>
     </div>`).join('') + `</div>`;
 
-  // Anwesenheitsranking
-  const alleAbende = [
-    ...pastTermine.map(t => ({ datum: t.datum, anwesend: t.anmeldungen||[] })),
-    ...sessions.map(s => ({ datum: s.datum, anwesend: s.angemeldet||[] }))
-  ];
+  // Anwesenheitsranking — nur tatsächlich gespielte Sessions
+  const alleAbende = sessions.map(s => ({ datum: s.datum, anwesend: s.angemeldet||[] }));
   const anwSummen = state.mitglieder.map(m => ({
     name: m.name.split(' ')[0],
     fullName: m.name,
@@ -4613,10 +4610,7 @@ function renderMitgliedStats() {
   if (!name) return;
   const mStrafen = state.strafen.filter(s=>s.mitglied===name).slice().sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
   const pastTermine = state.termine.filter(t=>t.datum<today()&&!t.ausfall);
-  const alleAbendeM = [
-    ...pastTermine.map(t => ({ anwesend: t.anmeldungen||[] })),
-    ...(state.kegelsessions||[]).map(s => ({ anwesend: s.angemeldet||[] }))
-  ];
+  const alleAbendeM = (state.kegelsessions||[]).map(s => ({ anwesend: s.angemeldet||[] }));
   const anwesend = alleAbendeM.filter(a => a.anwesend.includes(name)).length;
   const offen = mStrafen.filter(s=>!s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0);
   const bezahlt = mStrafen.filter(s=>s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0);

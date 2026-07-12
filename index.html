@@ -8588,7 +8588,7 @@ function generiereQuizFragen(anzahl = 10) {
   while (basis.length < Math.min(anzahl, fragen.length + 1)) {
     basis.push({ typ:'mc', frage:`Wer hat die wenigsten Strafen diese Saison?`, antworten: pick4(strafRanking[strafRanking.length-1]?.name || mitglieder[0], mitglieder), richtig: strafRanking[strafRanking.length-1]?.name || mitglieder[0], erklaerung:'Die sauberste Person der Saison!' });
   }
-  return basis.slice(0, anzahl);
+  return basis.slice(0, anzahl).map(f => ({ ...f, quelle: f.quelle || 'saison' }));
 }
 
 // ---- BLACKJACK ----
@@ -8902,59 +8902,59 @@ function renderBlackjack() {
 
 const QUIZ_OFFLINE_FRAGEN = [
   // ── Multiple Choice ───────────────────────────────────────────
-  { typ:'mc', frage:'Wie viele Kegel stehen beim deutschen Kegeln?',
+  { typ:'mc', quelle:'standard', frage:'Wie viele Kegel stehen beim deutschen Kegeln?',
     antworten:['7','8','10','9'], richtig:'9',
     erklaerung:'Beim deutschen Kegeln stehen 9 Kegel in einer Raute — beim Bowling sind es 10!' },
 
-  { typ:'mc', frage:'Was bedeutet "Pumpe" beim Kegeln?',
+  { typ:'mc', quelle:'standard', frage:'Was bedeutet "Pumpe" beim Kegeln?',
     antworten:['Alle 9 getroffen','7 Kegel getroffen','Ungültiger Wurf','Kein einziger Kegel getroffen'],
     richtig:'Kein einziger Kegel getroffen',
     erklaerung:'Pumpe = 0 Hölzer — der schlimmste Wurf beim Kegeln!' },
 
-  { typ:'mc', frage:'Was ist "Alle 9" beim Kegeln?',
+  { typ:'mc', quelle:'standard', frage:'Was ist "Alle 9" beim Kegeln?',
     antworten:['9 Würfe in Folge','Nur 9 Punkte','Ein ungültiger Wurf','Alle 9 Kegel mit einem Wurf abräumen'],
     richtig:'Alle 9 Kegel mit einem Wurf abräumen',
     erklaerung:'"Alle 9" = alle Kegel mit einem einzigen Wurf abräumen — der Traumwurf!' },
 
-  { typ:'mc', frage:'In welcher Formation stehen die 9 Kegel beim deutschen Kegeln?',
+  { typ:'mc', quelle:'standard', frage:'In welcher Formation stehen die 9 Kegel beim deutschen Kegeln?',
     antworten:['Dreieck','Linie','Kreis','Raute'],
     richtig:'Raute',
     erklaerung:'Die 9 Kegel stehen in einer Raute (Diamant-Formation).' },
 
-  { typ:'mc', frage:'Wie viele Reifen braucht ein Bus beim Spiel "Bus bauen" um zu gewinnen?',
+  { typ:'mc', quelle:'standard', frage:'Wie viele Reifen braucht ein Bus beim Spiel "Bus bauen" um zu gewinnen?',
     antworten:['4 Reifen','8 Reifen','5 Reifen','6 Reifen'],
     richtig:'6 Reifen',
     erklaerung:'Ein Bus braucht genau 6 Reifen — dann ist er fertig und gewinnt!' },
 
-  { typ:'mc', frage:'Was passiert bei einer Schnapszahl (z.B. 33) beim Spiel "Bis 100"?',
+  { typ:'mc', quelle:'standard', frage:'Was passiert bei einer Schnapszahl (z.B. 33) beim Spiel "Bis 100"?',
     antworten:['Bonuspunkte fürs Team','Der Gegner verliert Punkte','Man darf nochmal werfen','Der Punktestand wird auf 0 zurückgesetzt'],
     richtig:'Der Punktestand wird auf 0 zurückgesetzt',
     erklaerung:'Schnapszahlen (11, 22, 33, ..., 99) setzen den Punktestand zurück auf 0 — Aufgepasst!' },
 
-  { typ:'mc', frage:'Was zählt "Pumpe" beim TAL-Abschnitt bei "Berg & Tal"?',
+  { typ:'mc', quelle:'standard', frage:'Was zählt "Pumpe" beim TAL-Abschnitt bei "Berg & Tal"?',
     antworten:['+0 Punkte','+5 Punkte','−5 Punkte','−10 Punkte'],
     richtig:'−10 Punkte',
     erklaerung:'Im Tal-Abschnitt ist Pumpe besonders schlimm: −10 Punkte, schlimmer als eine geworfene 9 (−9)!' },
 
-  { typ:'mc', frage:'Welcher Spieler gewinnt bei "Russisch Roulette"?',
+  { typ:'mc', quelle:'standard', frage:'Welcher Spieler gewinnt bei "Russisch Roulette"?',
     antworten:['Wer zuerst stirbt','Wer am meisten wirft','Wer die höchste Zahl wirft','Der letzte Überlebende'],
     richtig:'Der letzte Überlebende',
     erklaerung:'Bei Russisch Roulette gewinnt der letzte Spieler, der noch Leben übrig hat!' },
 
   // ── Schätzfragen ──────────────────────────────────────────────
-  { typ:'schaetzung', frage:'Wie viele Würfe hat jeder Spieler beim Spiel "Berg & Tal" insgesamt?',
+  { typ:'schaetzung', quelle:'standard', frage:'Wie viele Würfe hat jeder Spieler beim Spiel "Berg & Tal" insgesamt?',
     richtig:10, einheit:'Würfe',
     erklaerung:'5 Bergwürfe (addieren) + 5 Talwürfe (subtrahieren) = 10 Würfe.' },
 
-  { typ:'schaetzung', frage:'Wie viele Schnapszahlen gibt es zwischen 1 und 100?',
+  { typ:'schaetzung', quelle:'standard', frage:'Wie viele Schnapszahlen gibt es zwischen 1 und 100?',
     richtig:9, einheit:'',
     erklaerung:'11, 22, 33, 44, 55, 66, 77, 88, 99 — genau 9 Schnapszahlen!' },
 
-  { typ:'schaetzung', frage:'Wie viele Felder hat unser 4-Gewinnt-Spielfeld (Spalten × Reihen)?',
+  { typ:'schaetzung', quelle:'standard', frage:'Wie viele Felder hat unser 4-Gewinnt-Spielfeld (Spalten × Reihen)?',
     richtig:63, einheit:'Felder',
     erklaerung:'9 Spalten × 7 Reihen = 63 Felder auf dem Spielfeld.' },
 
-  { typ:'schaetzung', frage:'Wie hoch ist der maximale Punktestand aus den 5 Berg-Würfen bei "Berg & Tal"?',
+  { typ:'schaetzung', quelle:'standard', frage:'Wie hoch ist der maximale Punktestand aus den 5 Berg-Würfen bei "Berg & Tal"?',
     richtig:45, einheit:'Punkte',
     erklaerung:'5 × 9 Hölzer = 45 Punkte — nur mit fünfmal "Alle 9" erreichbar!' },
 ];
@@ -8973,7 +8973,7 @@ function getDynamischeQuizFragen() {
 
   return [
     {
-      typ: 'schaetzung',
+      typ: 'schaetzung', quelle: 'club',
       frage: 'Wie viele Pumpen wurden bei den Blackout Boys insgesamt geworfen?',
       richtig: pumpenTotal || 1,
       einheit: 'Pumpen',
@@ -8981,7 +8981,7 @@ function getDynamischeQuizFragen() {
       fakt: `💡 Das sind durchschnittlich 91,3 Pumpen pro Kegelabend. Ein verlässlicher Wert! 🎳`
     },
     {
-      typ: 'schaetzung',
+      typ: 'schaetzung', quelle: 'club',
       frage: 'Wie viele Klingeln hat Lucas Kossen durchschnittlich pro Kegeln (an dem er da war) geworfen?',
       richtig: lucasAvg || 7,
       einheit: 'Klingeln',
@@ -8989,7 +8989,7 @@ function getDynamischeQuizFragen() {
       fakt: `🔔 Lucas Kossen: ${lucasSessions}x dabei, ${lucasKlingeln}x die Klingel — das sind 25% aller Klingeln!\n📊 Platz 2: Lukas Cordes (9×) · Platz 3: Michael Runde (6×)`
     },
     {
-      typ: 'mc',
+      typ: 'mc', quelle: 'club',
       frage: 'Wer hält den Rekord für die meisten Pumpen in einem einzigen Kegelabend?',
       antworten: ['Dimi Renje', 'Thorben Kloppe', 'Christian Wübben', 'Lucas Kossen'],
       richtig: 'Dimi Renje',
@@ -8997,6 +8997,12 @@ function getDynamischeQuizFragen() {
       fakt: `🤯 Dimi hat am 05.06.2026 grandiose 23 Pumpen an einem einzigen Abend geworfen — unangefochtener Pumpen-König!`
     },
   ];
+}
+
+function quizQuelleBadge(f) {
+  if (f.quelle === 'club')     return `<span style="font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap">🏠 Club</span>`;
+  if (f.quelle === 'standard') return `<span style="font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;white-space:nowrap">🎳 Kegel</span>`;
+  return `<span style="font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;white-space:nowrap">📊 Saison</span>`;
 }
 
 let quizOfflineState = null;
@@ -9254,7 +9260,10 @@ function renderOfflineQuiz() {
           return `<div onclick="offlineToggleFrage(${i})" style="display:flex;align-items:start;gap:.75rem;padding:.75rem;border-radius:10px;border:2px solid ${isSelected?'var(--primary)':'var(--border)'};background:${isSelected?'#eff6ff':'white'};margin-bottom:.4rem;cursor:pointer">
             <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${isSelected?'var(--primary)':'var(--border)'};background:${isSelected?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:.75rem;font-weight:800;color:white">${isSelected?sel.indexOf(i)+1:''}</div>
             <div style="flex:1">
-              <div style="font-size:.78rem;font-weight:700;color:${isSelected?'var(--primary)':'var(--text-muted)'};margin-bottom:.15rem">${f.typ==='mc'?'🔤 Multiple Choice':'🔢 Schätzfrage'}</div>
+              <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.2rem">
+                <span style="font-size:.78rem;font-weight:700;color:${isSelected?'var(--primary)':'var(--text-muted)'}">${f.typ==='mc'?'🔤 MC':'🔢 Schätzung'}</span>
+                ${quizQuelleBadge(f)}
+              </div>
               <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
               ${detailsHTML}
             </div>
@@ -9479,7 +9488,10 @@ function renderQuizAdmin() {
           return `<div onclick="toggleFrageAuswahl(${i})" style="display:flex;align-items:start;gap:.75rem;padding:.75rem;border-radius:10px;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'#eff6ff':'white'};margin-bottom:.4rem;cursor:pointer">
             <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:.75rem;font-weight:800;color:white">${sel?ausgewaehlt.indexOf(i)+1:''}</div>
             <div style="flex:1">
-              <div style="font-size:.78rem;font-weight:700;color:${sel?'var(--primary)':'var(--text-muted)'};margin-bottom:.15rem">${f.typ==='mc'?'🔤 Multiple Choice':'🔢 Schätzfrage'}</div>
+              <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.2rem">
+                <span style="font-size:.78rem;font-weight:700;color:${sel?'var(--primary)':'var(--text-muted)'}">${f.typ==='mc'?'🔤 MC':'🔢 Schätzung'}</span>
+                ${quizQuelleBadge(f)}
+              </div>
               <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
               ${detailsHTML}
             </div>

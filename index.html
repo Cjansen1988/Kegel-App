@@ -5193,18 +5193,30 @@ function renderKassePrognose() {
   const ist = state.istBestand;
   const istGesamt = ist ? (Number(ist.konto) || 0) + (Number(ist.bar) || 0) : 0;
 
-  // Ø monatliche Strafen aus state.strafen berechnen
+  // Ø pro Event (Kegeln-Session ODER Ausfall zählt je als ein Event)
   const strafen = state.strafen || [];
-  const byMonth = {};
-  strafen.forEach(s => {
-    const m = (s.datum || '').substring(0, 7); // YYYY-MM
-    if (!m || m.length < 7) return;
-    byMonth[m] = (byMonth[m] || 0) + Number(s.betrag || 0);
-  });
-  const monthValues = Object.values(byMonth);
-  const avgMonthly = monthValues.length > 0
-    ? monthValues.reduce((a, b) => a + b, 0) / monthValues.length
-    : 0;
+  const sessions = state.kegelsessions || [];
+
+  // Eindeutige Ausfall-Events (je Datum mit Termin-Ausfall-Strafe = 1 Event)
+  const ausfallDaten = [...new Set(
+    strafen.filter(s => s.kategorie === 'Termin Ausfall').map(s => s.datum).filter(Boolean)
+  )];
+
+  const totalEvents = sessions.length + ausfallDaten.length;
+  const totalStrafen = strafen.reduce((sum, s) => sum + Number(s.betrag || 0), 0);
+  const avgProEvent = totalEvents > 0 ? totalStrafen / totalEvents : 0;
+
+  // Events-pro-Monat aus historischen Daten ableiten
+  const allEventDates = [...sessions.map(s => s.datum), ...ausfallDaten].filter(Boolean).sort();
+  let eventsPerMonth = 2; // Fallback
+  if (allEventDates.length >= 2) {
+    const msPerMonth = 1000 * 60 * 60 * 24 * 30.44;
+    const span = Math.max(1, (new Date(allEventDates[allEventDates.length - 1]) - new Date(allEventDates[0])) / msPerMonth);
+    eventsPerMonth = totalEvents / span;
+  }
+
+  const avgMonthly = avgProEvent * eventsPerMonth;
+  const monthValues = allEventDates; // nur für Basis-Anzeige unten
 
   // Monate berechnen
   let months;
@@ -5271,10 +5283,11 @@ function renderKassePrognose() {
       </svg>
     </div>
     <div style="font-size:.73rem;color:var(--text-muted);display:flex;gap:.85rem;flex-wrap:wrap">
-      <span>📊 Ø Strafen/Monat: <strong style="color:#1e293b">${formatEur(avgMonthly)}</strong></span>
+      <span>🎳 Ø pro Abend: <strong style="color:#1e293b">${formatEur(avgProEvent)}</strong></span>
+      <span>📆 Abende/Monat: <strong style="color:#1e293b">${eventsPerMonth.toFixed(1)}</strong></span>
       <span>🏟️ Bahn/Monat: <strong style="color:#b91c1c">−€ 40,00</strong></span>
       <span>📈 Netto: <strong style="color:${netProMonat>=0?'#15803d':'#b91c1c'}">${netProMonat>=0?'+':''}${formatEur(netProMonat)}/M</strong></span>
-      ${monthValues.length > 0 ? `<span>📅 Basis: <strong style="color:#1e293b">${monthValues.length} Mon.</strong></span>` : `<span style="color:#b91c1c">⚠️ Noch keine Strafen-Daten</span>`}
+      ${totalEvents > 0 ? `<span>📅 Basis: <strong style="color:#1e293b">${sessions.length} Kegeln + ${ausfallDaten.length} Ausfall</strong></span>` : `<span style="color:#b91c1c">⚠️ Noch keine Daten</span>`}
     </div>`;
 }
 

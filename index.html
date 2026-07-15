@@ -1517,22 +1517,49 @@ function renderMemberOverview() {
   const alleSessionen = state.kegelsessions || [];
   const anwesend = alleSessionen.filter(s => (s.angemeldet||[]).includes(name)).length;
   const nichtDabei = alleSessionen.filter(s => !(s.angemeldet||[]).includes(name)).length;
-  const naechster = state.termine.filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum))[0];
-  const istAngemeldet = naechster ? (naechster.anmeldungen||[]).includes(name) : null;
+  const alleKommTermine = state.termine.filter(t => t.datum >= today()).sort((a,b) => a.datum.localeCompare(b.datum));
+  const naechster = alleKommTermine[0];
+  const naechsterNichtAbgesagt = alleKommTermine.find(t => !t.ausfall);
 
   container.innerHTML = `
     <!-- Nächster Termin -->
     <div class="overview-card">
       <h3>📅 Nächster Termin</h3>
-      ${naechster ? `
-        <div style="font-weight:700;font-size:1rem">${naechster.name}</div>
-        <div style="color:var(--text-muted);font-size:.875rem;margin:.25rem 0">${formatDate(naechster.datum)} um ${naechster.zeit} Uhr${naechster.ort?' · 📍'+naechster.ort:''}</div>
-        ${_memberResponseButtons(naechster.id,
-            (naechster.anmeldungen||[]).includes(name),
-            (naechster.abmeldungen||[]).includes(name),
-            (naechster.vielleicht||[]).includes(name))}
-        ${memberTerminTeilnehmerListe(naechster)}
-      ` : '<div class="empty-state" style="padding:1rem 0">Keine Termine geplant</div>'}
+      ${!naechster
+        ? '<div class="empty-state" style="padding:1rem 0">Keine Termine geplant</div>'
+        : naechster.ausfall
+          ? (() => {
+              const ausfallStrafe = (state.strafen||[]).find(s =>
+                s.mitglied === name && s.kategorie === 'Termin Ausfall' && s.datum === naechster.datum);
+              return `
+                <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;padding:.85rem;margin-bottom:.75rem">
+                  <div style="font-weight:800;color:#b91c1c;font-size:1rem;margin-bottom:.3rem">🚫 Kegeln ausgefallen!</div>
+                  <div style="font-size:.875rem;color:#991b1b;font-weight:600">${naechster.name} · ${formatDate(naechster.datum)}${naechster.zeit?' um '+naechster.zeit+' Uhr':''}${naechster.ort?' · 📍'+naechster.ort:''}</div>
+                  ${ausfallStrafe ? `<div style="margin-top:.6rem;background:#fee2e2;border-radius:8px;padding:.5rem .75rem;font-size:.83rem;display:flex;justify-content:space-between;align-items:center">
+                    <span style="color:#b91c1c;font-weight:600">💸 Ausfall-Strafe</span>
+                    <span style="font-weight:800;color:#b91c1c">${formatEur(ausfallStrafe.betrag)} <span style="font-weight:400;font-size:.75rem">(${ausfallStrafe.bezahlt?'bezahlt':'offen'})</span></span>
+                  </div>` : ''}
+                </div>
+                ${naechsterNichtAbgesagt ? `
+                  <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:.85rem">
+                    <div style="font-size:.72rem;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem">📅 Nächstes Kegeln</div>
+                    <div style="font-weight:700;font-size:1rem">${naechsterNichtAbgesagt.name}</div>
+                    <div style="color:var(--text-muted);font-size:.875rem;margin:.25rem 0">${formatDate(naechsterNichtAbgesagt.datum)}${naechsterNichtAbgesagt.zeit?' um '+naechsterNichtAbgesagt.zeit+' Uhr':''}${naechsterNichtAbgesagt.ort?' · 📍'+naechsterNichtAbgesagt.ort:''}</div>
+                    ${_memberResponseButtons(naechsterNichtAbgesagt.id,
+                        (naechsterNichtAbgesagt.anmeldungen||[]).includes(name),
+                        (naechsterNichtAbgesagt.abmeldungen||[]).includes(name),
+                        (naechsterNichtAbgesagt.vielleicht||[]).includes(name))}
+                    ${memberTerminTeilnehmerListe(naechsterNichtAbgesagt)}
+                  </div>` : '<div style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem">Kein weiterer Termin geplant.</div>'}`;
+            })()
+          : `
+              <div style="font-weight:700;font-size:1rem">${naechster.name}</div>
+              <div style="color:var(--text-muted);font-size:.875rem;margin:.25rem 0">${formatDate(naechster.datum)} um ${naechster.zeit} Uhr${naechster.ort?' · 📍'+naechster.ort:''}</div>
+              ${_memberResponseButtons(naechster.id,
+                  (naechster.anmeldungen||[]).includes(name),
+                  (naechster.abmeldungen||[]).includes(name),
+                  (naechster.vielleicht||[]).includes(name))}
+              ${memberTerminTeilnehmerListe(naechster)}`}
     </div>
 
     <!-- Offene Strafen -->

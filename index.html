@@ -5206,17 +5206,19 @@ function renderKassePrognose() {
   const totalStrafen = strafen.reduce((sum, s) => sum + Number(s.betrag || 0), 0);
   const avgProEvent = totalEvents > 0 ? totalStrafen / totalEvents : 0;
 
-  // Events-pro-Monat aus historischen Daten ableiten
-  const allEventDates = [...sessions.map(s => s.datum), ...ausfallDaten].filter(Boolean).sort();
-  let eventsPerMonth = 2; // Fallback
-  if (allEventDates.length >= 2) {
-    const msPerMonth = 1000 * 60 * 60 * 24 * 30.44;
-    const span = Math.max(1, (new Date(allEventDates[allEventDates.length - 1]) - new Date(allEventDates[0])) / msPerMonth);
-    eventsPerMonth = totalEvents / span;
-  }
+  // Events-pro-Monat: Monatsgruppen zählen, dann Durchschnitt
+  const eventsByMonth = {};
+  [...sessions.map(s => s.datum), ...ausfallDaten].filter(Boolean).forEach(d => {
+    const m = d.substring(0, 7);
+    if (m) eventsByMonth[m] = (eventsByMonth[m] || 0) + 1;
+  });
+  const monthCounts = Object.values(eventsByMonth);
+  const eventsPerMonth = monthCounts.length > 0
+    ? monthCounts.reduce((a, b) => a + b, 0) / monthCounts.length
+    : 2;
 
   const avgMonthly = avgProEvent * eventsPerMonth;
-  const monthValues = allEventDates; // nur für Basis-Anzeige unten
+  const monthValues = monthCounts; // nur für Basis-Anzeige unten
 
   // Monate berechnen
   let months;

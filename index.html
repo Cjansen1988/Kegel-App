@@ -3291,9 +3291,11 @@ function renderTermine() {
   const container = document.getElementById('termine-list');
   if (!state.termine.length) { container.innerHTML = '<div class="empty-state card">Noch keine Termine angelegt.</div>'; return; }
   const now = today();
-  const upcoming = state.termine.filter(t => t.datum >= now).sort((a,b) => a.datum.localeCompare(b.datum));
+  const upcoming = state.termine.filter(t => t.datum >= now && !t.ausfall).sort((a,b) => a.datum.localeCompare(b.datum));
+  const ausgefallen = state.termine.filter(t => t.datum >= now && t.ausfall).sort((a,b) => a.datum.localeCompare(b.datum));
   const past = [...state.termine.filter(t => t.datum < now)].sort((a,b) => b.datum.localeCompare(a.datum));
   let html = '';
+  if (ausgefallen.length) { html += '<div class="section-title" style="color:#dc2626">🚫 Ausgefallen</div>' + ausgefallen.map(t => renderTerminCard(t,false)).join(''); }
   if (upcoming.length) { html += '<div class="section-title">Bevorstehende Termine</div>' + upcoming.map(t => renderTerminCard(t,false)).join(''); }
   if (past.length) { html += '<div class="section-title">Vergangene Termine</div>' + past.map(t => renderTerminCard(t,true)).join(''); }
   container.innerHTML = html;
@@ -3309,14 +3311,17 @@ function renderTerminCard(t, isPast) {
   }).join('');
 
   const ausfallBanner = t.ausfall ? `
-    <div style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:8px;padding:.5rem .85rem;margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
-      <span style="font-weight:700;color:#b91c1c;font-size:.9rem">🚫 Termin ausgefallen${t.ausfallStrafe>0?' · Universalstrafe '+formatEur(t.ausfallStrafe)+' eingetragen':''}</span>
+    <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;padding:.75rem 1rem;margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
+      <div>
+        <div style="font-weight:800;color:#b91c1c;font-size:1rem">🚫 Kegeln findet nicht statt!</div>
+        ${t.ausfallStrafe>0?`<div style="font-size:.8rem;color:#991b1b;margin-top:.15rem">Universalstrafe ${formatEur(t.ausfallStrafe)} wurde eingetragen</div>`:''}
+      </div>
       <button class="btn btn-ghost btn-sm" onclick="terminAusfallRueckgaengig('${t.id}')" style="font-size:.75rem;color:#6b7280">↩ Rückgängig</button>
     </div>` : '';
 
-  return `<div class="card" style="${isPast?'opacity:.75':''}${t.ausfall?';border-color:#fca5a5':''}">
+  return `<div class="card" style="${isPast?'opacity:.75':''}${t.ausfall?';border:2px solid #fca5a5;background:#fff8f8':''}">
     <div class="card-title">
-      <span>${isPast?'⏮':'📅'} ${t.name} · ${formatDate(t.datum)}${t.zeit?' um '+t.zeit+' Uhr':''}${t.ort?' · 📍'+t.ort:''}${t.serieId?` <span class="tag tag-blue" style="font-size:.7rem">🔁 alle ${t.serieWochen} Wo.</span>`:''}${t.ausfall?` <span class="tag tag-red" style="font-size:.7rem">🚫 Ausfall</span>`:''}</span>
+      <span>${t.ausfall?'🚫':isPast?'⏮':'📅'} <span style="${t.ausfall?'text-decoration:line-through;color:#b91c1c;opacity:.8':''}">${t.name} · ${formatDate(t.datum)}${t.zeit?' um '+t.zeit+' Uhr':''}${t.ort?' · 📍'+t.ort:''}</span>${t.serieId?` <span class="tag tag-blue" style="font-size:.7rem">🔁 alle ${t.serieWochen} Wo.</span>`:''}</span>
       <div style="display:flex;gap:.4rem">
         ${!t.ausfall ? `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="terminAusfallDialog('${t.id}')">🚫 Ausfall</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="deleteTermin('${t.id}')">🗑</button>

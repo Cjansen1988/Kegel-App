@@ -1535,10 +1535,15 @@ function renderMemberOverview() {
                 <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;padding:.85rem;margin-bottom:.75rem">
                   <div style="font-weight:800;color:#b91c1c;font-size:1rem;margin-bottom:.3rem">🚫 Kegeln ausgefallen!</div>
                   <div style="font-size:.875rem;color:#991b1b;font-weight:600">${naechster.name} · ${formatDate(naechster.datum)}${naechster.zeit?' um '+naechster.zeit+' Uhr':''}${naechster.ort?' · 📍'+naechster.ort:''}</div>
-                  ${ausfallStrafe ? `<div style="margin-top:.6rem;background:#fee2e2;border-radius:8px;padding:.5rem .75rem;font-size:.83rem;display:flex;justify-content:space-between;align-items:center">
-                    <span style="color:#b91c1c;font-weight:600">💸 Ausfall-Strafe</span>
-                    <span style="font-weight:800;color:#b91c1c">${formatEur(ausfallStrafe.betrag)} <span style="font-weight:400;font-size:.75rem">(${ausfallStrafe.bezahlt?'bezahlt':'offen'})</span></span>
-                  </div>` : ''}
+                  ${ausfallStrafe
+                    ? `<div style="margin-top:.6rem;background:#fee2e2;border-radius:8px;padding:.5rem .75rem;font-size:.83rem;color:#b91c1c">
+                        💸 Es wurden <strong>${formatEur(ausfallStrafe.betrag)}</strong> Strafe für den Ausfall eingetragen${ausfallStrafe.bezahlt?' (bezahlt)':' – noch offen'}.
+                       </div>`
+                    : naechster.ausfallStrafe > 0
+                      ? `<div style="margin-top:.6rem;background:#fee2e2;border-radius:8px;padding:.5rem .75rem;font-size:.83rem;color:#b91c1c">
+                          💸 Es wurden <strong>${formatEur(naechster.ausfallStrafe)}</strong> Strafe für den Ausfall eingetragen.
+                         </div>`
+                      : ''}
                 </div>
                 ${naechsterNichtAbgesagt ? `
                   <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:.85rem">

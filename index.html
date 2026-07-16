@@ -2241,21 +2241,42 @@ function toggleKgAuswahl(chip) {
 function renderKgTerminListe() {
   const container = document.getElementById('kegeln-termin-liste');
   if (!container) return;
-  const upcoming = state.termine
+  const alle = state.termine
     .filter(t => t.datum >= today())
     .sort((a,b) => a.datum.localeCompare(b.datum))
     .slice(0, 6);
 
-  if (upcoming.length === 0) {
+  if (alle.length === 0) {
     container.innerHTML = '<div class="empty-state card" style="margin-bottom:1rem">Keine bevorstehenden Termine.</div>';
     return;
   }
 
-  container.innerHTML = '<div class="section-title" style="margin-bottom:.75rem">Termin auswählen</div>' +
-    upcoming.map(t => {
+  const ausgefallen = alle.filter(t => t.ausfall);
+  const upcoming   = alle.filter(t => !t.ausfall);
+
+  let html = '';
+
+  // Ausgefallene zuerst — rot, kein Starten-Button
+  ausgefallen.forEach(t => {
+    html += `<div class="card" style="margin-bottom:.75rem;border:2px solid #fca5a5;background:#fff8f8">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:.5rem">
+        <div>
+          <div style="font-weight:700;color:#b91c1c">🚫 <span style="text-decoration:line-through;opacity:.7">${t.name}</span></div>
+          <div style="font-size:.85rem;color:#b91c1c;margin:.2rem 0">📅 ${formatDate(t.datum)} ${t.zeit?'um '+t.zeit+' Uhr':''} ${t.ort?'· 📍'+t.ort:''}</div>
+          <div style="font-size:.82rem;font-weight:700;color:#b91c1c;margin-top:.3rem">Kegeln findet nicht statt!</div>
+        </div>
+        <span style="font-size:1.6rem;flex-shrink:0">🚫</span>
+      </div>
+    </div>`;
+  });
+
+  // Normale Termine
+  if (upcoming.length > 0) {
+    html += '<div class="section-title" style="margin-bottom:.75rem">Termin auswählen</div>';
+    upcoming.forEach(t => {
       const anm = t.anmeldungen || [];
       const offen = state.mitglieder.filter(m => !anm.includes(m.name) && !(t.abmeldungen||[]).includes(m.name));
-      return `<div class="card" style="margin-bottom:.75rem;cursor:pointer;border-color:var(--primary)" onclick="startKegelSession('${t.id}')">
+      html += `<div class="card" style="margin-bottom:.75rem;cursor:pointer;border-color:var(--primary)" onclick="startKegelSession('${t.id}')">
         <div style="display:flex;justify-content:space-between;align-items:start;gap:.5rem">
           <div>
             <div style="font-weight:700">${t.name}</div>
@@ -2269,7 +2290,10 @@ function renderKgTerminListe() {
           <button class="btn btn-primary btn-sm" style="white-space:nowrap;flex-shrink:0">🎳 Starten</button>
         </div>
       </div>`;
-    }).join('');
+    });
+  }
+
+  container.innerHTML = html;
 }
 
 function startKegelSession(terminId) {
@@ -2277,6 +2301,7 @@ function startKegelSession(terminId) {
   if (terminId) {
     const termin = state.termine.find(t => t.id === terminId);
     if (!termin) return;
+    if (termin.ausfall) { alert('🚫 Dieser Termin ist ausgefallen — kein Kegeln möglich.'); return; }
     name = termin.name + ' · ' + formatDate(termin.datum);
     angemeldet = termin.anmeldungen || [];
     // Alle Mitglieder: Angemeldete zuerst, dann Rest — sortiert

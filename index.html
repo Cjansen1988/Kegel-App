@@ -1309,6 +1309,7 @@ function subscribeAll() {
     state.tipps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderTermine();
     renderMemberTermine();
+    renderMemberOverview();
   }, () => {}));
 
   // WhatsApp Keys
@@ -1588,6 +1589,14 @@ function renderMemberOverview() {
                   (naechster.vielleicht||[]).includes(name))}
               ${memberTerminTeilnehmerListe(naechster)}`}
     </div>
+
+    <!-- Tippspiel -->
+    ${(() => {
+      const tippTermin = naechsterNichtAbgesagt;
+      if (!tippTermin) return '';
+      const block = renderMemberTippBlock(tippTermin, name);
+      return `<div class="overview-card" style="padding:0;overflow:hidden;border-color:#bae6fd">${block.replace('style="margin-top:.75rem"', 'style="margin-top:0"')}</div>`;
+    })()}
 
     <!-- Offene Strafen -->
     <div class="overview-card" style="${offeneStrafen.length > 0 ? 'border-color:#fecaca' : ''}">

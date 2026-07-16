@@ -5206,16 +5206,30 @@ function renderKassePrognose() {
   const allStrafen = state.strafen || [];
   const sessions = state.kegelsessions || [];
 
-  const strafen = allStrafen.filter(s => (s.datum || '') <= todayDate);
-  const ausfallDaten = [...new Set(
-    strafen.filter(s => s.kategorie === 'Termin Ausfall').map(s => s.datum).filter(Boolean)
-  )];
   // Tatsächliche Kegeldaten nutzen (nicht das Eintragsdatum)
   const pastSessions = sessions.filter(s => getSessionKegeldatum(s) <= todayDate);
 
+  // Einnahmen pro Session: gesamtEinnahmen (inkl. Abwesende) oder Fallback-Berechnung
+  const sessionIncome = pastSessions.reduce((sum, s) => {
+    if (s.gesamtEinnahmen) return sum + Number(s.gesamtEinnahmen);
+    const angemeldet = (s.angemeldet || []).length;
+    const kbTotal = (s.eintraege || []).reduce((t, e) => t + Number(e.betrag), 0);
+    if (angemeldet === 0) return sum + kbTotal;
+    const mitgliederAnz = s.mitgliederAnzahl || state.mitglieder.length;
+    const abwAnz = Math.max(0, mitgliederAnz - angemeldet);
+    const avg = kbTotal / angemeldet;
+    return sum + Math.round((kbTotal + angemeldet * 3 + abwAnz * (avg + 3)) * 100) / 100;
+  }, 0);
+
+  // Ausfall-Events (vergangen): Einnahmen aus Termin-Ausfall-Strafen summieren
+  const ausfallDaten = [...new Set(
+    allStrafen.filter(s => s.kategorie === 'Termin Ausfall' && (s.datum || '') <= todayDate).map(s => s.datum).filter(Boolean)
+  )];
+  const ausfallIncome = ausfallDaten.reduce((sum, datum) =>
+    sum + allStrafen.filter(s => s.kategorie === 'Termin Ausfall' && s.datum === datum).reduce((t, s) => t + Number(s.betrag || 0), 0), 0);
+
   const totalEvents = pastSessions.length + ausfallDaten.length;
-  const totalStrafen = strafen.reduce((sum, s) => sum + Number(s.betrag || 0), 0);
-  const avgProEvent = totalEvents > 0 ? totalStrafen / totalEvents : 0;
+  const avgProEvent = totalEvents > 0 ? (sessionIncome + ausfallIncome) / totalEvents : 0;
 
   // Events-pro-Monat: Gesamte Events ÷ Monate seit erstem Kegeln (echtes Datum)
   const allPastDates = [...pastSessions.map(s => getSessionKegeldatum(s)), ...ausfallDaten].filter(Boolean).sort();

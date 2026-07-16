@@ -849,6 +849,15 @@
     <div id="mitglied-stats-detail"></div>
   </div>
 
+  <!-- Mitgliedskarten -->
+  <div class="card">
+    <div class="card-title">🃏 Mitgliedskarten
+      <button class="btn btn-sm btn-ghost" onclick="renderMitgliedskarten(true)" style="font-size:.78rem">↺ Aktualisieren</button>
+    </div>
+    <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Jede Karte kann als PNG gespeichert und geteilt werden.</p>
+    <div id="mitgliedskarten-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px"></div>
+  </div>
+
 </div>
 
 <!-- KASSENBUCH -->
@@ -1286,6 +1295,7 @@ function subscribeAll() {
       ? alle.filter(s => s.saisonId === saisonId)
       : alle.filter(s => !s.saisonId);
     state.alleKegelsessions = alle;
+    mitgliedskartenRendered = false;
     renderKgStatistiken();
     renderFunFacts();
     renderKegelHistorie();
@@ -5200,6 +5210,7 @@ function renderStatistiken() {
   renderMitgliedStats();
   renderKgStatistiken();
   renderSpielVerluste();
+  renderMitgliedskarten(false);
 }
 
 function spielverlusteZuruecksetzen() {
@@ -11082,6 +11093,212 @@ function renderTVLiveSession(live) {
     </div>
     ${tippBar}`;
 }
+
+// ========== MITGLIEDSKARTEN ==========
+let mitgliedskartenRendered = false;
+
+function renderMitgliedskarten(force) {
+  const container = document.getElementById('mitgliedskarten-grid');
+  if (!container) return;
+  if (mitgliedskartenRendered && !force) return; // lazy: only draw once unless forced
+  mitgliedskartenRendered = true;
+  container.innerHTML = '';
+
+  const sessions = state.kegelsessions || [];
+  const saisonLabel = (state.aktiveSaison?.name || 'Aktuelle Saison').toUpperCase();
+
+  // Pre-compute per-member stats
+  const stats = {};
+  state.mitglieder.forEach(m => { stats[m.name] = { pumpen:0, pk:0, abende:0, strafen:0 }; });
+
+  sessions.forEach(s => {
+    const eintraege = s.eintraege || [];
+    // Pumpen & Abende
+    const pumpenPerPerson = {};
+    eintraege.forEach(e => {
+      if (!stats[e.mitglied]) return;
+      if (e.kategorie === 'Pumpe') {
+        stats[e.mitglied].pumpen += (e.anzahl || 1);
+        pumpenPerPerson[e.mitglied] = (pumpenPerPerson[e.mitglied]||0) + (e.anzahl||1);
+      }
+    });
+    // Abende: anyone in spieler array
+    (s.spieler || s.angemeldet || []).forEach(name => {
+      if (stats[name] !== undefined) stats[name].abende++;
+    });
+    // Pumpenkönig dieser Session
+    const maxP = Math.max(...Object.values(pumpenPerPerson), 0);
+    if (maxP > 0) {
+      Object.keys(pumpenPerPerson).forEach(name => {
+        if (pumpenPerPerson[name] === maxP && stats[name] !== undefined) stats[name].pk++;
+      });
+    }
+  });
+
+  // Strafen aus state.strafen (bereits nach aktiver Saison gefiltert)
+  (state.strafen || []).forEach(s => {
+    if (stats[s.mitglied] !== undefined) stats[s.mitglied].strafen += Number(s.betrag);
+  });
+
+  // Highlights ermitteln
+  const maxPumpen  = Math.max(...state.mitglieder.map(m => stats[m.name]?.pumpen || 0), 0);
+  const maxStrafen = Math.max(...state.mitglieder.map(m => stats[m.name]?.strafen || 0), 0);
+  const minStrafen = Math.min(...state.mitglieder.map(m => stats[m.name]?.strafen || 0));
+  const maxAbende  = Math.max(...state.mitglieder.map(m => stats[m.name]?.abende || 0), 0);
+
+  state.mitglieder.forEach((m, idx) => {
+    const s = stats[m.name] || { pumpen:0, pk:0, abende:0, strafen:0 };
+
+    // Subtitle
+    let title = 'Mitglied';
+    if (s.pumpen > 0 && s.pumpen === maxPumpen) title = 'Pumpenkönig der Saison';
+    else if (s.pk >= 3) title = 'Häufiger Pumpenkönig';
+    else if (s.pk === 1) title = 'War schon Pumpenkönig';
+    else if (s.strafen === minStrafen && s.strafen < maxStrafen) title = 'Wenigste Strafen';
+    else if (s.strafen === maxStrafen && maxStrafen > 0) title = 'Meiste Strafen';
+    else if (s.abende === maxAbende && maxAbende > 0) title = 'Immer dabei';
+
+    const color = avatarColor(m.name);
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px';
+
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'border-radius:12px;display:block;cursor:pointer';
+    canvas.title = 'Karte von ' + m.name + ' – zum Speichern klicken';
+
+    drawMitgliedsKarte(canvas, {
+      name: m.name,
+      title,
+      pumpen: s.pumpen,
+      pk: s.pk,
+      strafen: s.strafen.toFixed(2).replace('.', ','),
+      abende: s.abende,
+      color,
+      idx,
+      saisonLabel
+    });
+
+    canvas.onclick = () => downloadMitgliedsKarte(canvas, m.name);
+
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-ghost';
+    btn.style.cssText = 'font-size:.78rem;width:100%;max-width:200px';
+    btn.textContent = '⬇ Karte speichern';
+    btn.onclick = () => downloadMitgliedsKarte(canvas, m.name);
+
+    wrap.appendChild(canvas);
+    wrap.appendChild(btn);
+    container.appendChild(wrap);
+  });
+}
+
+function drawMitgliedsKarte(canvas, m) {
+  const S = 2;
+  const W = 200, H = 300;
+  canvas.width = W * S;
+  canvas.height = H * S;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(S, S);
+
+  function rr(x,y,w,h,r) {
+    ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+    ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+    ctx.lineTo(x+w,y+h-r);
+    ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    ctx.lineTo(x+r,y+h);
+    ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+    ctx.lineTo(x,y+r);
+    ctx.quadraticCurveTo(x,y,x+r,y);
+    ctx.closePath();
+  }
+
+  // Background
+  rr(0,0,W,H,12); ctx.fillStyle='#0f172a'; ctx.fill();
+  // Colored border
+  rr(1,1,W-2,H-2,11); ctx.strokeStyle=m.color; ctx.lineWidth=2; ctx.stroke();
+
+  // Top stripe
+  ctx.save(); rr(0,0,W,46,12); ctx.clip();
+  ctx.fillStyle=m.color; ctx.fillRect(0,0,W,46);
+  ctx.fillStyle='rgba(0,0,0,0.38)'; ctx.fillRect(0,0,W,46);
+  ctx.restore();
+  ctx.font='bold 10px -apple-system,sans-serif';
+  ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('BLACKOUT BOYS KEGELCLUB', W/2, 16);
+  ctx.font='8px -apple-system,sans-serif';
+  ctx.fillStyle='rgba(255,255,255,0.6)';
+  ctx.fillText(m.saisonLabel || 'AKTUELLE SAISON', W/2, 33);
+
+  // Avatar glow
+  const cx=W/2, cy=96, cr=32;
+  ctx.beginPath(); ctx.arc(cx,cy,cr+5,0,Math.PI*2);
+  ctx.fillStyle=m.color+'28'; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy,cr+2,0,Math.PI*2);
+  ctx.strokeStyle=m.color+'55'; ctx.lineWidth=1.5; ctx.stroke();
+  // Avatar circle
+  ctx.beginPath(); ctx.arc(cx,cy,cr,0,Math.PI*2);
+  ctx.fillStyle='#0f172a'; ctx.fill();
+  ctx.strokeStyle=m.color; ctx.lineWidth=2; ctx.stroke();
+  // Initial
+  ctx.font='bold 26px -apple-system,sans-serif';
+  ctx.fillStyle=m.color; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(m.name[0].toUpperCase(), cx, cy);
+
+  // Name
+  ctx.font='bold 20px -apple-system,sans-serif';
+  ctx.fillStyle='#f1f5f9'; ctx.textBaseline='alphabetic'; ctx.textAlign='center';
+  ctx.fillText(m.name, W/2, 148);
+
+  // Title (italic, accent color)
+  ctx.font='italic 9px -apple-system,sans-serif';
+  ctx.fillStyle=m.color+'bb';
+  let titleText = m.title;
+  if (ctx.measureText(titleText).width > W-24) titleText = titleText.substring(0,26) + '…';
+  ctx.fillText(titleText, W/2, 163);
+
+  // Dividers
+  ctx.strokeStyle='#334155'; ctx.lineWidth=.5;
+  ctx.beginPath(); ctx.moveTo(18,173); ctx.lineTo(W-18,173); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W/2,173); ctx.lineTo(W/2,263); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(18,219); ctx.lineTo(W-18,219); ctx.stroke();
+
+  // Stats 2×2
+  const statsArr=[
+    {l:'PUMPEN',      v:String(m.pumpen)},
+    {l:'PUMPENKÖNIG', v:m.pk+'×'},
+    {l:'STRAFEN',     v:'€ '+m.strafen},
+    {l:'ABENDE',      v:String(m.abende)},
+  ];
+  statsArr.forEach((s,i) => {
+    const col=i%2, row=Math.floor(i/2);
+    const x=col===0?W*0.27:W*0.73;
+    const y=197+row*46;
+    ctx.font='bold 16px -apple-system,sans-serif';
+    ctx.fillStyle='#f1f5f9'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillText(s.v, x, y);
+    ctx.font='7px -apple-system,sans-serif';
+    ctx.fillStyle='#64748b';
+    ctx.fillText(s.l, x, y+13);
+  });
+
+  // Bottom strip
+  ctx.fillStyle=m.color+'18'; ctx.fillRect(2,H-28,W-4,26);
+  ctx.font='bold 7px -apple-system,sans-serif';
+  ctx.fillStyle=m.color+'99'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('BLACKOUT BOYS · Nr.' + String(m.idx+1).padStart(2,'0'), W/2, H-14);
+}
+
+function downloadMitgliedsKarte(canvas, name) {
+  const a = document.createElement('a');
+  a.download = 'BlackoutBoys-' + name + '.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+// ========== END MITGLIEDSKARTEN ==========
 
 // ========== END TV MODUS ==========
 

@@ -568,6 +568,7 @@
       <button class="nav-tab" onclick="showPage('quiz',this)">🧠 Quiz</button>
       <button class="nav-tab" onclick="showPage('mitglieder',this)">⚙️ Einstellungen</button>
     </div>
+    <button class="logout-btn" onclick="zeigeHilfe()" style="margin-right:.3rem;background:rgba(255,255,255,.15)">❓ Hilfe</button>
     <button class="logout-btn" onclick="doLogout()">Abmelden</button>
   </div>
 </div>
@@ -582,6 +583,7 @@
     <button class="bnav-tab" onclick="showPage('statistiken',this)" data-page="statistiken"><span class="icon">📊</span>Stats</button>
     <button class="bnav-tab" onclick="showPage('quiz',this)" data-page="quiz"><span class="icon">🧠</span>Quiz</button>
     <button class="bnav-tab" onclick="showPage('mitglieder',this)" data-page="mitglieder"><span class="icon">⚙️</span>Einst.</button>
+    <button class="bnav-tab" onclick="zeigeHilfe()" data-page="hilfe"><span class="icon">❓</span>Hilfe</button>
   </div>
 </div>
 
@@ -10576,6 +10578,92 @@ async function fuehreImportAus(popup, neuImport) {
 }
 
 function renderAll() { renderTermine(); renderMitglieder(); updateSelects(); renderStrafKategorien(); updateStrafKatSelect(); renderStrafen(); renderStatistiken(); renderKassenbuch(); renderWaSection(); renderAfterKegelnSection(); renderAbendTeams(); }
+
+// ========== HILFE ==========
+function zeigeHilfe() {
+  if (document.getElementById('hilfe-modal')) return;
+  const sektionen = [
+    {
+      icon: '📅', titel: 'Termine',
+      inhalt: `Hier siehst du alle anstehenden Kegel-Abende. Du kannst dich für jeden Termin an- oder abmelden – oder "Vmtl." wählen wenn du noch nicht weißt ob du kommst.<br><br>
+      <strong>🚫 Ausgefallene Termine:</strong> Termine die nicht stattfinden werden rot markiert. Es können automatisch Strafen für alle eingetragen werden.<br><br>
+      <strong>🎯 Tippspiel:</strong> Vor jedem Kegeln kannst du auf drei Fragen tippen:<br>
+      &nbsp;&nbsp;• <strong>Pumpenkönig</strong>: Wer wirft die meisten Pumpen? → richtig = €1 Gutschrift, falsch = €1 Strafe<br>
+      &nbsp;&nbsp;• <strong>Neuner gesamt</strong>: Wie viele Neuner werden geworfen? → nächste Schätzung = €1 Gutschrift, weiteste = €1 Strafe<br>
+      &nbsp;&nbsp;• <strong>Pumpen gesamt</strong>: Wie viele Pumpen fallen insgesamt? → gleiche Regeln wie Neuner<br>
+      Tipps werden automatisch nach dem Kegeln abgerechnet.`
+    },
+    {
+      icon: '🎳', titel: 'Kegelbuch',
+      inhalt: `Das Kegelbuch wird während des Kegelns live geführt. Ein Admin startet eine Session (entweder über einen Termin oder manuell).<br><br>
+      <strong>Während der Session:</strong> Für jeden Wurf werden Strafen per Antippen eingetragen – Pumpe, Alle 9, Klingel, usw. Die Matrix zeigt alle Kegler mit ihren aktuellen Einträgen.<br><br>
+      <strong>Session abschließen:</strong> Nach dem Kegeln werden alle Strafen + Kegelbahn-Gebühr (€3 pro Person) in die Kasse übertragen. Wer nicht dabei war zahlt trotzdem €3 + den Durchschnitt der Anwesenden.`
+    },
+    {
+      icon: '💰', titel: 'Kasse & Strafen',
+      inhalt: `<strong>Strafen:</strong> Hier siehst du alle offenen und bezahlten Strafen. Als Mitglied siehst du deinen eigenen Saldo auf der Startseite.<br><br>
+      <strong>Zahlungsanfragen:</strong> Du kannst eine Zahlungsanfrage stellen, wenn du Geld an die Kasse überweisen möchtest. Der Admin bestätigt den Eingang.<br><br>
+      <strong>Kassenprognose:</strong> Zeigt die voraussichtliche Kassenentwicklung basierend auf vergangenen Sessions und zukünftigen Ausgaben (Bahn €40/Monat).<br><br>
+      <strong>Kassenbuch:</strong> Vollständige Übersicht aller Einnahmen und Ausgaben.`
+    },
+    {
+      icon: '📊', titel: 'Statistiken',
+      inhalt: `Die Statistiken zeigen die Saison-Auswertung: Gesamtpunkte, Pumpen-Ranking, beste und schlechteste Sessions, persönliche Rekorde und Fun Facts aus dem Kegeljahr.<br><br>
+      Die Statistiken beziehen sich immer auf die aktive Saison. Vergangene Saisons können im Saison-Bereich (Einstellungen) eingesehen werden.`
+    },
+    {
+      icon: '🎮', titel: 'Spiele',
+      inhalt: `Verschiedene Kegelspiele für den Abend:<br><br>
+      &nbsp;&nbsp;• <strong>Hohe Hausnummer</strong> – Wer erzielt die höchste Zahl?<br>
+      &nbsp;&nbsp;• <strong>Abräumen</strong> – Teamspiel: alle Kegel abräumen<br>
+      &nbsp;&nbsp;• <strong>Tannenbaum</strong> – klassisches Aufbauspiel<br>
+      &nbsp;&nbsp;• <strong>4 Gewinnt</strong> – Teamduelle<br>
+      &nbsp;&nbsp;• <strong>Setzen</strong> – Einzelspiel mit Ringen<br>
+      &nbsp;&nbsp;• <strong>Wie du mir so ich dir</strong> – Revanche-Spiel<br>
+      &nbsp;&nbsp;• <strong>Russisch Roulette</strong> – Glücksspiel<br>
+      &nbsp;&nbsp;• <strong>Berg &amp; Tal</strong> – Kombinationsspiel`
+    },
+    {
+      icon: '🧠', titel: 'Quiz',
+      inhalt: `Das Quiz stellt Fragen über echte Vereinsdaten – wer hat die meisten Pumpen geworfen, welche Session war die teuerste, usw.<br><br>
+      <strong>Admin:</strong> Startet das Quiz und zeigt die Fragen auf dem Beamer.<br>
+      <strong>Mitglieder:</strong> Antworten auf ihrem Handy in Echtzeit.<br>
+      Es gibt auch ein Offline-Quiz für unterwegs ohne App.`
+    },
+    {
+      icon: '👤', titel: 'Mitglieder & Einstellungen',
+      inhalt: `<strong>Mitgliederprofil:</strong> Tippe auf ein Mitglied um das Profil zu sehen – eigene Strafen-Historie, Anwesenheitsstatistik und Kegel-Rekorde.<br><br>
+      <strong>Admin-Bereich:</strong> Mitglieder hinzufügen/umbenennen, Strafkategorien verwalten, Saisons anlegen, Vereinsname ändern.`
+    }
+  ];
+
+  const modal = document.createElement('div');
+  modal.id = 'hilfe-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:800;display:flex;align-items:flex-start;justify-content:center;padding:1rem;overflow-y:auto;-webkit-overflow-scrolling:touch';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:1.5rem;width:100%;max-width:620px;margin:auto;box-shadow:0 8px 40px rgba(0,0,0,.3)" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+        <div style="font-size:1.2rem;font-weight:800;color:var(--text)">❓ Benutzerhandbuch</div>
+        <button onclick="document.getElementById('hilfe-modal').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);line-height:1;padding:.25rem">×</button>
+      </div>
+      <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:1.25rem;padding:.6rem .875rem;background:#f8fafc;border-radius:8px;border-left:3px solid var(--primary)">
+        Die App ist mit deiner eigenen Vereins-Datenbank verbunden und synchronisiert sich automatisch auf allen Geräten in Echtzeit.
+      </div>
+      ${sektionen.map((s, i) => `
+        <details style="margin-bottom:.5rem;border:1.5px solid var(--border);border-radius:10px;overflow:hidden" ${i===0?'open':''}>
+          <summary style="cursor:pointer;padding:.875rem 1rem;font-weight:700;font-size:.95rem;background:#f8fafc;display:flex;align-items:center;gap:.5rem;list-style:none">
+            ${s.icon} ${s.titel}
+            <span style="margin-left:auto;font-size:1rem;color:var(--text-muted)">›</span>
+          </summary>
+          <div style="padding:.875rem 1rem;font-size:.85rem;line-height:1.65;color:#374151">${s.inhalt}</div>
+        </details>`).join('')}
+      <div style="margin-top:1rem;padding:.75rem;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;font-size:.8rem;color:#15803d">
+        💡 <strong>Tipp:</strong> Die App funktioniert auch offline – alle Eingaben werden automatisch synchronisiert sobald du wieder online bist.
+      </div>
+    </div>`;
+  modal.addEventListener('click', () => modal.remove());
+  document.body.appendChild(modal);
+}
 
 // ========== AUTO-STRAFEN (96h-Regel) ==========
 async function checkAutoStrafen(manual = false) {

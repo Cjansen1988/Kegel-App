@@ -1079,7 +1079,8 @@ let state = {
     { id: uid(), name: 'Kegelshirt vergessen', betrag: 5.00 }
   ],
   kassenbuch: [],
-  waKeys: {}
+  waKeys: {},
+  tipps: []
 };
 let kasseFilter = 'alle';
 let unsubscribers = [];
@@ -1300,6 +1301,12 @@ function subscribeAll() {
     loaded.kassenbuch = true; checkAllLoaded();
     renderKassenbuch(); renderMemberKasse();
   }, () => { loaded.kassenbuch = true; checkAllLoaded(); }));
+
+  // Tipps (Tippspiel)
+  unsubscribers.push(db.collection('tipps').orderBy('createdAt','desc').onSnapshot(snap => {
+    state.tipps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderTermine();
+  }, () => {}));
 
   // WhatsApp Keys
   unsubscribers.push(db.collection('wa_keys').onSnapshot(snap => {
@@ -2330,7 +2337,7 @@ function startKegelSession(terminId) {
 
   const counts = {};
   spieler.forEach(m => { counts[m.name] = {}; });
-  aktiveSession = { id: uid(), name, counts, spieler: spieler.map(m => m.name), angemeldet, kegeldatum };
+  aktiveSession = { id: uid(), name, counts, spieler: spieler.map(m => m.name), angemeldet, kegeldatum, terminId: terminId || null };
   aktiverKgTab = 'kegel';
   document.getElementById('kegeln-start-screen').style.display = 'none';
   document.getElementById('kegeln-aktiv-screen').style.display = 'block';
@@ -2765,10 +2772,17 @@ function bestaetigeKegelSession() {
     gesamtEinnahmen,
     mitgliederAnzahl: state.mitglieder.length,
     alle9Wuerfe,
+    terminId: aktiveSession.terminId || null,
     createdAt: Date.now()
   });
 
+  // Capture for closure (aktiveSession is cleared in .then)
+  const capturedTerminId = aktiveSession.terminId || null;
+
   batch.commit().then(() => {
+    // Tippspiel auflösen (vor dem Löschen von aktiveSession)
+    if (capturedTerminId) loseTippsAuf(capturedTerminId, sessionId, eintraegeFlach);
+
     aktiveSession = null; clearLiveSession();
     document.getElementById('kegeln-bestaetigung-screen').style.display = 'none';
     document.getElementById('kegeln-start-screen').style.display = 'block';
@@ -3410,6 +3424,7 @@ function renderTerminCard(t, isPast) {
     ${!t.ausfall ? `<details><summary style="cursor:pointer;font-size:.85rem;color:var(--text-muted);font-weight:600">Mitglieder verwalten</summary>
     <div class="table-wrap" style="margin-top:.75rem"><table><thead><tr><th>Mitglied</th><th>Status</th><th></th></tr></thead><tbody>${memberRows}</tbody></table></div>
     </details>` : ''}
+    ${!t.ausfall && !isPast ? renderTippspielBlock(t) : ''}
   </div>`;
 }
 
@@ -3480,6 +3495,213 @@ function terminAusfallBestaetigen(terminId) {
 function terminAusfallRueckgaengig(terminId) {
   if (!confirm('Ausfall-Markierung entfernen? Eingetragene Strafen werden NICHT automatisch gelöscht.')) return;
   db.collection('termine').doc(terminId).update({ ausfall: false, ausfallStrafe: 0, ausfallBeschr: '' });
+}
+
+// ========== TIPPSPIEL ==========
+function renderTippspielBlock(t) {
+  const termTipps = (state.tipps || []).filter(tp => tp.terminId === t.id);
+  const mitglieder = state.mitglieder.map(m => m.name);
+  const tippedMembers = [...new Set(termTipps.map(tp => tp.mitglied))];
+  const pkCount = termTipps.filter(tp => tp.frage === 'pumpenkonig').length;
+  const neunerCount = termTipps.filter(tp => tp.frage === 'neuner').length;
+  const pumpenCount = termTipps.filter(tp => tp.frage === 'pumpen_gesamt').length;
+
+  return `
+  <details style="margin-top:.75rem">
+    <summary style="cursor:pointer;font-size:.85rem;color:#0369a1;font-weight:700;padding:.5rem .75rem;background:#f0f9ff;border-radius:8px;border:1px solid #bae6fd;list-style:none;display:flex;align-items:center;gap:.5rem">
+      🎯 Tippspiel
+      <span style="font-size:.72rem;color:#64748b;font-weight:400;margin-left:.15rem">${tippedMembers.length}/${mitglieder.length} haben getippt</span>
+      ${tippedMembers.length > 0 ? `<span style="font-size:.7rem;color:#0ea5e9;margin-left:auto;font-weight:600">👁 ${tippedMembers.join(', ')}</span>` : ''}
+    </summary>
+    <div style="margin-top:.5rem;padding:.875rem;background:#f0f9ff;border-radius:10px;border:1px solid #bae6fd">
+      <div style="display:flex;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <div style="font-size:.75rem;color:#0369a1;background:#e0f2fe;padding:.25rem .6rem;border-radius:99px;font-weight:600">👑 Pumpenkönig: ${pkCount} Tipp${pkCount!==1?'en':''}</div>
+        <div style="font-size:.75rem;color:#0369a1;background:#e0f2fe;padding:.25rem .6rem;border-radius:99px;font-weight:600">🎳 Neuner: ${neunerCount} Tipp${neunerCount!==1?'en':''}</div>
+        <div style="font-size:.75rem;color:#0369a1;background:#e0f2fe;padding:.25rem .6rem;border-radius:99px;font-weight:600">💥 Pumpen: ${pumpenCount} Tipp${pumpenCount!==1?'en':''}</div>
+      </div>
+      <div style="border-top:1px solid #bae6fd;padding-top:.75rem">
+        <label style="font-size:.78rem;font-weight:700;color:#0369a1;display:block;margin-bottom:.4rem">Wer tippt?</label>
+        <select id="tipp-member-${t.id}" onchange="ladeTippFormular('${t.id}')" style="width:100%;padding:8px 10px;border:1.5px solid #bae6fd;border-radius:8px;font-size:.88rem;margin-bottom:.75rem;background:white">
+          <option value="">— Mitglied auswählen —</option>
+          ${mitglieder.map(m => {
+            const hatGetippt = tippedMembers.includes(m);
+            return `<option value="${m}">${m}${hatGetippt?' ✅':''}</option>`;
+          }).join('')}
+        </select>
+        <div id="tipp-form-${t.id}" style="font-size:.78rem;color:#64748b;font-style:italic">Mitglied auswählen, um zu tippen.</div>
+      </div>
+    </div>
+  </details>`;
+}
+
+function ladeTippFormular(terminId) {
+  const sel = document.getElementById('tipp-member-' + terminId);
+  const mitglied = sel ? sel.value : '';
+  const container = document.getElementById('tipp-form-' + terminId);
+  if (!container) return;
+  if (!mitglied) {
+    container.innerHTML = '<span style="font-size:.78rem;color:#64748b;font-style:italic">Mitglied auswählen, um zu tippen.</span>';
+    return;
+  }
+
+  const termTipps = (state.tipps || []).filter(tp => tp.terminId === terminId && tp.mitglied === mitglied);
+  const pkTipp = termTipps.find(tp => tp.frage === 'pumpenkonig')?.antwort || '';
+  const neunerTipp = termTipps.find(tp => tp.frage === 'neuner');
+  const pumpenTipp = termTipps.find(tp => tp.frage === 'pumpen_gesamt');
+  const hatGetippt = termTipps.length > 0;
+  const mitglieder = state.mitglieder.map(m => m.name);
+
+  container.innerHTML = `
+    ${hatGetippt ? '<div style="font-size:.75rem;color:#059669;font-weight:700;margin-bottom:.6rem;padding:.35rem .6rem;background:#dcfce7;border-radius:6px">✅ Tipp vorhanden – hier anpassen:</div>' : ''}
+    <div style="display:flex;flex-direction:column;gap:.6rem">
+      <div>
+        <label style="font-size:.75rem;font-weight:700;color:#374151;display:block;margin-bottom:.25rem">👑 Pumpenkönig – Wer pumpt am meisten?</label>
+        <select id="tipp-pk-${terminId}" style="width:100%;padding:7px 10px;border:1.5px solid #bae6fd;border-radius:7px;font-size:.85rem;background:white">
+          <option value="">— kein Tipp —</option>
+          ${mitglieder.map(m => `<option value="${m}"${m===pkTipp?' selected':''}>${m}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:.75rem;font-weight:700;color:#374151;display:block;margin-bottom:.25rem">🎳 Neuner gesamt – Wie viele Neuner werden geworfen?</label>
+        <input type="number" id="tipp-neuner-${terminId}" min="0" max="500" placeholder="z.B. 12" value="${neunerTipp !== undefined ? neunerTipp.antwort : ''}" style="width:100%;padding:7px 10px;border:1.5px solid #bae6fd;border-radius:7px;font-size:.85rem;background:white">
+      </div>
+      <div>
+        <label style="font-size:.75rem;font-weight:700;color:#374151;display:block;margin-bottom:.25rem">💥 Pumpen gesamt – Wie viele Pumpen fallen insgesamt?</label>
+        <input type="number" id="tipp-pumpen-${terminId}" min="0" max="999" placeholder="z.B. 45" value="${pumpenTipp !== undefined ? pumpenTipp.antwort : ''}" style="width:100%;padding:7px 10px;border:1.5px solid #bae6fd;border-radius:7px;font-size:.85rem;background:white">
+      </div>
+    </div>
+    <div style="font-size:.71rem;color:#0369a1;margin-top:.5rem;padding:.4rem .65rem;background:#e0f2fe;border-radius:6px;line-height:1.5">
+      👑 <strong>Pumpenkönig:</strong> richtig → €1 Gutschrift · falsch → €1 Strafe<br>
+      🎳💥 <strong>Schätzfragen:</strong> nächster Tipp → €1 Gutschrift · weitester Tipp → €1 Strafe
+    </div>
+    <button class="btn btn-primary btn-sm btn-full" style="margin-top:.6rem;background:#0369a1" onclick="speichereTipp('${terminId}')">💾 Tipp speichern</button>
+  `;
+}
+
+function speichereTipp(terminId) {
+  const sel = document.getElementById('tipp-member-' + terminId);
+  const mitglied = sel ? sel.value : '';
+  if (!mitglied) { alert('Bitte Mitglied auswählen!'); return; }
+
+  const pk = (document.getElementById('tipp-pk-' + terminId) || {}).value || '';
+  const neunerVal = (document.getElementById('tipp-neuner-' + terminId) || {}).value;
+  const pumpenVal = (document.getElementById('tipp-pumpen-' + terminId) || {}).value;
+
+  const batch = db.batch();
+
+  // Delete existing tipps for this member & termin
+  (state.tipps || []).filter(tp => tp.terminId === terminId && tp.mitglied === mitglied)
+    .forEach(tp => batch.delete(db.collection('tipps').doc(tp.id)));
+
+  // Save new tipps
+  if (pk) batch.set(db.collection('tipps').doc(), { terminId, mitglied, frage: 'pumpenkonig', antwort: pk, createdAt: Date.now(), ...saisonMeta() });
+  if (neunerVal !== '' && neunerVal !== undefined) batch.set(db.collection('tipps').doc(), { terminId, mitglied, frage: 'neuner', antwort: parseInt(neunerVal), createdAt: Date.now(), ...saisonMeta() });
+  if (pumpenVal !== '' && pumpenVal !== undefined) batch.set(db.collection('tipps').doc(), { terminId, mitglied, frage: 'pumpen_gesamt', antwort: parseInt(pumpenVal), createdAt: Date.now(), ...saisonMeta() });
+
+  batch.commit().then(() => {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#0369a1;color:white;padding:10px 20px;border-radius:99px;font-weight:700;font-size:.9rem;z-index:700;box-shadow:0 4px 12px rgba(0,0,0,.2);white-space:nowrap';
+    toast.textContent = '🎯 Tipp gespeichert!';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+  }).catch(err => alert('Fehler: ' + err.message));
+}
+
+function loseTippsAuf(terminId, sessionId, eintraegeFlach) {
+  if (!terminId) return;
+  const termTipps = (state.tipps || []).filter(tp => tp.terminId === terminId);
+  if (!termTipps.length) return;
+
+  // Actuals aus Session-Einträgen berechnen
+  const pumpenPerMember = {};
+  let neunerGesamt = 0;
+  let pumpenGesamt = 0;
+
+  (eintraegeFlach || []).forEach(e => {
+    if (e.kategorie === 'Pumpe') {
+      pumpenPerMember[e.mitglied] = (pumpenPerMember[e.mitglied] || 0) + (e.anzahl || 1);
+      pumpenGesamt += (e.anzahl || 1);
+    }
+    if (e.kategorie === 'Alle 9 (geworfen)') {
+      neunerGesamt += (e.anzahl || 1);
+    }
+  });
+
+  // Pumpenkönig: Member mit den meisten Pumpen
+  let pumpenkönig = null;
+  let maxP = 0;
+  Object.entries(pumpenPerMember).forEach(([name, count]) => {
+    if (count > maxP) { maxP = count; pumpenkönig = name; }
+  });
+
+  const batch = db.batch();
+  const resultLines = [];
+
+  // 1. Pumpenkönig Auswahlfrage
+  const pkTipps = termTipps.filter(tp => tp.frage === 'pumpenkonig');
+  if (pkTipps.length) {
+    const richtig = pkTipps.filter(tp => pumpenkönig && tp.antwort === pumpenkönig);
+    const falsch  = pkTipps.filter(tp => !pumpenkönig || tp.antwort !== pumpenkönig);
+    richtig.forEach(tp => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: tp.mitglied, kategorie: 'Tippspiel',
+        notiz: `Tippspiel Pumpenkönig: richtig (${pumpenkönig}, ${maxP}×)`,
+        betrag: -1.00, datum: today(), bezahlt: false, createdAt: Date.now(), sessionId, ...saisonMeta()
+      });
+    });
+    falsch.forEach(tp => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: tp.mitglied, kategorie: 'Tippspiel',
+        notiz: `Tippspiel Pumpenkönig: falsch (Tipp: ${tp.antwort}, war: ${pumpenkönig || 'keiner'})`,
+        betrag: 1.00, datum: today(), bezahlt: false, createdAt: Date.now(), sessionId, ...saisonMeta()
+      });
+    });
+    if (richtig.length) resultLines.push(`✅ Pumpenkönig richtig (€1 Gut.): ${richtig.map(t=>t.mitglied).join(', ')}`);
+    if (falsch.length) resultLines.push(`❌ Pumpenkönig falsch (€1 Strafe): ${falsch.map(t=>t.mitglied).join(', ')}`);
+  }
+
+  // Hilfsfunktion für Schätzfragen
+  function schätzungSettlen(tipps, actual, label) {
+    if (!tipps.length) return;
+    const mitAbstand = tipps.map(tp => ({ ...tp, abstand: Math.abs(Number(tp.antwort) - actual) }));
+    const minAbs = Math.min(...mitAbstand.map(t => t.abstand));
+    const maxAbs = Math.max(...mitAbstand.map(t => t.abstand));
+    const winner = mitAbstand.filter(t => t.abstand === minAbs);
+    const loser  = mitAbstand.filter(t => t.abstand === maxAbs);
+    winner.forEach(tp => {
+      batch.set(db.collection('strafen').doc(), {
+        mitglied: tp.mitglied, kategorie: 'Tippspiel',
+        notiz: `Tippspiel ${label}: nächste Schätzung (${tp.antwort}, waren ${actual})`,
+        betrag: -1.00, datum: today(), bezahlt: false, createdAt: Date.now(), sessionId, ...saisonMeta()
+      });
+    });
+    // Strafe nur wenn mehrere Tipps (damit bei 1 Tipp nicht Gutschrift + Strafe gleichzeitig)
+    if (tipps.length > 1) {
+      loser.filter(tp => tp.abstand !== minAbs).forEach(tp => {
+        batch.set(db.collection('strafen').doc(), {
+          mitglied: tp.mitglied, kategorie: 'Tippspiel',
+          notiz: `Tippspiel ${label}: weiteste Schätzung (${tp.antwort}, waren ${actual})`,
+          betrag: 1.00, datum: today(), bezahlt: false, createdAt: Date.now(), sessionId, ...saisonMeta()
+        });
+      });
+    }
+    resultLines.push(`🎯 ${label} war ${actual}: nächste (€1 Gut.) ${winner.map(t=>t.mitglied+' ('+t.antwort+')').join(', ')}${tipps.length>1 && loser.some(t=>t.abstand!==minAbs) ? ' · weiteste (€1 Strafe) '+loser.filter(t=>t.abstand!==minAbs).map(t=>t.mitglied+' ('+t.antwort+')').join(', ') : ''}`);
+  }
+
+  // 2. Neuner Schätzfrage
+  schätzungSettlen(termTipps.filter(tp => tp.frage === 'neuner'), neunerGesamt, 'Neuner gesamt');
+
+  // 3. Pumpen Schätzfrage
+  schätzungSettlen(termTipps.filter(tp => tp.frage === 'pumpen_gesamt'), pumpenGesamt, 'Pumpen gesamt');
+
+  batch.commit().then(() => {
+    let msg = '🎯 Tippspiel abgerechnet!\n\n';
+    msg += `👑 Pumpenkönig: ${pumpenkönig ? pumpenkönig + ' (' + maxP + '×)' : 'keiner gepumpt'}\n`;
+    msg += `🎳 Neuner gesamt: ${neunerGesamt}\n`;
+    msg += `💥 Pumpen gesamt: ${pumpenGesamt}\n\n`;
+    msg += resultLines.join('\n');
+    alert(msg);
+  }).catch(err => console.error('Tippspiel-Abrechnung Fehler:', err));
 }
 
 // ========== MITGLIEDER ==========

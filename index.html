@@ -598,6 +598,10 @@
           <label>Session-Name (optional)</label>
           <input type="text" id="kg-session-name" placeholder="z.B. Kegeln 04.06.2026">
         </div>
+        <div class="form-group" style="margin-bottom:.75rem">
+          <label>Tatsächliches Kegeldatum</label>
+          <input type="date" id="kg-kegeldatum">
+        </div>
         <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.5rem">Wer ist dabei?</label>
         <div id="kg-spieler-auswahl" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem"></div>
         <button class="btn btn-ghost btn-full" onclick="startKegelSession(null)">🎳 Starten</button>
@@ -1611,7 +1615,7 @@ function renderMemberOverview() {
     <!-- Kegelabende -->
     ${(() => {
       const alleSessionen = (state.kegelsessions||[])
-        .slice().sort((a,b) => (b.datum||'').localeCompare(a.datum||''));
+        .slice().sort((a,b) => getSessionKegeldatum(b).localeCompare(getSessionKegeldatum(a)));
       if (!alleSessionen.length) return '';
       const BAHN = 3.00;
       return `<div class="overview-card">
@@ -1637,7 +1641,7 @@ function renderMemberOverview() {
               <div style="flex:1">
                 <div style="font-weight:600;font-size:.9rem">${s.name}</div>
                 <div style="font-size:.75rem;color:var(--text-muted);margin-top:.1rem">
-                  ${formatDate(s.datum)}
+                  ${formatDate(getSessionKegeldatum(s))}
                   ${!warDabei ? ' · <span style="color:#b91c1c;font-weight:600">nicht dabei</span>' : ''}
                   ${warDabei && verluste.length > 0 ? ` · 🎮 ${verluste.length} Spiel${verluste.length>1?'e':''} verloren` : ''}
                 </div>
@@ -2231,6 +2235,9 @@ function renderKgSpielerAuswahl() {
         ✓ ${m.name}
       </button>`).join('');
   }
+  // Kegeldatum auf heute vorbelegen falls noch leer
+  const df = document.getElementById('kg-kegeldatum');
+  if (df && !df.value) df.value = today();
 }
 
 function toggleKgAuswahl(chip) {
@@ -2297,32 +2304,33 @@ function renderKgTerminListe() {
 }
 
 function startKegelSession(terminId) {
-  let spieler, name, angemeldet = [];
+  let spieler, name, angemeldet = [], kegeldatum = today();
   if (terminId) {
     const termin = state.termine.find(t => t.id === terminId);
     if (!termin) return;
     if (termin.ausfall) { alert('🚫 Dieser Termin ist ausgefallen — kein Kegeln möglich.'); return; }
     name = termin.name + ' · ' + formatDate(termin.datum);
+    kegeldatum = termin.datum; // echtes Termin-Datum
     angemeldet = termin.anmeldungen || [];
-    // Alle Mitglieder: Angemeldete zuerst, dann Rest — sortiert
     spieler = [
       ...state.mitglieder.filter(m => angemeldet.includes(m.name)),
       ...state.mitglieder.filter(m => !angemeldet.includes(m.name))
     ];
   } else {
-    name = document.getElementById('kg-session-name').value.trim() || 'Kegeln ' + formatDate(today());
-    // Nur ausgewählte Spieler (grüne Chips)
+    kegeldatum = document.getElementById('kg-kegeldatum').value || today();
+    name = document.getElementById('kg-session-name').value.trim() || 'Kegeln ' + formatDate(kegeldatum);
     const ausgewaehlt = [...document.querySelectorAll('.kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
     spieler = ausgewaehlt.length > 0
       ? state.mitglieder.filter(m => ausgewaehlt.includes(m.name))
       : state.mitglieder;
-    angemeldet = spieler.map(m => m.name); // alle ausgewählten gelten als angemeldet
+    angemeldet = spieler.map(m => m.name);
     document.getElementById('kg-session-name').value = '';
+    document.getElementById('kg-kegeldatum').value = '';
   }
 
   const counts = {};
   spieler.forEach(m => { counts[m.name] = {}; });
-  aktiveSession = { id: uid(), name, counts, spieler: spieler.map(m => m.name), angemeldet };
+  aktiveSession = { id: uid(), name, counts, spieler: spieler.map(m => m.name), angemeldet, kegeldatum };
   aktiverKgTab = 'kegel';
   document.getElementById('kegeln-start-screen').style.display = 'none';
   document.getElementById('kegeln-aktiv-screen').style.display = 'block';
@@ -2750,7 +2758,7 @@ function bestaetigeKegelSession() {
   });
 
   batch.set(sessionRef, {
-    name: aktiveSession.name, datum: today(), kegeldatum: today(),
+    name: aktiveSession.name, datum: today(), kegeldatum: aktiveSession.kegeldatum || today(),
     eintraege: eintraegeFlach, ...saisonMeta(),
     angemeldet: aktiveSession.angemeldet || [],
     spieler: aktiveSession.spieler || [],
@@ -2810,7 +2818,7 @@ function renderKegelHistorie() {
             <div style="flex:1;cursor:pointer" onclick="zeigeSessionDetail('${d.id}')">
               <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.25rem">
                 <strong>🎳 ${s.name}</strong>
-                <span class="tag tag-blue">${formatDate(s.datum)}</span>
+                <span class="tag tag-blue">${formatDate(getSessionKegeldatum(s))}</span>
               </div>
               <div style="font-size:.875rem;color:var(--text-muted)">
                 ${aktiveAnzahl || '?'} Kegler · Kegelbuch: <strong style="color:var(--text)">${formatEur(kegelbuchTotal)}</strong>
@@ -2866,7 +2874,7 @@ async function exportSessionPDF(sessionId) {
     const kBg = kasseDiff >= 0 ? '#052e16' : '#450a0a';
     const kColor = kasseDiff >= 0 ? '#4ade80' : '#fca5a5';
     const kLbl = kasseDiff >= 0 ? '#86efac' : '#fca5a5';
-    const datumDisp = s.datum ? formatDate(s.datum) : '–';
+    const datumDisp = getSessionKegeldatum(s) ? formatDate(getSessionKegeldatum(s)) : '–';
     const exportDatum = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
     const clubName = state.clubName || 'Blackout Boys';
 
@@ -3654,7 +3662,7 @@ function sendWaGruppe() {
 function renderAfterKegelnSection() {
   const container = document.getElementById('after-kegeln-container');
   if (!container) return;
-  const sessions = (state.kegelsessions || []).slice().sort((a,b) => (b.datum||'').localeCompare(a.datum||'')).slice(0,10);
+  const sessions = (state.kegelsessions || []).slice().sort((a,b) => getSessionKegeldatum(b).localeCompare(getSessionKegeldatum(a))).slice(0,10);
   if (!sessions.length) {
     container.innerHTML = `<div style="color:var(--text-muted);font-size:.85rem">Noch keine Kegelsessions vorhanden.</div>`;
     return;
@@ -3663,7 +3671,7 @@ function renderAfterKegelnSection() {
     <div style="margin-bottom:.75rem">
       <label style="font-size:.82rem;font-weight:700;color:var(--text-muted);display:block;margin-bottom:.4rem">Session auswählen</label>
       <select id="after-session-sel" onchange="renderAfterKegelnVorschau()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.87rem">
-        ${sessions.map((s,i) => `<option value="${s.id}">${s.name} · ${formatDate(s.datum)}${i===0?' (letzte)':''}</option>`).join('')}
+        ${sessions.map((s,i) => `<option value="${s.id}">${s.name} · ${formatDate(getSessionKegeldatum(s))}${i===0?' (letzte)':''}</option>`).join('')}
       </select>
     </div>
     <div id="after-kegeln-vorschau" style="margin-bottom:.75rem"></div>
@@ -3685,7 +3693,7 @@ function buildAfterKegelnText() {
   // Strafen dieser Session
   const sessStr = (state.strafen || []).filter(s =>
     s.sessionId === sessionId ||
-    (!s.sessionId && s.datum === session.datum && s.kategorie !== 'Termin Ausfall')
+    (!s.sessionId && s.datum === getSessionKegeldatum(session) && s.kategorie !== 'Termin Ausfall')
   );
 
   // Gruppiert nach Mitglied
@@ -3713,12 +3721,12 @@ function buildAfterKegelnText() {
 
   // Nächster nicht-ausgefallener Termin
   const nextTermine = (state.termine || [])
-    .filter(t => t.datum > session.datum && !t.ausfall)
+    .filter(t => t.datum > getSessionKegeldatum(session) && !t.ausfall)
     .sort((a,b) => a.datum.localeCompare(b.datum));
   const nextTermin = nextTermine[0];
 
   let text = `🎳 *${state.clubName || 'Blackout Boys'}* – Danke für heute!`;
-  text += `${SEP}\n📅 *${session.name}*  ·  ${formatDate(session.datum)}`;
+  text += `${SEP}\n📅 *${session.name}*  ·  ${formatDate(getSessionKegeldatum(session))}`;
 
   // Strafen heute
   if (teilnehmer.length) {
@@ -4414,7 +4422,7 @@ function renderKgStatistiken() {
     sessions.forEach(sess => {
       (sess.eintraege||[]).filter(e => e.kategorie === s.name).forEach(e => {
         const n = e.anzahl || 1;
-        if (!best || n > best.anzahl) best = { name: e.mitglied, anzahl: n, session: sess.name, datum: sess.datum };
+        if (!best || n > best.anzahl) best = { name: e.mitglied, anzahl: n, session: sess.name, datum: getSessionKegeldatum(sess) };
       });
     });
     return best ? { strafe: s.name, ...best } : null;
@@ -4428,7 +4436,7 @@ function renderKgStatistiken() {
         .filter(e => e.mitglied === name && e.kategorie === 'Pumpe')
         .reduce((s, e) => s + (e.anzahl || 1), 0);
       if (!wenigstePumpenPerSpieler[name] || pumpen < wenigstePumpenPerSpieler[name].pumpen) {
-        wenigstePumpenPerSpieler[name] = { name, pumpen, session: sess.name, datum: sess.datum };
+        wenigstePumpenPerSpieler[name] = { name, pumpen, session: sess.name, datum: getSessionKegeldatum(sess) };
       }
     });
   });
@@ -4444,7 +4452,7 @@ function renderKgStatistiken() {
     });
     Object.entries(perSpieler).forEach(([name, count]) => {
       if (!schliммsteSession[name] || count > schliммsteSession[name].anzahl) {
-        schliммsteSession[name] = { anzahl: count, session: sess.name, datum: sess.datum };
+        schliммsteSession[name] = { anzahl: count, session: sess.name, datum: getSessionKegeldatum(sess) };
       }
     });
   });
@@ -4843,7 +4851,7 @@ function renderStatistiken() {
     </div>`).join('') + `</div>`;
 
   // Anwesenheitsranking — nur tatsächlich gespielte Sessions
-  const alleAbende = sessions.map(s => ({ datum: s.datum, anwesend: s.angemeldet||[] }));
+  const alleAbende = sessions.map(s => ({ datum: getSessionKegeldatum(s), anwesend: s.angemeldet||[] }));
   const anwSummen = state.mitglieder.map(m => ({
     name: m.name.split(' ')[0],
     fullName: m.name,

@@ -379,6 +379,19 @@
   📵 Kein Internet — Einträge werden lokal gespeichert und beim nächsten Online-Moment automatisch synchronisiert
 </div>
 
+<!-- TV MODUS -->
+<div id="tv-screen" style="display:none;position:fixed;inset:0;background:#0f172a;color:#e2e8f0;z-index:9999;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden">
+  <div id="tv-header" style="background:#1e293b;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155;flex-shrink:0">
+    <h1 style="font-size:1.5rem;font-weight:800;color:#f1f5f9;margin:0">🎳 <span id="tv-club-name">Kegelclub</span></h1>
+    <div id="tv-clock" style="font-size:1.4rem;font-weight:700;color:#475569;font-variant-numeric:tabular-nums;letter-spacing:.05em"></div>
+  </div>
+  <div id="tv-content" style="flex:1;overflow:hidden;padding:20px 28px;display:flex;flex-direction:column;gap:16px">
+    <div id="tv-main" style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:16px">
+      <div style="color:#475569;font-size:1.2rem;padding:2rem;text-align:center">Verbinde…</div>
+    </div>
+  </div>
+</div>
+
 <!-- LOADING -->
 <div class="loading-overlay" id="loading-overlay">
   <div class="spinner"></div>
@@ -568,6 +581,7 @@
       <button class="nav-tab" onclick="showPage('quiz',this)">🧠 Quiz</button>
       <button class="nav-tab" onclick="showPage('mitglieder',this)">⚙️ Einstellungen</button>
     </div>
+    <button class="logout-btn" onclick="oeffneTVModus()" style="margin-right:.3rem;background:rgba(255,255,255,.15)" title="TV/Beamer-Modus öffnen">📺 TV</button>
     <button class="logout-btn" onclick="zeigeHilfe()" style="margin-right:.3rem;background:rgba(255,255,255,.15)">❓ Hilfe</button>
     <button class="logout-btn" onclick="doLogout()">Abmelden</button>
   </div>
@@ -10825,8 +10839,261 @@ function showNotification(msg, type = 'info') {
 }
 
 // ========== BOOT ==========
+// ========== TV MODUS ==========
+let tvState = { liveSession: null, termine: [], tipps: [], mitglieder: [], clubName: 'Kegelclub' };
+let tvClockInterval = null;
+
+function oeffneTVModus() {
+  const url = window.location.href.split('?')[0] + '?tv=1';
+  window.open(url, '_blank');
+}
+
+function initFirebaseTV() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(HARDCODED_CONFIG);
+    db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: false }).catch(() => {});
+    subscribeTV();
+    startTVClock();
+  } catch(e) {
+    const m = document.getElementById('tv-main');
+    if (m) m.innerHTML = `<div style="color:#ef4444;font-size:1.3rem;padding:2rem">Firebase-Fehler: ${e.message}</div>`;
+  }
+}
+
+function subscribeTV() {
+  db.collection('settings').doc('main').onSnapshot(snap => {
+    if (snap.exists && snap.data().clubName) {
+      tvState.clubName = snap.data().clubName;
+      const el = document.getElementById('tv-club-name');
+      if (el) el.textContent = tvState.clubName;
+    }
+    renderTVMode();
+  }, () => {});
+
+  db.collection('mitglieder').onSnapshot(snap => {
+    tvState.mitglieder = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.name.localeCompare(b.name));
+    renderTVMode();
+  }, () => {});
+
+  db.collection('termine').orderBy('datum','asc').onSnapshot(snap => {
+    tvState.termine = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderTVMode();
+  }, () => {});
+
+  db.collection('tipps').onSnapshot(snap => {
+    tvState.tipps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderTVMode();
+  }, () => {});
+
+  db.collection('live').doc('session').onSnapshot(snap => {
+    tvState.liveSession = snap.exists ? snap.data() : null;
+    renderTVMode();
+  }, () => {});
+}
+
+function startTVClock() {
+  function tick() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2,'0');
+    const mm = String(now.getMinutes()).padStart(2,'0');
+    const ss = String(now.getSeconds()).padStart(2,'0');
+    const el = document.getElementById('tv-clock');
+    if (el) el.textContent = `${hh}:${mm}:${ss}`;
+  }
+  tick();
+  tvClockInterval = setInterval(tick, 1000);
+}
+
+function renderTVMode() {
+  const main = document.getElementById('tv-main');
+  if (!main) return;
+  const live = tvState.liveSession;
+  if (live && live.aktiv) {
+    main.innerHTML = renderTVLiveSession(live);
+  } else {
+    main.innerHTML = renderTVWarteScreen();
+  }
+}
+
+function formatDateTV(dateStr) {
+  if (!dateStr) return '';
+  const [y,m,d] = dateStr.split('-');
+  const days = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+  const dow = days[new Date(dateStr + 'T12:00:00').getDay()];
+  return `${dow}., ${d}.${m}.${y}`;
+}
+
+function renderTVWarteScreen() {
+  const todayStr = today();
+  const kommende = tvState.termine.filter(t => t.datum >= todayStr && !t.ausfall).sort((a,b) => a.datum.localeCompare(b.datum));
+  const naechster = kommende[0];
+
+  if (!naechster) {
+    return `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:#334155;font-size:1.6rem;font-weight:700">📅 Keine bevorstehenden Termine geplant</div>`;
+  }
+
+  // Countdown berechnen
+  const zielStr = naechster.datum + 'T' + (naechster.zeit ? naechster.zeit + ':00' : '19:30:00');
+  const diffMs = new Date(zielStr) - new Date();
+  let countdownHtml = '';
+  if (diffMs > 0) {
+    const tage = Math.floor(diffMs / 86400000);
+    const std = Math.floor((diffMs % 86400000) / 3600000);
+    const min = Math.floor((diffMs % 3600000) / 60000);
+    countdownHtml = `
+      <div style="display:flex;gap:20px;margin:20px 0 16px">
+        <div style="text-align:center">
+          <div style="font-size:3.2rem;font-weight:900;color:#3b82f6;line-height:1;font-variant-numeric:tabular-nums">${tage}</div>
+          <div style="font-size:.75rem;color:#475569;text-transform:uppercase;letter-spacing:.1em;margin-top:4px">Tage</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:3.2rem;font-weight:900;color:#3b82f6;line-height:1;font-variant-numeric:tabular-nums">${String(std).padStart(2,'0')}</div>
+          <div style="font-size:.75rem;color:#475569;text-transform:uppercase;letter-spacing:.1em;margin-top:4px">Stunden</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:3.2rem;font-weight:900;color:#3b82f6;line-height:1;font-variant-numeric:tabular-nums">${String(min).padStart(2,'0')}</div>
+          <div style="font-size:.75569;color:#475569;text-transform:uppercase;letter-spacing:.1em;margin-top:4px">Minuten</div>
+        </div>
+      </div>`;
+  } else {
+    countdownHtml = `<div style="font-size:2.2rem;font-weight:800;color:#4ade80;margin:20px 0 16px">🎳 Heute ist Kegeln!</div>`;
+  }
+
+  // Anmeldungen
+  const ja = naechster.anmeldungen || [];
+  const vmtl = naechster.vielleicht || [];
+  const nein = naechster.abmeldungen || [];
+  let teilnehmerHtml = '<div style="margin-top:4px;font-size:.95rem;line-height:1.8">';
+  if (ja.length) teilnehmerHtml += `<span style="color:#4ade80">✅ ${ja.join(', ')}</span><br>`;
+  if (vmtl.length) teilnehmerHtml += `<span style="color:#fbbf24">🤔 ${vmtl.join(', ')}</span><br>`;
+  if (nein.length) teilnehmerHtml += `<span style="color:#f87171;opacity:.6">❌ ${nein.join(', ')}</span>`;
+  teilnehmerHtml += '</div>';
+
+  // Tippspiel-Stand
+  const termTipps = tvState.tipps.filter(tp => tp.terminId === naechster.id);
+  const getipptVon = [...new Set(termTipps.map(tp => tp.mitglied))];
+  const alleMitglieder = tvState.mitglieder.map(m => m.name);
+  const tippChips = alleMitglieder.map(n => {
+    const hat = getipptVon.includes(n);
+    return `<span style="padding:8px 18px;border-radius:99px;font-size:1rem;font-weight:700;${hat ? 'background:#14532d;color:#4ade80' : 'background:#1e293b;color:#475569;border:1px solid #334155'}">
+      ${hat ? '✅' : '⏳'} ${n}
+    </span>`;
+  }).join('');
+
+  return `
+    <div style="display:flex;gap:20px;flex:1;overflow:hidden">
+      <div style="flex:1.3;background:#1e293b;border:1px solid #334155;border-radius:14px;padding:24px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="font-size:.8rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">📅 Nächster Termin</div>
+        <div style="font-size:2rem;font-weight:800;color:#f1f5f9;line-height:1.1">${naechster.name}</div>
+        <div style="font-size:1rem;color:#64748b;margin-top:.4rem">${formatDateTV(naechster.datum)}${naechster.zeit ? ' · ' + naechster.zeit + ' Uhr' : ''}${naechster.ort ? ' · 📍 ' + naechster.ort : ''}</div>
+        ${countdownHtml}
+        <div style="font-size:.8rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Rückmeldungen</div>
+        ${teilnehmerHtml}
+      </div>
+      <div style="flex:1;background:#1e293b;border:1px solid #334155;border-radius:14px;padding:24px;display:flex;flex-direction:column;overflow:hidden">
+        <div style="font-size:.8rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">🎯 Tippspiel — ${getipptVon.length}/${alleMitglieder.length} haben getippt</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start;overflow-y:auto;flex:1">${tippChips || '<span style="color:#334155">Noch keine Tipps abgegeben</span>'}</div>
+      </div>
+    </div>`;
+}
+
+function renderTVLiveSession(live) {
+  const spielerNamen = live.spieler || [];
+  const counts = live.counts || {};
+  const angemeldet = live.angemeldet || [];
+
+  // Alle Strafen aus beiden Kategorien flach zusammenführen (ohne invertiert-Geworfen-Spalten)
+  const alleStrafen = KG_KATEGORIEN.flatMap(g => g.strafen);
+
+  // Nur Spalten anzeigen, die mindestens einen Eintrag haben
+  const aktiveStrafen = alleStrafen.filter(s => spielerNamen.some(n => (counts[n]?.[s.name] || 0) > 0));
+  // Fallback: zeige zumindest die wichtigsten wenn noch nichts eingetragen
+  const zeigeStrafen = aktiveStrafen.length > 0 ? aktiveStrafen : KG_KATEGORIEN[0].strafen.slice(0, 5);
+
+  const pumpenZähler = spielerNamen.map(n => ({ name: n, pumpen: counts[n]?.['Pumpe'] || 0 }));
+  const maxPumpen = Math.max(...pumpenZähler.map(p => p.pumpen), 0);
+
+  let thead = `<thead><tr>
+    <th style="background:#0f172a;color:#64748b;text-align:left;padding:10px 16px;border:1px solid #1e293b;min-width:130px">NAME</th>`;
+  zeigeStrafen.forEach(s => {
+    thead += `<th style="background:#0f172a;color:#64748b;padding:8px 10px;border:1px solid #1e293b;white-space:nowrap;min-width:70px">${s.name}<br><small style="color:#3b82f6">€ ${s.betrag.toFixed(2).replace('.',',')}</small></th>`;
+    if (s.invertiert) thead += `<th style="background:#0a1e0a;color:#4ade80;padding:8px 6px;border:1px solid #1e293b;font-size:.75rem">🎳 gew.</th>`;
+  });
+  thead += `<th style="background:#0a0f1a;color:#94a3b8;padding:10px 16px;text-align:right;border:1px solid #1e293b;min-width:90px">SUMME</th></tr></thead>`;
+
+  let tbody = '<tbody>';
+  spielerNamen.forEach(name => {
+    const c = counts[name] || {};
+    let total = 0;
+    alleStrafen.forEach(s => { total += (c[s.name] || 0) * s.betrag; });
+    const dimmed = angemeldet.length > 0 && !angemeldet.includes(name);
+    const istPK = maxPumpen > 0 && (c['Pumpe'] || 0) === maxPumpen;
+    tbody += `<tr style="${dimmed ? 'opacity:.25' : ''}">
+      <td style="padding:10px 16px;font-size:1.1rem;background:#1e293b;font-weight:700;color:#f1f5f9;border:1px solid #0f172a">${istPK ? '👑 ' : ''}${name}</td>`;
+    zeigeStrafen.forEach(s => {
+      const n = c[s.name] || 0;
+      const bg = s.invertiert ? (n > 0 ? '#0a1e0a' : '') : (n > 0 ? '#1a0505' : '');
+      const col = s.invertiert ? (n > 0 ? '#4ade80' : '#334155') : (n > 0 ? '#fca5a5' : '#334155');
+      tbody += `<td style="text-align:center;font-size:1.15rem;font-weight:${n>0?'800':'400'};color:${col};background:${bg};padding:10px;border:1px solid #0f172a">${n > 0 ? n : '·'}</td>`;
+      if (s.invertiert) {
+        const g = c[s.name + ' (geworfen)'] || 0;
+        tbody += `<td style="text-align:center;font-size:1rem;color:${g>0?'#4ade80':'#1e3a1e'};background:#0a1e0a;padding:10px;border:1px solid #0f172a;font-weight:${g>0?'700':'400'}">${g > 0 ? g : '·'}</td>`;
+      }
+    });
+    tbody += `<td style="text-align:right;padding:10px 16px;font-weight:800;font-size:1.15rem;color:${total>0?'#f87171':'#334155'};background:${total>0?'#1a0505':''};border:1px solid #0f172a">
+      ${total > 0 ? '€ ' + total.toFixed(2).replace('.',',') : '—'}
+    </td></tr>`;
+  });
+  // Gesamt-Zeile
+  let gesamtTotal = 0;
+  spielerNamen.forEach(n => { alleStrafen.forEach(s => { gesamtTotal += (counts[n]?.[s.name] || 0) * s.betrag; }); });
+  tbody += `<tr style="background:#0a0f1a">
+    <td style="padding:10px 16px;font-weight:700;color:#64748b;font-size:.9rem;border:1px solid #0f172a">GESAMT</td>`;
+  zeigeStrafen.forEach(s => {
+    const colTotal = s.invertiert ? 0 : spielerNamen.reduce((sum,n) => sum + (counts[n]?.[s.name]||0), 0);
+    tbody += `<td style="text-align:center;padding:10px;color:${colTotal>0?'#3b82f6':'#1e293b'};font-weight:700;border:1px solid #0f172a">${colTotal > 0 ? colTotal : '·'}</td>`;
+    if (s.invertiert) tbody += `<td style="border:1px solid #0f172a"></td>`;
+  });
+  tbody += `<td style="text-align:right;padding:10px 16px;font-weight:800;color:#3b82f6;font-size:1.1rem;border:1px solid #0f172a">€ ${gesamtTotal.toFixed(2).replace('.',',')}</td>
+  </tr></tbody>`;
+
+  // Tippspiel-Leiste
+  const termTipps = live.terminId ? tvState.tipps.filter(tp => tp.terminId === live.terminId) : [];
+  const getipptVon = [...new Set(termTipps.map(tp => tp.mitglied))];
+  const tippBar = live.terminId ? `
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px 20px;display:flex;align-items:center;gap:16px;flex-shrink:0">
+      <span style="color:#64748b;font-size:.85rem;font-weight:700;white-space:nowrap">🎯 TIPPSPIEL</span>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1">
+        ${tvState.mitglieder.map(m => {
+          const hat = getipptVon.includes(m.name);
+          return `<span style="padding:5px 14px;border-radius:99px;font-size:.9rem;font-weight:700;${hat ? 'background:#14532d;color:#4ade80' : 'background:#0f172a;color:#334155;border:1px solid #1e293b'}">${hat ? '✅' : '⏳'} ${m.name}</span>`;
+        }).join('')}
+      </div>
+      <span style="color:#3b82f6;font-weight:800;font-size:1.1rem;white-space:nowrap">${getipptVon.length}/${tvState.mitglieder.length}</span>
+    </div>` : '';
+
+  return `
+    <div style="flex-shrink:0;margin-bottom:4px">
+      <div style="font-size:.8rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.1em">🎳 Live-Kegelbuch — ${live.name || 'Aktive Session'}</div>
+    </div>
+    <div style="flex:1;overflow:auto;border-radius:12px;border:1px solid #334155;min-height:0">
+      <table style="border-collapse:collapse;width:100%;font-size:1rem">${thead}${tbody}</table>
+    </div>
+    ${tippBar}`;
+}
+
+// ========== END TV MODUS ==========
+
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('input[type=date]').forEach(el => { if (!el.value) el.value = today(); });
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('tv') === '1') {
+    document.getElementById('loading-overlay').style.display = 'none';
+    document.getElementById('tv-screen').style.display = 'flex';
+    initFirebaseTV();
+    return;
+  }
   if (loadConfig()) {
     initFirebase();
   } else {

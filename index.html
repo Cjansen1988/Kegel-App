@@ -2866,16 +2866,18 @@ function bestaetigeKegelSession() {
   // Capture for closure (aktiveSession is cleared in .then)
   const capturedTerminId = aktiveSession.terminId || null;
 
-  batch.commit().then(() => {
-    // Tippspiel auflösen (vor dem Löschen von aktiveSession)
-    if (capturedTerminId) loseTippsAuf(capturedTerminId, sessionId, eintraegeFlach);
+  batch.commit().then(async () => {
+    let tippMsg = '';
+    if (capturedTerminId) {
+      tippMsg = await loseTippsAuf(capturedTerminId, sessionId, eintraegeFlach).catch(() => '');
+    }
 
     aktiveSession = null; clearLiveSession();
     document.getElementById('kegeln-bestaetigung-screen').style.display = 'none';
     document.getElementById('kegeln-start-screen').style.display = 'block';
     renderKegelHistorie();
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Strafen speichern'; }
-    alert('✅ Strafen wurden übernommen!');
+    alert('✅ Strafen wurden übernommen!' + (tippMsg ? '\n\n' + tippMsg : ''));
   }).catch(err => {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Strafen speichern'; }
     alert('❌ Fehler beim Speichern: ' + err.message);
@@ -3781,14 +3783,14 @@ function loseTippsAuf(terminId, sessionId, eintraegeFlach) {
   // 3. Pumpen Schätzfrage
   schätzungSettlen(termTipps.filter(tp => tp.frage === 'pumpen_gesamt'), pumpenGesamt, 'Pumpen gesamt');
 
-  batch.commit().then(() => {
+  return batch.commit().then(() => {
     let msg = '🎯 Tippspiel abgerechnet!\n\n';
     msg += `👑 Pumpenkönig: ${pumpenkönig ? pumpenkönig + ' (' + maxP + '×)' : 'keiner gepumpt'}\n`;
     msg += `🎳 Neuner gesamt: ${neunerGesamt}\n`;
     msg += `💥 Pumpen gesamt: ${pumpenGesamt}\n\n`;
     msg += resultLines.join('\n');
-    alert(msg);
-  }).catch(err => console.error('Tippspiel-Abrechnung Fehler:', err));
+    return msg;
+  }).catch(err => { console.error('Tippspiel-Abrechnung Fehler:', err); return ''; });
 }
 
 // ========== MITGLIEDER ==========

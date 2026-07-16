@@ -1083,6 +1083,14 @@ let unsubscribers = [];
 function uid() { return Math.random().toString(36).substr(2,9) + Date.now().toString(36); }
 function today() { return new Date().toISOString().split('T')[0]; }
 function formatDate(d) { if (!d) return ''; const [y,m,day] = d.split('-'); return `${day}.${m}.${y}`; }
+// Tatsächliches Kegeldatum einer Session: zuerst kegeldatum-Feld, dann
+// deutsches Datum aus dem Namen (DD.MM.YYYY), sonst datum (Eintragsdatum)
+function getSessionKegeldatum(s) {
+  if (s.kegeldatum) return s.kegeldatum;
+  const m = (s.name || '').trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return s.datum;
+}
 function formatEur(n) { return '€ ' + Number(n).toFixed(2).replace('.', ','); }
 
 // ========== FIREBASE SETUP ==========
@@ -2717,7 +2725,7 @@ function bestaetigeKegelSession() {
   });
 
   batch.set(sessionRef, {
-    name: aktiveSession.name, datum: today(),
+    name: aktiveSession.name, datum: today(), kegeldatum: today(),
     eintraege: eintraegeFlach, ...saisonMeta(),
     angemeldet: aktiveSession.angemeldet || [],
     spieler: aktiveSession.spieler || [],
@@ -5202,22 +5210,22 @@ function renderKassePrognose() {
   const ausfallDaten = [...new Set(
     strafen.filter(s => s.kategorie === 'Termin Ausfall').map(s => s.datum).filter(Boolean)
   )];
-  const pastSessions = sessions.filter(s => (s.datum || '') <= todayDate);
+  // Tatsächliche Kegeldaten nutzen (nicht das Eintragsdatum)
+  const pastSessions = sessions.filter(s => getSessionKegeldatum(s) <= todayDate);
 
   const totalEvents = pastSessions.length + ausfallDaten.length;
   const totalStrafen = strafen.reduce((sum, s) => sum + Number(s.betrag || 0), 0);
   const avgProEvent = totalEvents > 0 ? totalStrafen / totalEvents : 0;
 
-  // Events-pro-Monat: nur vergangene Monate zählen, dann Durchschnitt
-  const eventsByMonth = {};
-  [...pastSessions.map(s => s.datum), ...ausfallDaten].filter(Boolean).forEach(d => {
-    const m = d.substring(0, 7);
-    if (m) eventsByMonth[m] = (eventsByMonth[m] || 0) + 1;
-  });
-  const monthCounts = Object.values(eventsByMonth);
-  const eventsPerMonth = monthCounts.length > 0
-    ? monthCounts.reduce((a, b) => a + b, 0) / monthCounts.length
-    : 2;
+  // Events-pro-Monat: Gesamte Events ÷ Monate seit erstem Kegeln (echtes Datum)
+  const allPastDates = [...pastSessions.map(s => getSessionKegeldatum(s)), ...ausfallDaten].filter(Boolean).sort();
+  let eventsPerMonth = 2; // Fallback
+  if (allPastDates.length > 0) {
+    const msPerMonth = 1000 * 60 * 60 * 24 * 30.44;
+    const monthsElapsed = Math.max(1, (new Date() - new Date(allPastDates[0])) / msPerMonth);
+    eventsPerMonth = totalEvents / monthsElapsed;
+  }
+  const monthCounts = allPastDates; // nur für Basis-Anzeige
 
   const avgMonthly = avgProEvent * eventsPerMonth;
   const monthValues = monthCounts; // nur für Basis-Anzeige unten

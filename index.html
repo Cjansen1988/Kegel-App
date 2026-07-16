@@ -5193,22 +5193,24 @@ function renderKassePrognose() {
   const ist = state.istBestand;
   const istGesamt = ist ? (Number(ist.konto) || 0) + (Number(ist.bar) || 0) : 0;
 
-  // Ø pro Event (Kegeln-Session ODER Ausfall zählt je als ein Event)
-  const strafen = state.strafen || [];
+  // Nur vergangene Daten für die Prognose-Basis verwenden
+  const todayDate = today();
+  const allStrafen = state.strafen || [];
   const sessions = state.kegelsessions || [];
 
-  // Eindeutige Ausfall-Events (je Datum mit Termin-Ausfall-Strafe = 1 Event)
+  const strafen = allStrafen.filter(s => (s.datum || '') <= todayDate);
   const ausfallDaten = [...new Set(
     strafen.filter(s => s.kategorie === 'Termin Ausfall').map(s => s.datum).filter(Boolean)
   )];
+  const pastSessions = sessions.filter(s => (s.datum || '') <= todayDate);
 
-  const totalEvents = sessions.length + ausfallDaten.length;
+  const totalEvents = pastSessions.length + ausfallDaten.length;
   const totalStrafen = strafen.reduce((sum, s) => sum + Number(s.betrag || 0), 0);
   const avgProEvent = totalEvents > 0 ? totalStrafen / totalEvents : 0;
 
-  // Events-pro-Monat: Monatsgruppen zählen, dann Durchschnitt
+  // Events-pro-Monat: nur vergangene Monate zählen, dann Durchschnitt
   const eventsByMonth = {};
-  [...sessions.map(s => s.datum), ...ausfallDaten].filter(Boolean).forEach(d => {
+  [...pastSessions.map(s => s.datum), ...ausfallDaten].filter(Boolean).forEach(d => {
     const m = d.substring(0, 7);
     if (m) eventsByMonth[m] = (eventsByMonth[m] || 0) + 1;
   });
@@ -5289,7 +5291,7 @@ function renderKassePrognose() {
       <span>📆 Abende/Monat: <strong style="color:#1e293b">${eventsPerMonth.toFixed(1)}</strong></span>
       <span>🏟️ Bahn/Monat: <strong style="color:#b91c1c">−€ 40,00</strong></span>
       <span>📈 Netto: <strong style="color:${netProMonat>=0?'#15803d':'#b91c1c'}">${netProMonat>=0?'+':''}${formatEur(netProMonat)}/M</strong></span>
-      ${totalEvents > 0 ? `<span>📅 Basis: <strong style="color:#1e293b">${sessions.length} Kegeln + ${ausfallDaten.length} Ausfall</strong></span>` : `<span style="color:#b91c1c">⚠️ Noch keine Daten</span>`}
+      ${totalEvents > 0 ? `<span>📅 Basis: <strong style="color:#1e293b">${pastSessions.length} Kegeln + ${ausfallDaten.length} Ausfall</strong></span>` : `<span style="color:#b91c1c">⚠️ Noch keine Daten</span>`}
     </div>`;
 }
 

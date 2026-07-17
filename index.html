@@ -859,6 +859,15 @@
     <div id="mitgliedskarten-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px"></div>
   </div>
 
+  <!-- Foto-Galerie -->
+  <div class="card">
+    <div class="card-title">📸 Foto-Galerie</div>
+    <div id="foto-galerie-empty" style="display:none;font-size:.85rem;color:var(--text-muted);padding:.5rem 0">
+      Noch keine Session-Fotos vorhanden. Lade beim nächsten Abend ein Foto hoch!
+    </div>
+    <div id="foto-galerie-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px"></div>
+  </div>
+
 </div>
 
 <!-- KASSENBUCH -->
@@ -1303,6 +1312,7 @@ function subscribeAll() {
     renderFunFacts();
     renderKegelHistorie();
     renderAfterKegelnSection();
+    renderFotoGalerie();
   }, () => {}));
 
   // Ist-Bestand
@@ -11417,6 +11427,42 @@ function downloadMitgliedsKarte(canvas, name) {
   a.click();
 }
 // ========== END MITGLIEDSKARTEN ==========
+
+// ========== FOTO GALERIE ==========
+function renderFotoGalerie() {
+  const grid = document.getElementById('foto-galerie-grid');
+  const empty = document.getElementById('foto-galerie-empty');
+  if (!grid) return;
+
+  const mitFoto = state.kegelsessions
+    .filter(s => s.fotoUrl)
+    .sort((a, b) => {
+      const da = a.kegeldatum || a.datum || '';
+      const db2 = b.kegeldatum || b.datum || '';
+      return db2.localeCompare(da); // newest first
+    });
+
+  if (mitFoto.length === 0) {
+    grid.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  grid.innerHTML = mitFoto.map(s => {
+    const datum = s.kegeldatum || s.datum || '';
+    const datumFormatiert = datum ? formatDate(datum) : '';
+    return `<div onclick="fotoAnzeigen('${s.fotoUrl}','${s.id}')" style="position:relative;cursor:pointer;border-radius:10px;overflow:hidden;aspect-ratio:4/3;background:#1e293b">
+      <img src="${s.fotoUrl}" style="width:100%;height:100%;object-fit:cover;display:block;transition:transform .2s"
+        onmouseover="this.style.transform='scale(1.04)'" onmouseout="this.style.transform='scale(1)'">
+      <div style="position:absolute;bottom:0;left:0;right:0;padding:.4rem .5rem;background:linear-gradient(transparent,rgba(0,0,0,.75))">
+        <div style="font-size:.75rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name}</div>
+        <div style="font-size:.68rem;color:rgba(255,255,255,.7)">${datumFormatiert}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+// ========== END FOTO GALERIE ==========
 
 // ========== END TV MODUS ==========
 

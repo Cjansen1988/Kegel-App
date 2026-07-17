@@ -2199,7 +2199,7 @@ function renderMemberTippBlock(t, memberName) {
           <label style="font-size:.75rem;font-weight:700;color:#374151;display:block;margin-bottom:.25rem">👑 Pumpenkönig – Wer pumpt am meisten?</label>
           <select id="mtipp-pk-${t.id}" style="width:100%;padding:7px 10px;border:1.5px solid #bae6fd;border-radius:7px;font-size:.88rem;background:white">
             <option value="">— kein Tipp —</option>
-            ${mitglieder.map(m => `<option value="${m}"${m===pkTipp?' selected':''}>${m}</option>`).join('')}
+            ${mitglieder.filter(m => m !== memberName).map(m => `<option value="${m}"${m===pkTipp?' selected':''}>${m}</option>`).join('')}
           </select>
         </div>
         <div>
@@ -3671,7 +3671,7 @@ function ladeTippFormular(terminId) {
         <label style="font-size:.75rem;font-weight:700;color:#374151;display:block;margin-bottom:.25rem">👑 Pumpenkönig – Wer pumpt am meisten?</label>
         <select id="tipp-pk-${terminId}" style="width:100%;padding:7px 10px;border:1.5px solid #bae6fd;border-radius:7px;font-size:.85rem;background:white">
           <option value="">— kein Tipp —</option>
-          ${mitglieder.map(m => `<option value="${m}"${m===pkTipp?' selected':''}>${m}</option>`).join('')}
+          ${mitglieder.filter(m => m !== mitglied).map(m => `<option value="${m}"${m===pkTipp?' selected':''}>${m}</option>`).join('')}
         </select>
       </div>
       <div>

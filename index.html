@@ -4658,7 +4658,7 @@ function renderFunFacts() {
   });
 
   if (verlKing) facts.push({ emoji:'⏳', color:'yellow',
-    fact:`${verlKing[0]} liebt das verlängerte Spiel`,
+    fact:`${verlKing[0]} liebt das verlorene Spiel`,
     detail:`${verlKing[1]}× Verl. Spiel — ${Math.round(verlKing[1]/verlGesamt*100)}% aller ${verlGesamt} Verlängerungen gehen auf sein/ihr Konto.`
   });
 
@@ -9085,7 +9085,7 @@ function generiereQuizFragen(anzahl = 10) {
   const verlRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Verl. Spiel']||0})).sort((a,b)=>b.val-a.val);
   if (verlRanking[0]?.val > 0) {
     const antworten = pick4(verlRanking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten verlängerten Spiele?`, antworten, richtig: verlRanking[0].name, erklaerung:`${verlRanking[0].name} mit ${verlRanking[0].val}× Verl. Spiel.` });
+    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten verlorenen Spiele?`, antworten, richtig: verlRanking[0].name, erklaerung:`${verlRanking[0].name} mit ${verlRanking[0].val}× Verl. Spiel.` });
   }
 
   // Schätzung: Strafen-Platz 2
@@ -9096,7 +9096,7 @@ function generiereQuizFragen(anzahl = 10) {
   // Pro-Spieler-Fragen: Pumpen für jeden Spieler mit >0 Pumpen
   const KATEGORIEN_FRAGEN = [
     { kat: 'Pumpe', label: 'Pumpen', einheit: '×' },
-    { kat: 'Verl. Spiel', label: 'verlängerte Spiele', einheit: '×' },
+    { kat: 'Verl. Spiel', label: 'verlorene Spiele', einheit: '×' },
     { kat: 'Klingel', label: 'Klingeln', einheit: '×' },
     { kat: 'Behinderung', label: 'Behinderungen', einheit: '×' },
     { kat: 'Lustwurf', label: 'Lustwürfe', einheit: '×' },
@@ -9137,7 +9137,7 @@ function generiereQuizFragen(anzahl = 10) {
   // Durchschnitt pro Kegeln für häufige Kategorien
   const DURCHSCHNITT_KATS = [
     { kat: 'Pumpe', label: 'Pumpen' },
-    { kat: 'Verl. Spiel', label: 'verlängerte Spiele' },
+    { kat: 'Verl. Spiel', label: 'verlorene Spiele' },
     { kat: 'Klingel', label: 'Klingeln' },
     { kat: 'Behinderung', label: 'Behinderungen' },
     { kat: 'Lustwurf', label: 'Lustwürfe' },
@@ -9158,7 +9158,7 @@ function generiereQuizFragen(anzahl = 10) {
   // Pro-Spieler Gesamt für alle Spieler mit genug Daten
   const SPIELER_KATS = [
     { kat: 'Pumpe', label: 'Pumpen' },
-    { kat: 'Verl. Spiel', label: 'verlängerte Spiele' },
+    { kat: 'Verl. Spiel', label: 'verlorene Spiele' },
     { kat: 'Klingel', label: 'Klingeln' },
     { kat: 'Behinderung', label: 'Behinderungen' },
     { kat: 'Lustwurf', label: 'Lustwürfe' },

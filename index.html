@@ -10125,14 +10125,14 @@ function renderQuizAdmin() {
   if (q.phase === 'fragenauswahl') {
     const kandidaten = q.fragenKandidaten || [];
     const ausgewaehlt = q.fragenAusgewaehlt || [];
-    const maxSel = Math.min(kandidaten.length, 10);
+    const maxSel = Math.min(kandidaten.length, 20);
     container.innerHTML = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
           <div class="card-title" style="margin:0">Fragen auswählen</div>
-          <span class="tag ${ausgewaehlt.length===maxSel?'tag-green':'tag-yellow'}">${ausgewaehlt.length} / ${maxSel} gewählt</span>
+          <span class="tag ${ausgewaehlt.length>=5?'tag-green':'tag-yellow'}">${ausgewaehlt.length} / ${maxSel} gewählt</span>
         </div>
-        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe auf eine Frage um sie aus- oder abzuwählen. Alle ${maxSel} auswählen.</p>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Wähle 5–${maxSel} Saison-Fragen aus. Tippen zum An-/Abwählen.</p>
         ${kandidaten.map((f, i) => {
           const sel = ausgewaehlt.includes(i);
           const detailsHTML = f.typ === 'mc'
@@ -10155,8 +10155,8 @@ function renderQuizAdmin() {
         <div style="display:flex;gap:.75rem;margin-top:1rem">
           <button class="btn btn-ghost" onclick="quizZurueck()">← Zurück</button>
           <button class="btn btn-primary" style="flex:1" onclick="starteQuizMitAuswahl()"
-            ${ausgewaehlt.length!==maxSel?'disabled style="opacity:.5"':''}>
-            🧠 Quiz starten (${ausgewaehlt.length}/${maxSel})
+            ${ausgewaehlt.length<5?'disabled style="opacity:.5"':''}>
+            🧠 Quiz starten (${ausgewaehlt.length} Fragen)
           </button>
         </div>
       </div>`;
@@ -10329,10 +10329,8 @@ function memberSchaetzungAbgeben(name) {
 function zeigeFragenAuswahl() {
   const spieler = [...document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
   if (spieler.length < 2) { alert('Mindestens 2 Spieler auswählen!'); return; }
-  // Daten-basierte Fragen aus echten Sessions + Standard-Fragen als Auffüllung
-  const datenfragen = generiereQuizFragen();
-  const kandidaten = [...datenfragen, ...QUIZ_OFFLINE_FRAGEN]
-    .sort(() => Math.random() - .5);
+  // Nur Saison-Fragen aus echten Session-Daten (keine allgemeinen Kegelfragen)
+  const kandidaten = generiereQuizFragen(30);
   if (kandidaten.length < 5) { alert('Nicht genug Daten für ein Quiz. Spielt erst ein paar Kegel-Abende!'); return; }
   db.collection('quiz').doc('aktiv').set({
     phase: 'fragenauswahl', spieler,
@@ -10348,7 +10346,7 @@ function toggleFrageAuswahl(idx) {
   if (ausgewaehlt.includes(idx)) {
     ausgewaehlt = ausgewaehlt.filter(i => i !== idx);
   } else {
-    if (ausgewaehlt.length >= Math.min((q.fragenKandidaten||[]).length, 10)) return;
+    if (ausgewaehlt.length >= Math.min((q.fragenKandidaten||[]).length, 20)) return;
     ausgewaehlt.push(idx);
   }
   db.collection('quiz').doc('aktiv').update({ fragenAusgewaehlt: ausgewaehlt });

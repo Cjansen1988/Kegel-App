@@ -10329,9 +10329,9 @@ function memberSchaetzungAbgeben(name) {
 function zeigeFragenAuswahl() {
   const spieler = [...document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
   if (spieler.length < 2) { alert('Mindestens 2 Spieler auswählen!'); return; }
-  // Nur handgemachte Club-Fragen
-  const kandidaten = [...QUIZ_OFFLINE_FRAGEN, ...getDynamischeQuizFragen()]
-    .filter(f => f.quelle === 'club')
+  // Daten-basierte Fragen aus echten Sessions + Standard-Fragen als Auffüllung
+  const datenfragen = generiereQuizFragen();
+  const kandidaten = [...datenfragen, ...QUIZ_OFFLINE_FRAGEN]
     .sort(() => Math.random() - .5);
   if (kandidaten.length < 5) { alert('Nicht genug Daten für ein Quiz. Spielt erst ein paar Kegel-Abende!'); return; }
   db.collection('quiz').doc('aktiv').set({

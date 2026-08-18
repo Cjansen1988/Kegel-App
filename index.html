@@ -8954,6 +8954,20 @@ function generiereQuizFragen(anzahl = 30) {
   const strafen = state.strafen || [];
   const mitglieder = state.mitglieder.map(m => m.name);
   const shuffle = arr => [...arr].sort(() => Math.random() - .5);
+
+  // Anwesende einer Session: 'angemeldet' ist die Quelle der Wahrheit (wie im Rest der App),
+  // Fallback auf 'spieler' wenn angemeldet fehlt/leer ist.
+  const anwesendeIn = s => {
+    const a = s.angemeldet || [];
+    if (a.length) return a;
+    return s.spieler || [];
+  };
+  // Wie oft war eine Person dabei? Zählt auch Abende, an denen sie Einträge hat
+  // aber (fehlerhaft) nicht als anwesend markiert wurde.
+  const abendeVon = name => sessions.filter(s =>
+    anwesendeIn(s).includes(name) || (s.eintraege || []).some(e => e.mitglied === name)
+  ).length;
+
   const fragen = [];
   const F = (frage, richtig, einheit, erklaerung, person) =>
     fragen.push({ typ:'schaetzung', quelle:'saison', frage, richtig, einheit, erklaerung, person: person || null });
@@ -8999,7 +9013,7 @@ function generiereQuizFragen(anzahl = 30) {
     const label = labelObj ? labelObj.label : kat;
     const verb = labelObj ? labelObj.verb : 'geworfen';
     const spielerMit = mitglieder.map(n => {
-      const sessAnz = sessions.filter(s=>(s.spieler||s.angemeldet||[]).includes(n)).length;
+      const sessAnz = abendeVon(n);   // nur Abende, an denen die Person dabei war
       const total = alle.filter(e=>e.kategorie===kat&&e.mitglied===n).reduce((s,e)=>s+(e.anzahl||1),0);
       const schnitt = sessAnz >= 2 ? Math.round(total/sessAnz*10)/10 : null;
       return { name:n, val:total, sess:sessAnz, schnitt };
@@ -9007,12 +9021,12 @@ function generiereQuizFragen(anzahl = 30) {
     spielerMit.forEach(sp =>
       F(`Wie viele ${label} hat ${sp.name} durchschnittlich pro Kegelabend ${verb}?`,
         sp.schnitt, '×',
-        `${sp.name}: Ø ${sp.schnitt}× pro Abend (${sp.val} gesamt / ${sp.sess} Abende).`, sp.name));
+        `${sp.name}: Ø ${sp.schnitt}× pro Abend — ${sp.val} gesamt geteilt durch ${sp.sess} Abende, an denen ${sp.name} dabei war (nicht ${sessions.length}).`, sp.name));
   });
 
   // ── ANWESENHEIT PRO SPIELER ───────────────────────────────────
   mitglieder.forEach(n => {
-    const anwAnz = sessions.filter(s=>(s.spieler||s.angemeldet||[]).includes(n)).length;
+    const anwAnz = abendeVon(n);
     if (anwAnz > 0)
       F(`Wie viele Kegel-Abende war ${n} diese Saison dabei?`, anwAnz, 'Abende',
         `${n} war bei ${anwAnz} von ${sessions.length} Abenden dabei.`, n);
@@ -9861,7 +9875,23 @@ function renderQuizAdmin() {
     const kandidaten = q.fragenKandidaten || [];
     const ausgewaehlt = q.fragenAusgewaehlt || [];
     const maxSel = Math.min(kandidaten.length, 20);
+    const N = q.spieler.length;
+    const vAnz = q.verliererAnzahl !== undefined ? q.verliererAnzahl : Math.min(4, N - 1);
     container.innerHTML = `
+      <div class="card" style="margin-bottom:.75rem;padding:.85rem 1rem">
+        <div style="font-size:.8rem;font-weight:700;margin-bottom:.5rem">⚠️ Verlierer mit Behinderung</div>
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+          <select onchange="quizSetVerlierer(this.value)" style="padding:5px 10px;font-size:.85rem;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text)">
+            ${Array.from({length: N}, (_, i) => i).map(i =>
+              `<option value="${i}"${i===vAnz?' selected':''}>${i === 0 ? 'keine' : i + (i===1?' Verlierer':' Verlierer')}</option>`).join('')}
+          </select>
+          <span style="font-size:.8rem;color:var(--text-muted)">
+            ${vAnz === 0
+              ? 'Niemand bekommt eine Behinderung.'
+              : `Die letzten ${vAnz} von ${N} bekommen je eine Behinderung.`}
+          </span>
+        </div>
+      </div>
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
           <div class="card-title" style="margin:0">Fragen auswählen</div>
@@ -9895,6 +9925,40 @@ function renderQuizAdmin() {
           </button>
         </div>
       </div>`;
+    return;
+  }
+
+  if (q.phase === 'regeln') {
+    const ok = q.regelnOk || {};
+    const bereit = q.spieler.filter(p => ok[p]);
+    const fehlend = q.spieler.filter(p => !ok[p]);
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <div style="font-size:.8rem;font-weight:700;color:var(--text-muted)">📖 Spielregeln · ${q.fragen.length} Fragen</div>
+        <button class="btn btn-danger btn-sm" onclick="beendeQuiz()">✕</button>
+      </div>
+      <div class="card" style="margin-bottom:.75rem">
+        <div class="card-title">So funktioniert's</div>
+        ${quizRegelnHTML(q.spieler.length, q.fragen.length, q.verliererAnzahl)}
+      </div>
+      <div class="card" style="margin-bottom:.75rem;padding:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+          <span style="font-size:.8rem;font-weight:700">✅ Gelesen &amp; verstanden</span>
+          <span class="tag ${fehlend.length===0?'tag-green':'tag-yellow'}">${bereit.length} / ${q.spieler.length}</span>
+        </div>
+        ${q.spieler.map(p => `
+          <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
+            <span style="flex:1;font-size:.875rem;font-weight:600">${p}</span>
+            ${ok[p]
+              ? `<span style="font-size:.85rem;color:var(--success);font-weight:700">✅ bereit</span>`
+              : `<span style="font-size:.8rem;color:var(--text-muted)">⏳ wartet</span>
+                 <button class="btn btn-ghost btn-sm" onclick="quizRegelnSkip('${p}')" title="Für diese Person überspringen">⏭ Skip</button>`}
+          </div>`).join('')}
+        ${fehlend.length ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.6rem" onclick="quizRegelnAlleSkippen()">⏭ Alle ${fehlend.length} überspringen</button>` : ''}
+      </div>
+      <button class="btn btn-primary btn-full" onclick="quizStarteErsteFrage()">
+        ${fehlend.length === 0 ? '▶ Erste Frage starten' : `▶ Trotzdem starten (${fehlend.length} noch nicht bereit)`}
+      </button>`;
     return;
   }
 
@@ -9946,16 +10010,18 @@ function renderQuizAdmin() {
     }
 
     // ── REVEAL: ALLE ANTWORTEN MIT ABSTAND ──
-    const richtig = frage.richtig;
-    const einheitFmtR = v => frage.einheit === '€' ? formatEur(v) : v + (frage.einheit ? ' ' + frage.einheit : '');
+    const richtig = Number(frage.richtig);
+    const fmt = v => (v === undefined || v === null) ? '—'
+      : (frage.einheit === '€' ? formatEur(v) : v + (frage.einheit ? ' ' + frage.einheit : ''));
     const punkte = q.punkte || {};
+    const gewinner = q.frageGewinner || [];
     const rangReihe = q.spieler
-      .map(p => ({ p, antwort: antworten[p], diff: antworten[p]!==undefined ? Math.abs(Number(antworten[p])-richtig) : Infinity, pkt: punkte[p]||0 }))
+      .map(p => ({ p, a: antworten[p], diff: antworten[p]!==undefined ? Math.abs(Number(antworten[p])-richtig) : Infinity, pkt: punkte[p]||0 }))
       .sort((a,b) => a.diff - b.diff);
 
     container.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-        <div style="font-size:.8rem;font-weight:700;color:var(--text-muted)">Frage ${q.aktuelleQ+1} · Auflösung</div>
+        <div style="font-size:.8rem;font-weight:700;color:var(--text-muted)">Frage ${q.aktuelleQ+1} / ${q.fragen.length} · Auflösung</div>
         <button class="btn btn-danger btn-sm" onclick="beendeQuiz()">✕</button>
       </div>
       <div class="quiz-frage" style="margin-bottom:.75rem">
@@ -9963,36 +10029,47 @@ function renderQuizAdmin() {
         <div class="q-text">${frage.frage}</div>
       </div>
       <div class="card" style="margin-bottom:.75rem;border-color:var(--success)">
-        <div style="font-size:.72rem;font-weight:700;color:var(--success);margin-bottom:.25rem">✅ RICHTIGE ANTWORT</div>
-        <div style="font-weight:800;font-size:1.4rem">${einheitFmtR(richtig)}</div>
+        <div style="font-size:.72rem;font-weight:700;color:var(--success);margin-bottom:.2rem">✅ RICHTIGE ANTWORT</div>
+        <div style="font-weight:800;font-size:1.5rem">${fmt(richtig)}</div>
         <div style="font-size:.82rem;color:var(--text-muted);margin-top:.25rem">${frage.erklaerung}</div>
       </div>
-      <div class="card" style="margin-bottom:.75rem;padding:.75rem">
-        <div style="font-size:.8rem;font-weight:700;margin-bottom:.6rem">🏅 Rangliste</div>
-        ${rangReihe.map(({ p, antwort, diff, pkt }, i) => {
-          const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
-          const exakt = diff === 0;
-          return `<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
-            <span style="width:1.5rem;font-size:1rem">${medal || (i+1)+'. '}</span>
-            <span style="flex:1;font-size:.875rem;font-weight:600">${p}</span>
-            <span style="font-size:.875rem;color:${exakt?'var(--success)':'var(--text)'};font-weight:${exakt?800:400}">
-              ${antwort!==undefined ? einheitFmtR(antwort) : '—'}
-            </span>
-            <span style="font-size:.78rem;color:var(--text-muted);width:50px;text-align:right">
-              ${antwort!==undefined ? (diff===0?'✅ exakt!':'±'+einheitFmtR(diff)) : '—'}
-            </span>
-            <span style="font-size:.85rem;font-weight:800;color:var(--success);width:40px;text-align:right">
-              ${pkt>0?'+'+pkt+'P':''}
-            </span>
-          </div>`;
-        }).join('')}
-      </div>
-      <div class="card" style="margin-bottom:.75rem;padding:.6rem .75rem">
-        <div style="font-size:.75rem;font-weight:700;color:var(--text-muted);margin-bottom:.4rem">Gesamtstand</div>
-        ${Object.entries(q.scores||{}).sort((a,b)=>b[1]-a[1]).map(([name,p])=>`
-          <div style="display:flex;justify-content:space-between;font-size:.82rem;padding:.2rem 0">
-            <span>${name}</span><span style="font-weight:700">${p} Punkte</span>
-          </div>`).join('')}
+      ${gewinner.length ? `
+      <div style="background:#fef3c7;border:2px solid #fcd34d;border-radius:12px;padding:.9rem 1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.8rem">
+        <span style="font-size:1.8rem">🎁</span>
+        <div style="flex:1">
+          <div style="font-size:.7rem;font-weight:700;color:#92400e;letter-spacing:.03em">PREIS FÜR DIESE FRAGE</div>
+          <div style="font-size:1.15rem;font-weight:800;color:#78350f">${gewinner.join(' & ')}</div>
+          <div style="font-size:.78rem;color:#92400e">${rangReihe[0].diff===0 ? 'Exakt getroffen mit ' + fmt(rangReihe[0].a) : 'Nur ' + fmt(rangReihe[0].diff) + ' daneben'}</div>
+        </div>
+        <div style="background:#92400e;color:#fef3c7;font-size:1rem;font-weight:800;padding:.3rem .7rem;border-radius:8px;white-space:nowrap">+${punkte[gewinner[0]]||0}</div>
+      </div>` : ''}
+      <div class="card" style="margin-bottom:.75rem;padding:.6rem .5rem">
+        <div style="display:flex;font-size:.68rem;color:var(--text-muted);font-weight:700;padding:0 .4rem .4rem;border-bottom:1px solid var(--border)">
+          <span style="width:1.8rem">PL.</span>
+          <span style="flex:1">NAME</span>
+          <span style="width:60px;text-align:right">TIPP</span>
+          <span style="width:56px;text-align:right">ABW.</span>
+          <span style="width:44px;text-align:right">PKT</span>
+          <span style="width:48px;text-align:right">GES.</span>
+        </div>
+        ${(() => {
+          let rang = 0;
+          return rangReihe.map((r, i) => {
+            if (i > 0 && r.diff !== rangReihe[i-1].diff) rang = i;
+            const istGewinner = gewinner.includes(r.p);
+            const gleichstand = rangReihe.filter(x => x.diff === r.diff && x.diff !== Infinity).length > 1;
+            const bg = istGewinner ? '#fef3c7' : (gleichstand ? '#eff6ff' : 'transparent');
+            const fg = istGewinner ? '#78350f' : 'var(--text)';
+            return `<div style="display:flex;align-items:center;font-size:.85rem;padding:.42rem .4rem;border-bottom:1px solid var(--border);background:${bg};border-radius:${bg!=='transparent'?'6px':'0'}">
+              <span style="width:1.8rem;color:${istGewinner?'#92400e':'var(--text-muted)'}">${rang+1}</span>
+              <span style="flex:1;font-weight:${istGewinner?800:600};color:${fg};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${istGewinner?'🎁 ':''}${r.p}</span>
+              <span style="width:60px;text-align:right;font-weight:700;color:${fg}">${fmt(r.a)}</span>
+              <span style="width:56px;text-align:right;font-size:.78rem;color:${istGewinner?'#92400e':'var(--text-muted)'}">${r.a!==undefined?(r.diff===0?'exakt':'±'+fmt(r.diff)):'—'}</span>
+              <span style="width:44px;text-align:right;font-weight:800;color:${r.pkt>0?(istGewinner?'#78350f':'var(--success)'):'var(--text-muted)'}">+${r.pkt}</span>
+              <span style="width:48px;text-align:right;font-size:.8rem;color:var(--text-muted)">${q.scores?.[r.p]||0}</span>
+            </div>`;
+          }).join('');
+        })()}
       </div>
       ${q.aktuelleQ < q.fragen.length - 1
         ? `<button class="btn btn-primary btn-full" onclick="naechsteFrage()">Nächste Frage →</button>`
@@ -10000,20 +10077,90 @@ function renderQuizAdmin() {
     return;
   }
 
-    if (q.phase === 'ergebnis') {
-    const scores = q.scores || {};
-    const ranking = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
-    container.innerHTML = `
-      <div class="card">
-        <div class="card-title">🏆 Quiz-Ergebnis</div>
-        ${ranking.map(([name, punkte], i) => `
-          <div class="quiz-score-row">
-            <span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'  '} <strong>${name}</strong></span>
-            <span style="font-weight:800;font-size:1.1rem;color:${i===0?'var(--warning)':'var(--primary)'}">${punkte} Punkte</span>
-          </div>`).join('')}
-        <button class="btn btn-primary btn-full" style="margin-top:1rem" onclick="resetQuiz()">🔄 Neues Quiz</button>
-      </div>`;
+  if (q.phase === 'ergebnis') {
+    container.innerHTML = quizEndstandHTML(q, true);
   }
+}
+
+// Endstand-HTML — von Master und Member gemeinsam genutzt
+function quizEndstandHTML(q, istMaster, meinName) {
+  const scores = q.scores || {};
+  const preise = q.preise || {};
+  const anzFragen = (q.fragen || []).length;
+  const ranking = q.spieler
+    .map(p => ({ p, pkt: scores[p] || 0, preise: preise[p] || 0 }))
+    .sort((a, b) => b.pkt - a.pkt);
+
+  // Ränge mit Gleichstand
+  let rang = 0;
+  const mitRang = ranking.map((r, i) => {
+    if (i > 0 && r.pkt !== ranking[i-1].pkt) rang = i;
+    return Object.assign({}, r, { rang: rang + 1 });
+  });
+
+  const sieger = mitRang.filter(r => r.rang === 1);
+  const V = q.verliererAnzahl === undefined ? Math.min(4, q.spieler.length - 1) : q.verliererAnzahl;
+  const verlierer = V > 0 ? mitRang.slice(-V).map(r => r.p) : [];
+  const maxPunkte = anzFragen * q.spieler.length;
+
+  return `
+    <div style="background:linear-gradient(180deg,#fef3c7,#fde68a);border-radius:14px;padding:1.1rem 1rem;margin-bottom:.75rem;text-align:center">
+      <div style="font-size:2.4rem;line-height:1">👑</div>
+      <div style="font-size:.7rem;font-weight:700;color:#92400e;letter-spacing:.05em;margin-top:.2rem">QUIZ-KÖNIG · PREIS</div>
+      <div style="font-size:1.5rem;font-weight:800;color:#78350f;margin:.1rem 0">${sieger.map(s=>s.p).join(' & ')}</div>
+      <div style="font-size:.9rem;color:#92400e;font-weight:600">${sieger[0].pkt} von ${maxPunkte} Punkten</div>
+    </div>
+
+    <div class="card" style="margin-bottom:.75rem;padding:.6rem .5rem">
+      <div style="display:flex;font-size:.68rem;color:var(--text-muted);font-weight:700;padding:0 .4rem .4rem;border-bottom:1px solid var(--border)">
+        <span style="width:1.8rem">PL.</span>
+        <span style="flex:1">NAME</span>
+        <span style="width:56px;text-align:right">PREISE</span>
+        <span style="width:56px;text-align:right">PUNKTE</span>
+      </div>
+      ${mitRang.map(r => {
+        const istSieger = r.rang === 1;
+        const istLetzter4 = verlierer.includes(r.p);
+        const istIch = meinName && r.p === meinName;
+        const bg = istSieger ? '#fef3c7' : (istLetzter4 ? '#fee2e2' : (istIch ? '#eff6ff' : 'transparent'));
+        const fg = istSieger ? '#78350f' : (istLetzter4 ? '#7f1d1d' : 'var(--text)');
+        const mut = istSieger ? '#92400e' : (istLetzter4 ? '#b91c1c' : 'var(--text-muted)');
+        const icon = istSieger ? '👑 ' : (istLetzter4 ? '⚠️ ' : '');
+        return `<div style="display:flex;align-items:center;font-size:.85rem;padding:.45rem .4rem;border-bottom:1px solid var(--border);background:${bg};border-radius:${bg!=='transparent'?'6px':'0'}">
+          <span style="width:1.8rem;color:${mut}">${r.rang}</span>
+          <span style="flex:1;font-weight:${istSieger?800:600};color:${fg};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon}${r.p}${istIch?' (du)':''}</span>
+          <span style="width:56px;text-align:right;color:${mut};font-size:.82rem">${r.preise ? '🎁 '+r.preise : '—'}</span>
+          <span style="width:56px;text-align:right;font-weight:800;color:${istSieger?'#78350f':'var(--primary)'}">${r.pkt}</span>
+        </div>`;
+      }).join('')}
+    </div>
+
+    ${verlierer.length ? `
+    <div style="background:#fee2e2;border-radius:12px;padding:.85rem 1rem;margin-bottom:.75rem">
+      <div style="display:flex;align-items:center;gap:.45rem;margin-bottom:.4rem">
+        <span style="font-size:1.1rem">⚠️</span>
+        <span style="font-size:.85rem;font-weight:800;color:#7f1d1d">${verlierer.length === 1 ? 'Behinderung' : verlierer.length + '× Behinderung'} beim nächsten Kegeln</span>
+      </div>
+      <div style="font-size:.82rem;color:#b91c1c;line-height:1.6">${verlierer.join(' · ')}</div>
+      <div style="font-size:.72rem;color:#b91c1c;margin-top:.4rem;opacity:.85">Bitte manuell im Kegelbuch eintragen.</div>
+    </div>` : ''}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.75rem">
+      <div style="background:var(--bg-page);border-radius:8px;padding:.6rem;text-align:center">
+        <div style="font-size:.68rem;color:var(--text-muted)">Fragen</div>
+        <div style="font-size:1.1rem;font-weight:800">${anzFragen}</div>
+      </div>
+      <div style="background:var(--bg-page);border-radius:8px;padding:.6rem;text-align:center">
+        <div style="font-size:.68rem;color:var(--text-muted)">Spieler</div>
+        <div style="font-size:1.1rem;font-weight:800">${q.spieler.length}</div>
+      </div>
+      <div style="background:var(--bg-page);border-radius:8px;padding:.6rem;text-align:center">
+        <div style="font-size:.68rem;color:var(--text-muted)">1. zu ${mitRang.length}.</div>
+        <div style="font-size:1.1rem;font-weight:800">${sieger[0].pkt - mitRang[mitRang.length-1].pkt}</div>
+      </div>
+    </div>
+
+    ${istMaster ? `<button class="btn btn-primary btn-full" onclick="resetQuiz()">🔄 Neues Quiz</button>` : ''}`;
 }
 
 // ---- MEMBER ----
@@ -10027,12 +10174,32 @@ function renderQuizMember() {
     container.innerHTML = `<div class="empty-state card">Kein Quiz aktiv. Warte auf den Admin.</div>`; return;
   }
   if (q.phase === 'ergebnis') {
-    const scores = q.scores || {};
-    const ranking = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
-    container.innerHTML = `<div class="card"><div class="card-title">🏆 Ergebnis</div>${ranking.map(([name,p],i)=>`<div class="quiz-score-row"><span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'  '} <strong>${name}</strong></span><span style="font-weight:800;color:${i===0?'var(--warning)':'var(--primary)'}">${p} Punkte</span></div>`).join('')}</div>`; return;
+    container.innerHTML = quizEndstandHTML(q, false, meinName); return;
   }
   if (!meinName || !q.spieler?.includes(meinName)) {
     container.innerHTML = `<div class="empty-state card">Du bist nicht in der Spielerliste dieses Quiz.</div>`; return;
+  }
+
+  // ── REGELN LESEN & BESTÄTIGEN ──
+  if (q.phase === 'regeln') {
+    const ok = (q.regelnOk || {})[meinName];
+    const bereit = q.spieler.filter(p => (q.regelnOk||{})[p]).length;
+    container.innerHTML = `
+      <div class="card" style="margin-bottom:.75rem">
+        <div class="card-title">📖 Spielregeln</div>
+        ${quizRegelnHTML(q.spieler.length, q.fragen.length, q.verliererAnzahl)}
+      </div>
+      ${ok
+        ? `<div class="card" style="text-align:center;border-color:var(--success)">
+             <div style="font-size:1.6rem">✅</div>
+             <div style="font-weight:800;margin:.2rem 0">Alles klar!</div>
+             <div style="font-size:.85rem;color:var(--text-muted)">${bereit} von ${q.spieler.length} sind bereit. Warte auf den Start…</div>
+           </div>`
+        : `<button class="btn btn-primary btn-full" style="font-size:1rem;padding:.8rem" onclick="quizRegelnBestaetigen('${meinName}')">
+             👍 Verstanden
+           </button>
+           <div style="text-align:center;font-size:.78rem;color:var(--text-muted);margin-top:.5rem">${bereit} von ${q.spieler.length} haben bestätigt</div>`}`;
+    return;
   }
 
   const frage = q.fragen[q.aktuelleQ];
@@ -10072,46 +10239,70 @@ function renderQuizMember() {
   }
 
   if (q.phase === 'reveal') {
-    const punkte = q.punkte?.[meinName] || 0;
-    const richtig = frage.richtig;
-    const einheitFmt = v => frage.einheit === '€' ? formatEur(v) : (v !== undefined && v !== null ? v + (frage.einheit ? ' ' + frage.einheit : '') : '—');
+    const meinePkt = q.punkte?.[meinName] || 0;
+    const richtig = Number(frage.richtig);
+    const fmt = v => (v === undefined || v === null) ? '—'
+      : (frage.einheit === '€' ? formatEur(v) : v + (frage.einheit ? ' ' + frage.einheit : ''));
+    const gewinner = q.frageGewinner || [];
+    const ichGewinner = gewinner.includes(meinName);
     const meineDiff = meineAntwort !== undefined ? Math.abs(Number(meineAntwort) - richtig) : null;
-    const exakt = meineDiff === 0;
 
-    // Alle Spieler sortiert nach Nähe
     const rangReihe = q.spieler
       .map(p => ({ p, a: (q.antworten||{})[p], diff: (q.antworten||{})[p]!==undefined ? Math.abs(Number((q.antworten||{})[p])-richtig) : Infinity, pkt: q.punkte?.[p]||0 }))
       .sort((a,b) => a.diff - b.diff);
 
     container.innerHTML = `
       <div class="quiz-frage" style="margin-bottom:.75rem">
-        <div class="q-num">Frage ${q.aktuelleQ+1} · Auflösung</div>
+        <div class="q-num">Frage ${q.aktuelleQ+1} / ${q.fragen.length} · Auflösung</div>
         <div class="q-text">${frage.frage}</div>
       </div>
       <div class="card" style="border-color:var(--success);margin-bottom:.75rem">
         <div style="font-size:.72rem;color:var(--success);font-weight:700;margin-bottom:.2rem">✅ Richtige Antwort</div>
-        <div style="font-weight:800;font-size:1.3rem">${einheitFmt(richtig)}</div>
+        <div style="font-weight:800;font-size:1.4rem">${fmt(richtig)}</div>
         <div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${frage.erklaerung}</div>
       </div>
-      ${punkte > 0
-        ? `<div style="text-align:center;font-size:1.4rem;font-weight:800;color:var(--success);margin-bottom:.75rem">+${punkte} Punkte! 🎉${exakt?' Genau getroffen!':''}</div>`
-        : `<div style="text-align:center;font-size:.9rem;color:var(--text-muted);margin-bottom:.75rem">
-             ${meineDiff!==null ? 'Deine Abweichung: ±' + einheitFmt(meineDiff) : 'Keine Antwort'}
+
+      ${ichGewinner
+        ? `<div style="background:linear-gradient(180deg,#fef3c7,#fde68a);border-radius:12px;padding:1rem;margin-bottom:.75rem;text-align:center">
+             <div style="font-size:2rem;line-height:1">🎁</div>
+             <div style="font-size:.7rem;font-weight:700;color:#92400e;letter-spacing:.04em;margin-top:.2rem">DU HAST EINEN PREIS GEWONNEN!</div>
+             <div style="font-size:1.3rem;font-weight:800;color:#78350f">+${meinePkt} Punkte</div>
+             <div style="font-size:.8rem;color:#92400e">${meineDiff===0?'Exakt getroffen!':'Nur '+fmt(meineDiff)+' daneben'}</div>
+           </div>`
+        : `<div class="card" style="text-align:center;margin-bottom:.75rem;padding:.8rem">
+             <div style="font-size:1.4rem;font-weight:800;color:${meinePkt>0?'var(--success)':'var(--text-muted)'}">+${meinePkt} Punkte</div>
+             <div style="font-size:.82rem;color:var(--text-muted);margin-top:.2rem">
+               ${meineDiff!==null ? 'Dein Tipp: '+fmt(meineAntwort)+' · Abweichung ±'+fmt(meineDiff) : 'Keine Antwort abgegeben'}
+             </div>
+             ${gewinner.length ? `<div style="font-size:.78rem;color:#92400e;margin-top:.4rem">🎁 Preis geht an ${gewinner.join(' & ')}</div>` : ''}
            </div>`}
-      <div class="card" style="padding:.75rem">
-        <div style="font-size:.75rem;font-weight:700;margin-bottom:.5rem">Alle Antworten</div>
-        ${rangReihe.map(({ p, a, diff, pkt }, i) => {
-          const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
-          const istIch = p === meinName;
-          return `<div style="display:flex;align-items:center;gap:.4rem;padding:.35rem 0;border-bottom:1px solid var(--border);background:${istIch?'#eff6ff':'transparent'};border-radius:${istIch?'6px':0};padding-left:${istIch?'.4rem':0}">
-            <span style="width:1.4rem">${medal||(i+1)+'.'}</span>
-            <span style="flex:1;font-size:.82rem;font-weight:${istIch?700:400}">${p}${istIch?' (du)':''}</span>
-            <span style="font-size:.82rem">${a!==undefined?einheitFmt(a):'—'}</span>
-            <span style="font-size:.75rem;color:var(--text-muted);width:55px;text-align:right">${a!==undefined?(diff===0?'✅':('±'+einheitFmt(diff))):'—'}</span>
-            <span style="font-size:.8rem;font-weight:700;color:var(--success);width:35px;text-align:right">${pkt>0?'+'+pkt:''}</span>
-          </div>`;
-        }).join('')}
-        <div style="display:flex;justify-content:space-between;margin-top:.6rem;font-size:.8rem;font-weight:700;border-top:1px solid var(--border);padding-top:.4rem">
+
+      <div class="card" style="padding:.6rem .5rem">
+        <div style="display:flex;font-size:.66rem;color:var(--text-muted);font-weight:700;padding:0 .35rem .35rem;border-bottom:1px solid var(--border)">
+          <span style="width:1.6rem">PL.</span>
+          <span style="flex:1">NAME</span>
+          <span style="width:56px;text-align:right">TIPP</span>
+          <span style="width:52px;text-align:right">ABW.</span>
+          <span style="width:38px;text-align:right">PKT</span>
+        </div>
+        ${(() => {
+          let rang = 0;
+          return rangReihe.map((r, i) => {
+            if (i > 0 && r.diff !== rangReihe[i-1].diff) rang = i;
+            const istGew = gewinner.includes(r.p);
+            const istIch = r.p === meinName;
+            const bg = istGew ? '#fef3c7' : (istIch ? '#eff6ff' : 'transparent');
+            const fg = istGew ? '#78350f' : 'var(--text)';
+            return `<div style="display:flex;align-items:center;font-size:.82rem;padding:.4rem .35rem;border-bottom:1px solid var(--border);background:${bg};border-radius:${bg!=='transparent'?'6px':'0'}">
+              <span style="width:1.6rem;color:${istGew?'#92400e':'var(--text-muted)'}">${rang+1}</span>
+              <span style="flex:1;font-weight:${istGew||istIch?700:400};color:${fg};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${istGew?'🎁 ':''}${r.p}${istIch?' (du)':''}</span>
+              <span style="width:56px;text-align:right;font-weight:600;color:${fg}">${fmt(r.a)}</span>
+              <span style="width:52px;text-align:right;font-size:.75rem;color:${istGew?'#92400e':'var(--text-muted)'}">${r.a!==undefined?(r.diff===0?'exakt':'±'+fmt(r.diff)):'—'}</span>
+              <span style="width:38px;text-align:right;font-weight:800;color:${r.pkt>0?(istGew?'#78350f':'var(--success)'):'var(--text-muted)'}">+${r.pkt}</span>
+            </div>`;
+          }).join('');
+        })()}
+        <div style="display:flex;justify-content:space-between;margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border);font-size:.82rem;font-weight:700">
           <span>Dein Gesamtstand</span><span style="color:var(--primary)">${q.scores?.[meinName]||0} Punkte</span>
         </div>
       </div>`;
@@ -10140,6 +10331,7 @@ function zeigeFragenAuswahl() {
     phase: 'fragenauswahl', spieler,
     fragenKandidaten: kandidaten,
     fragenAusgewaehlt: vorauswahl,
+    verliererAnzahl: Math.min(4, spieler.length - 1),
     scores: Object.fromEntries(spieler.map(p=>[p,0]))
   });
 }
@@ -10166,9 +10358,70 @@ function starteQuizMitAuswahl() {
   if (sel < 5) { alert('Mindestens 5 Fragen auswählen!'); return; }
   const fragen = q.fragenAusgewaehlt.map(i => q.fragenKandidaten[i]).sort(() => Math.random() - .5);
   db.collection('quiz').doc('aktiv').update({
-    phase: 'frage', fragen, aktuelleQ: 0,
-    antworten: {}, startedAt: Date.now()
+    phase: 'regeln', fragen, aktuelleQ: 0,
+    antworten: {}, punkte: {}, preise: {}, frageGewinner: [],
+    regelnOk: {}, startedAt: Date.now()
   });
+}
+
+function quizSetVerlierer(n) {
+  const anz = Math.max(0, Math.min(parseInt(n, 10) || 0, (state.quiz?.spieler?.length || 1) - 1));
+  db.collection('quiz').doc('aktiv').update({ verliererAnzahl: anz });
+}
+
+// ── REGEL-PHASE ──────────────────────────────────────────────────
+function quizRegelnBestaetigen(name) {
+  db.collection('quiz').doc('aktiv').update({ ['regelnOk.' + name]: true });
+}
+function quizRegelnSkip(name) {
+  db.collection('quiz').doc('aktiv').update({ ['regelnOk.' + name]: true });
+}
+function quizRegelnAlleSkippen() {
+  const q = state.quiz;
+  const alle = {};
+  q.spieler.forEach(p => { alle[p] = true; });
+  db.collection('quiz').doc('aktiv').update({ regelnOk: alle });
+}
+function quizStarteErsteFrage() {
+  db.collection('quiz').doc('aktiv').update({ phase: 'frage', aktuelleQ: 0, antworten: {} });
+}
+
+// Regeltext — an beiden Stellen (Master + Member) verwendet
+function quizRegelnHTML(anzSpieler, anzFragen, verliererAnzahl) {
+  const N = anzSpieler;
+  const V = verliererAnzahl === undefined ? Math.min(4, N - 1) : verliererAnzahl;
+  return `
+    <div style="font-size:.875rem;line-height:1.65">
+      <div style="display:flex;gap:.6rem;margin-bottom:.7rem">
+        <span style="font-size:1.1rem">🔢</span>
+        <div><strong>Nur Schätzfragen.</strong> ${anzFragen} Fragen zur laufenden Saison — Pumpen, Klingeln, Stinas, Strafen und so weiter. Es gibt keine Antwortmöglichkeiten, du tippst eine Zahl ein.</div>
+      </div>
+      <div style="display:flex;gap:.6rem;margin-bottom:.7rem">
+        <span style="font-size:1.1rem">🏅</span>
+        <div><strong>Punkte pro Frage.</strong> Wer am nächsten dran ist bekommt <strong>${N} Punkte</strong>, der Zweitnächste ${N-1}, dann ${N-2} — bis der Letzte <strong>1 Punkt</strong> bekommt. Du bekommst also bei jeder Frage Punkte, auch wenn du weit daneben liegst.</div>
+      </div>
+      <div style="display:flex;gap:.6rem;margin-bottom:.7rem">
+        <span style="font-size:1.1rem">🤝</span>
+        <div><strong>Gleichstand.</strong> Wenn zwei den gleichen Abstand haben, bekommen beide den besseren Wert.</div>
+      </div>
+      <div style="display:flex;gap:.6rem;margin-bottom:.7rem">
+        <span style="font-size:1.1rem">🎁</span>
+        <div><strong>Preis pro Frage.</strong> Wer eine Frage gewinnt, bekommt einen Preis. Bei ${anzFragen} Fragen gibt es also ${anzFragen} Preise zu holen.</div>
+      </div>
+      <div style="display:flex;gap:.6rem;margin-bottom:.7rem">
+        <span style="font-size:1.1rem">👑</span>
+        <div><strong>Sieger am Ende.</strong> Wer nach allen Fragen die meisten Punkte hat, bekommt die Krone und einen Preis.</div>
+      </div>
+      ${V === 0 ? '' : `
+      <div style="display:flex;gap:.6rem">
+        <span style="font-size:1.1rem">⚠️</span>
+        <div><strong>${V === 1 ? 'Der Letzte' : 'Die letzten ' + V}.</strong>
+          ${V === 1
+            ? `Wer auf dem letzten Platz landet (Platz ${N} von ${N}), bekommt`
+            : `Die ${V} Schlechtesten der Endtabelle — also die Plätze ${N-V+1} bis ${N} von ${N} — bekommen`}
+          beim nächsten Kegeln ${V === 1 ? 'eine' : 'je eine'} <strong>Behinderung</strong> aufgeschrieben.</div>
+      </div>`}
+    </div>`;
 }
 
 // Master-Device Hilfsfunktionen
@@ -10192,39 +10445,45 @@ function veroeffentlicheAntwort() {
   const q = state.quiz;
   const frage = q.fragen[q.aktuelleQ];
   const antworten = q.antworten || {};
+  const N = q.spieler.length;
   const punkte = {};
 
-  if (frage.typ === 'mc') {
-    q.spieler.forEach(p => {
-      punkte[p] = antworten[p] === frage.richtig ? 3 : 0;
-    });
-  } else {
-    // Schätzung: Ranking nach Nähe
-    const mit = q.spieler.filter(p => antworten[p] !== undefined)
-      .map(p => ({ p, diff: Math.abs(Number(antworten[p]) - frage.richtig) }))
-      .sort((a,b) => a.diff - b.diff);
-    const punkteWerte = [5, 3, 2, 1];
-    mit.forEach((item, i) => {
-      // Gleiche Differenz = gleiche Punkte
-      const gleicheDiff = mit.filter(x => x.diff === item.diff);
-      const pkte = punkteWerte[i] || 0;
-      punkte[item.p] = (punkte[item.p] || 0) + pkte;
-    });
-    // Exakt richtig = Bonus
-    mit.filter(x => x.diff === 0).forEach(x => { punkte[x.p] = (punkte[x.p]||0) + 2; });
-  }
+  // Nach Abstand zur richtigen Antwort sortieren
+  const mit = q.spieler
+    .filter(p => antworten[p] !== undefined && antworten[p] !== null)
+    .map(p => ({ p, diff: Math.abs(Number(antworten[p]) - Number(frage.richtig)) }))
+    .sort((a, b) => a.diff - b.diff);
+
+  // Punkte N..1 — bei Gleichstand bekommen alle den besseren Wert
+  let rang = 0;
+  mit.forEach((item, i) => {
+    if (i > 0 && item.diff !== mit[i-1].diff) rang = i;   // neuer Rang erst bei anderem Abstand
+    punkte[item.p] = Math.max(N - rang, 1);
+  });
+  // Wer nicht geantwortet hat: 0 Punkte
+  q.spieler.forEach(p => { if (punkte[p] === undefined) punkte[p] = 0; });
+
+  // Gewinner der Frage (alle mit dem kleinsten Abstand) — bekommen einen Preis
+  const bestDiff = mit.length ? mit[0].diff : null;
+  const frageGewinner = mit.filter(x => x.diff === bestDiff).map(x => x.p);
 
   // Scores aktualisieren
   const neueScores = {};
-  q.spieler.forEach(p => { neueScores[p] = (q.scores[p]||0) + (punkte[p]||0); });
+  q.spieler.forEach(p => { neueScores[p] = (q.scores?.[p] || 0) + (punkte[p] || 0); });
 
-  db.collection('quiz').doc('aktiv').update({ phase: 'reveal', punkte, scores: neueScores });
+  // Preise pro Person mitzählen
+  const preise = Object.assign({}, q.preise || {});
+  frageGewinner.forEach(p => { preise[p] = (preise[p] || 0) + 1; });
+
+  db.collection('quiz').doc('aktiv').update({
+    phase: 'reveal', punkte, scores: neueScores, frageGewinner, preise
+  });
 }
 
 function naechsteFrage() {
   const q = state.quiz;
   db.collection('quiz').doc('aktiv').update({
-    phase: 'frage', aktuelleQ: q.aktuelleQ + 1, antworten: {}, punkte: {}
+    phase: 'frage', aktuelleQ: q.aktuelleQ + 1, antworten: {}, punkte: {}, frageGewinner: []
   });
 }
 

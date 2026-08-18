@@ -8955,8 +8955,8 @@ function generiereQuizFragen(anzahl = 30) {
   const mitglieder = state.mitglieder.map(m => m.name);
   const shuffle = arr => [...arr].sort(() => Math.random() - .5);
   const fragen = [];
-  const F = (frage, richtig, einheit, erklaerung) =>
-    fragen.push({ typ:'schaetzung', quelle:'saison', frage, richtig, einheit, erklaerung });
+  const F = (frage, richtig, einheit, erklaerung, person) =>
+    fragen.push({ typ:'schaetzung', quelle:'saison', frage, richtig, einheit, erklaerung, person: person || null });
 
   // ── GESAMT-KATEGORIEN ─────────────────────────────────────────
   const KATS = [
@@ -8988,9 +8988,9 @@ function generiereQuizFragen(anzahl = 30) {
     const spielerMit = mitglieder
       .map(n => ({ name:n, val: alle.filter(e=>e.kategorie===kat&&e.mitglied===n).reduce((s,e)=>s+(e.anzahl||1),0) }))
       .filter(m => m.val > 0);
-    shuffle(spielerMit).slice(0, 3).forEach(sp =>
+    spielerMit.forEach(sp =>
       F(`Wie viele ${label} hat ${sp.name} diese Saison insgesamt ${verb}?`, sp.val, '×',
-        `${sp.name}: ${sp.val}× ${label} insgesamt.`));
+        `${sp.name}: ${sp.val}× ${label} insgesamt.`, sp.name));
   });
 
   // ── PRO-SPIELER DURCHSCHNITT PRO ABEND ───────────────────────
@@ -9004,10 +9004,10 @@ function generiereQuizFragen(anzahl = 30) {
       const schnitt = sessAnz >= 2 ? Math.round(total/sessAnz*10)/10 : null;
       return { name:n, val:total, sess:sessAnz, schnitt };
     }).filter(m => m.val>0 && m.sess>=2 && m.schnitt!==null);
-    shuffle(spielerMit).slice(0, 2).forEach(sp =>
+    spielerMit.forEach(sp =>
       F(`Wie viele ${label} hat ${sp.name} durchschnittlich pro Kegelabend ${verb}?`,
         sp.schnitt, '×',
-        `${sp.name}: Ø ${sp.schnitt}× pro Abend (${sp.val} gesamt / ${sp.sess} Abende).`));
+        `${sp.name}: Ø ${sp.schnitt}× pro Abend (${sp.val} gesamt / ${sp.sess} Abende).`, sp.name));
   });
 
   // ── ANWESENHEIT PRO SPIELER ───────────────────────────────────
@@ -9015,17 +9015,17 @@ function generiereQuizFragen(anzahl = 30) {
     const anwAnz = sessions.filter(s=>(s.spieler||s.angemeldet||[]).includes(n)).length;
     if (anwAnz > 0)
       F(`Wie viele Kegel-Abende war ${n} diese Saison dabei?`, anwAnz, 'Abende',
-        `${n} war bei ${anwAnz} von ${sessions.length} Abenden dabei.`);
+        `${n} war bei ${anwAnz} von ${sessions.length} Abenden dabei.`, n);
   });
 
   // ── STRAFEN (€) PRO SPIELER ───────────────────────────────────
   const strafRanking = mitglieder.map(n=>({
     name:n, val: strafen.filter(s=>s.mitglied===n).reduce((s,x)=>s+Number(x.betrag),0)
   })).filter(m=>m.val>0);
-  shuffle(strafRanking).forEach(sp =>
+  strafRanking.forEach(sp =>
     F(`Wie viel Strafen (in €) hat ${sp.name} diese Saison kassiert?`,
       Math.round(sp.val*100)/100, '€',
-      `${sp.name}: ${formatEur(sp.val)} Strafen insgesamt.`));
+      `${sp.name}: ${formatEur(sp.val)} Strafen insgesamt.`, sp.name));
 
   // ── GESAMTSTRAFEN + KASSENSTAND ───────────────────────────────
   const gesamtStrafen = strafen.reduce((s,x)=>s+Number(x.betrag),0);
@@ -9051,7 +9051,24 @@ function generiereQuizFragen(anzahl = 30) {
         `${p} Pumpen beim ${sess.name}.`);
   });
 
-  return shuffle(fragen).slice(0, anzahl);
+  // ── AUSWAHL: jedes Mitglied kommt mindestens einmal vor ───────
+  const auswahl = [];
+  const rest = shuffle(fragen);
+
+  // Schritt 1: pro Mitglied eine zufällige personenbezogene Frage
+  shuffle(mitglieder).forEach(name => {
+    const idx = rest.findIndex(f => f.person === name);
+    if (idx !== -1) auswahl.push(rest.splice(idx, 1)[0]);
+  });
+
+  // Schritt 2: mit Club-Gesamtfragen und weiteren Personenfragen auffüllen
+  const clubFragen = rest.filter(f => !f.person);
+  const weitere    = rest.filter(f => f.person);
+  [...shuffle(clubFragen), ...shuffle(weitere)].forEach(f => {
+    if (auswahl.length < anzahl) auswahl.push(f);
+  });
+
+  return auswahl.slice(0, anzahl);
 }
 
 // ---- BLACKJACK ----
@@ -9363,104 +9380,7 @@ function renderBlackjack() {
 
 // ---- OFFLINE QUIZ ----
 
-const QUIZ_OFFLINE_FRAGEN = [
-  // ── Multiple Choice ───────────────────────────────────────────
-  { typ:'mc', quelle:'standard', frage:'Wie viele Kegel stehen beim deutschen Kegeln?',
-    antworten:['7','8','10','9'], richtig:'9',
-    erklaerung:'Beim deutschen Kegeln stehen 9 Kegel in einer Raute — beim Bowling sind es 10!' },
-
-  { typ:'mc', quelle:'standard', frage:'Was bedeutet "Pumpe" beim Kegeln?',
-    antworten:['Alle 9 getroffen','7 Kegel getroffen','Ungültiger Wurf','Kein einziger Kegel getroffen'],
-    richtig:'Kein einziger Kegel getroffen',
-    erklaerung:'Pumpe = 0 Hölzer — der schlimmste Wurf beim Kegeln!' },
-
-  { typ:'mc', quelle:'standard', frage:'Was ist "Alle 9" beim Kegeln?',
-    antworten:['9 Würfe in Folge','Nur 9 Punkte','Ein ungültiger Wurf','Alle 9 Kegel mit einem Wurf abräumen'],
-    richtig:'Alle 9 Kegel mit einem Wurf abräumen',
-    erklaerung:'"Alle 9" = alle Kegel mit einem einzigen Wurf abräumen — der Traumwurf!' },
-
-  { typ:'mc', quelle:'standard', frage:'In welcher Formation stehen die 9 Kegel beim deutschen Kegeln?',
-    antworten:['Dreieck','Linie','Kreis','Raute'],
-    richtig:'Raute',
-    erklaerung:'Die 9 Kegel stehen in einer Raute (Diamant-Formation).' },
-
-  { typ:'mc', quelle:'standard', frage:'Wie viele Reifen braucht ein Bus beim Spiel "Bus bauen" um zu gewinnen?',
-    antworten:['4 Reifen','8 Reifen','5 Reifen','6 Reifen'],
-    richtig:'6 Reifen',
-    erklaerung:'Ein Bus braucht genau 6 Reifen — dann ist er fertig und gewinnt!' },
-
-  { typ:'mc', quelle:'standard', frage:'Was passiert bei einer Schnapszahl (z.B. 33) beim Spiel "Bis 100"?',
-    antworten:['Bonuspunkte fürs Team','Der Gegner verliert Punkte','Man darf nochmal werfen','Der Punktestand wird auf 0 zurückgesetzt'],
-    richtig:'Der Punktestand wird auf 0 zurückgesetzt',
-    erklaerung:'Schnapszahlen (11, 22, 33, ..., 99) setzen den Punktestand zurück auf 0 — Aufgepasst!' },
-
-  { typ:'mc', quelle:'standard', frage:'Was zählt "Pumpe" beim TAL-Abschnitt bei "Berg & Tal"?',
-    antworten:['+0 Punkte','+5 Punkte','−5 Punkte','−10 Punkte'],
-    richtig:'−10 Punkte',
-    erklaerung:'Im Tal-Abschnitt ist Pumpe besonders schlimm: −10 Punkte, schlimmer als eine geworfene 9 (−9)!' },
-
-  { typ:'mc', quelle:'standard', frage:'Welcher Spieler gewinnt bei "Russisch Roulette"?',
-    antworten:['Wer zuerst stirbt','Wer am meisten wirft','Wer die höchste Zahl wirft','Der letzte Überlebende'],
-    richtig:'Der letzte Überlebende',
-    erklaerung:'Bei Russisch Roulette gewinnt der letzte Spieler, der noch Leben übrig hat!' },
-
-  // ── Schätzfragen ──────────────────────────────────────────────
-  { typ:'schaetzung', quelle:'standard', frage:'Wie viele Würfe hat jeder Spieler beim Spiel "Berg & Tal" insgesamt?',
-    richtig:10, einheit:'Würfe',
-    erklaerung:'5 Bergwürfe (addieren) + 5 Talwürfe (subtrahieren) = 10 Würfe.' },
-
-  { typ:'schaetzung', quelle:'standard', frage:'Wie viele Schnapszahlen gibt es zwischen 1 und 100?',
-    richtig:9, einheit:'',
-    erklaerung:'11, 22, 33, 44, 55, 66, 77, 88, 99 — genau 9 Schnapszahlen!' },
-
-  { typ:'schaetzung', quelle:'standard', frage:'Wie viele Felder hat unser 4-Gewinnt-Spielfeld (Spalten × Reihen)?',
-    richtig:63, einheit:'Felder',
-    erklaerung:'9 Spalten × 7 Reihen = 63 Felder auf dem Spielfeld.' },
-
-  { typ:'schaetzung', quelle:'standard', frage:'Wie hoch ist der maximale Punktestand aus den 5 Berg-Würfen bei "Berg & Tal"?',
-    richtig:45, einheit:'Punkte',
-    erklaerung:'5 × 9 Hölzer = 45 Punkte — nur mit fünfmal "Alle 9" erreichbar!' },
-];
-
-function getDynamischeQuizFragen() {
-  const sessions = state.kegelsessions || [];
-  const alle = sessions.flatMap(s => s.eintraege || []);
-
-  // 1. Pumpen insgesamt
-  const pumpenTotal = alle.filter(e => e.kategorie === 'Pumpe').reduce((s,e) => s+(e.anzahl||1), 0);
-
-  // 2. Lucas Kossen Klingeln Ø
-  const lucasKlingeln = alle.filter(e => e.mitglied === 'Lucas Kossen' && e.kategorie === 'Klingel').reduce((s,e) => s+(e.anzahl||1), 0);
-  const lucasSessions = sessions.filter(s => (s.angemeldet||[]).includes('Lucas Kossen')).length;
-  const lucasAvg = lucasSessions > 0 ? Math.round(lucasKlingeln / lucasSessions) : 7;
-
-  return [
-    {
-      typ: 'schaetzung', quelle: 'club',
-      frage: 'Wie viele Pumpen wurden bei den Blackout Boys insgesamt geworfen?',
-      richtig: pumpenTotal || 1,
-      einheit: 'Pumpen',
-      erklaerung: `${pumpenTotal} Pumpen über alle Kegelabende — das ist der Fluch der Bahn!`,
-      fakt: `💡 Das sind durchschnittlich 91,3 Pumpen pro Kegelabend. Ein verlässlicher Wert! 🎳`
-    },
-    {
-      typ: 'schaetzung', quelle: 'club',
-      frage: 'Wie viele Klingeln hat Lucas Kossen durchschnittlich pro Kegeln (an dem er da war) geworfen?',
-      richtig: lucasAvg || 7,
-      einheit: 'Klingeln',
-      erklaerung: `Lucas war ${lucasSessions} mal dabei und hat ${lucasKlingeln} mal die Klingel abgeräumt — im Schnitt ${lucasAvg} pro Abend.`,
-      fakt: `🔔 Lucas Kossen: ${lucasSessions}x dabei, ${lucasKlingeln}x die Klingel — das sind 25% aller Klingeln!\n📊 Platz 2: Lukas Cordes (9×) · Platz 3: Michael Runde (6×)`
-    },
-    {
-      typ: 'mc', quelle: 'club',
-      frage: 'Wer hält den Rekord für die meisten Pumpen in einem einzigen Kegelabend?',
-      antworten: ['Dimi Renje', 'Thorben Kloppe', 'Christian Wübben', 'Lucas Kossen'],
-      richtig: 'Dimi Renje',
-      erklaerung: 'Dimi Renje hat am 05.06.2026 mit 23 Pumpen an einem Abend absolute Geschichte geschrieben.',
-      fakt: `🤯 Dimi hat am 05.06.2026 grandiose 23 Pumpen an einem einzigen Abend geworfen — unangefochtener Pumpen-König!`
-    },
-  ];
-}
+// (Allgemeine Kegelfragen + alte Club-Fragen entfernt — Quiz nutzt nur noch generiereQuizFragen())
 
 function quizQuelleBadge(f) {
   if (f.quelle === 'club')     return `<span style="font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap">🏠 Club</span>`;
@@ -9474,8 +9394,9 @@ function starteOfflineQuiz() {
   quizOfflineState = {
     phase: 'setup',
     spieler: state.mitglieder.map(m => m.name),
-    fragenPool: [...QUIZ_OFFLINE_FRAGEN, ...getDynamischeQuizFragen()].filter(f => f.quelle === 'club').sort(() => Math.random() - .5),
+    fragenPool: generiereQuizFragen(30),
     fragenAusgewaehlt: [],
+    _vorauswahlGesetzt: false,
     fragen: null,
     aktuelleQ: 0,
     scores: {},
@@ -9497,12 +9418,15 @@ function offlineQuizFragenAuswahl() {
   quizOfflineState.spieler = spieler;
   quizOfflineState.scores = Object.fromEntries(spieler.map(p => [p, 0]));
   quizOfflineState.phase = 'fragenauswahl';
+  // Vorauswahl: erste 20 (enthalten je eine Frage pro Mitglied)
+  const n = Math.min(20, quizOfflineState.fragenPool.length);
+  quizOfflineState.fragenAusgewaehlt = Array.from({ length: n }, (_, i) => i);
   renderOfflineQuiz();
 }
 
 function offlineToggleFrage(idx) {
   const os = quizOfflineState;
-  const max = Math.min(os.fragenPool.length, 10);
+  const max = Math.min(os.fragenPool.length, 20);
   if (os.fragenAusgewaehlt.includes(idx)) {
     os.fragenAusgewaehlt = os.fragenAusgewaehlt.filter(i => i !== idx);
   } else if (os.fragenAusgewaehlt.length < max) {
@@ -9513,9 +9437,8 @@ function offlineToggleFrage(idx) {
 
 function offlineQuizStarten() {
   const os = quizOfflineState;
-  const max = Math.min(os.fragenPool.length, 10);
-  if (os.fragenAusgewaehlt.length !== max) return;
-  os.fragen = os.fragenAusgewaehlt.map(i => os.fragenPool[i]);
+  if (os.fragenAusgewaehlt.length < 5) return;
+  os.fragen = os.fragenAusgewaehlt.map(i => os.fragenPool[i]).sort(() => Math.random() - .5);
   os.aktuelleQ = 0;
   os.phase = 'fakten';
   renderOfflineQuiz();
@@ -9708,14 +9631,14 @@ function renderOfflineQuiz() {
   if (os.phase === 'fragenauswahl') {
     const pool = os.fragenPool;
     const sel = os.fragenAusgewaehlt;
-    const maxSel = Math.min(pool.length, 10);
+    const maxSel = Math.min(pool.length, 20);
     container.innerHTML = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
           <div class="card-title" style="margin:0">Fragen auswählen</div>
-          <span class="tag ${sel.length===maxSel?'tag-green':'tag-yellow'}">${sel.length} / ${maxSel} gewählt</span>
+          <span class="tag ${sel.length>=5?'tag-green':'tag-yellow'}">${sel.length} / ${maxSel} gewählt</span>
         </div>
-        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Tippe zum Aus- oder Abwählen. Alle ${maxSel} auswählen.</p>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Wähle 5–${maxSel} Saison-Fragen aus. Tippen zum An-/Abwählen.</p>
         ${pool.map((f, i) => {
           const isSelected = sel.includes(i);
           const detailsHTML = f.typ === 'mc'
@@ -9728,7 +9651,7 @@ function renderOfflineQuiz() {
             <div style="flex:1">
               <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.2rem">
                 <span style="font-size:.78rem;font-weight:700;color:${isSelected?'var(--primary)':'var(--text-muted)'}">${f.typ==='mc'?'🔤 MC':'🔢 Schätzung'}</span>
-                ${quizQuelleBadge(f)}
+                ${f.person ? `<span style="font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;white-space:nowrap">👤 ${f.person}</span>` : quizQuelleBadge(f)}
               </div>
               <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
               ${detailsHTML}
@@ -9737,7 +9660,7 @@ function renderOfflineQuiz() {
         }).join('')}
         <div style="display:flex;gap:.75rem;margin-top:1rem">
           <button class="btn btn-ghost" onclick="quizOfflineState.phase='setup';renderOfflineQuiz()">← Zurück</button>
-          <button class="btn btn-primary" style="flex:1" onclick="offlineQuizStarten()" ${sel.length!==maxSel?'disabled style="opacity:.5"':''}>🔌 Quiz starten (${sel.length}/${maxSel})</button>
+          <button class="btn btn-primary" style="flex:1" onclick="offlineQuizStarten()" ${sel.length<5?'disabled style="opacity:.5"':''}>🔌 Quiz starten (${sel.length} Fragen)</button>
         </div>
       </div>`;
     return;
@@ -9957,7 +9880,7 @@ function renderQuizAdmin() {
             <div style="flex:1">
               <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.2rem">
                 <span style="font-size:.78rem;font-weight:700;color:${sel?'var(--primary)':'var(--text-muted)'}">${f.typ==='mc'?'🔤 MC':'🔢 Schätzung'}</span>
-                ${quizQuelleBadge(f)}
+                ${f.person ? `<span style="font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;white-space:nowrap">👤 ${f.person}</span>` : quizQuelleBadge(f)}
               </div>
               <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
               ${detailsHTML}
@@ -10211,10 +10134,12 @@ function zeigeFragenAuswahl() {
   // Nur Saison-Fragen aus echten Session-Daten (keine allgemeinen Kegelfragen)
   const kandidaten = generiereQuizFragen(30);
   if (kandidaten.length < 5) { alert('Nicht genug Daten für ein Quiz. Spielt erst ein paar Kegel-Abende!'); return; }
+  // Vorauswahl: die ersten 20 (enthalten je eine Frage pro Mitglied)
+  const vorauswahl = kandidaten.slice(0, Math.min(20, kandidaten.length)).map((_, i) => i);
   db.collection('quiz').doc('aktiv').set({
     phase: 'fragenauswahl', spieler,
     fragenKandidaten: kandidaten,
-    fragenAusgewaehlt: [],
+    fragenAusgewaehlt: vorauswahl,
     scores: Object.fromEntries(spieler.map(p=>[p,0]))
   });
 }
@@ -10239,7 +10164,7 @@ function starteQuizMitAuswahl() {
   const q = state.quiz;
   const sel = (q.fragenAusgewaehlt||[]).length;
   if (sel < 5) { alert('Mindestens 5 Fragen auswählen!'); return; }
-  const fragen = q.fragenAusgewaehlt.map(i => q.fragenKandidaten[i]);
+  const fragen = q.fragenAusgewaehlt.map(i => q.fragenKandidaten[i]).sort(() => Math.random() - .5);
   db.collection('quiz').doc('aktiv').update({
     phase: 'frage', fragen, aktuelleQ: 0,
     antworten: {}, startedAt: Date.now()

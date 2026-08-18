@@ -8948,298 +8948,110 @@ function subscribeQuiz() {
 }
 
 // Fragen generieren aus echten Daten
-function generiereQuizFragen(anzahl = 10) {
+function generiereQuizFragen(anzahl = 30) {
   const sessions = state.kegelsessions || [];
   const alle = sessions.flatMap(s => s.eintraege || []);
   const strafen = state.strafen || [];
   const mitglieder = state.mitglieder.map(m => m.name);
   const shuffle = arr => [...arr].sort(() => Math.random() - .5);
-  const pick4 = (correct, pool) => {
-    const others = shuffle(pool.filter(x => x !== correct)).slice(0, 3);
-    return shuffle([correct, ...others]);
-  };
-
-  // Hilfsfunktionen
-  const perSpielerKat = {};
-  alle.forEach(e => {
-    if (!perSpielerKat[e.mitglied]) perSpielerKat[e.mitglied] = {};
-    perSpielerKat[e.mitglied][e.kategorie] = (perSpielerKat[e.mitglied][e.kategorie]||0) + (e.anzahl||1);
-  });
-  const pumpenRanking = mitglieder.map(n => ({ name: n, val: perSpielerKat[n]?.['Pumpe'] || 0 })).sort((a,b)=>b.val-a.val);
-  const alle9Ranking = mitglieder.map(n => ({ name: n, val: perSpielerKat[n]?.['Alle 9 (geworfen)'] || perSpielerKat[n]?.['Alle 9'] || 0 })).sort((a,b)=>b.val-a.val);
-  const strafRanking = mitglieder.map(n => ({ name: n, val: strafen.filter(s=>s.mitglied===n).reduce((s,x)=>s+Number(x.betrag),0) })).sort((a,b)=>b.val-a.val);
-  const anwRanking = mitglieder.map(n => ({ name: n, val: sessions.filter(s=>(s.angemeldet||[]).includes(n)).length })).sort((a,b)=>b.val-a.val);
-  const gesamtStrafen = strafen.reduce((s,x)=>s+Number(x.betrag),0);
-  const kassenstand = (() => { const e=state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0); const a=state.kassenbuch.filter(b=>b.typ==='ausgabe').reduce((s,b)=>s+Number(b.betrag),0); return e-a; })();
-  const pumpenGesamt = alle.filter(e=>e.kategorie==='Pumpe').reduce((s,e)=>s+(e.anzahl||1),0);
-  const verlSpielGesamt = alle.filter(e=>e.kategorie==='Verl. Spiel').reduce((s,e)=>s+(e.anzahl||1),0);
-
   const fragen = [];
+  const F = (frage, richtig, einheit, erklaerung) =>
+    fragen.push({ typ:'schaetzung', quelle:'saison', frage, richtig, einheit, erklaerung });
 
-  // MC: Pumpen-König
-  if (pumpenRanking[0]?.val > 0) {
-    const antworten = pick4(pumpenRanking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten Pumpen geworfen?`, antworten, richtig: pumpenRanking[0].name, erklaerung:`${pumpenRanking[0].name} hat ${pumpenRanking[0].val}× gepumpt!` });
-  }
-
-  // Schätzung: Pumpen gesamt
-  if (pumpenGesamt > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viele Pumpen wurden diese Saison insgesamt geworfen?`, richtig: pumpenGesamt, einheit:'×', erklaerung:`${pumpenGesamt} Pumpen in ${sessions.length} Sessions.` });
-  }
-
-  // MC: Meiste Strafen (€)
-  if (strafRanking[0]?.val > 0) {
-    const antworten = pick4(strafRanking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer hat diese Saison am meisten Strafen bezahlt?`, antworten, richtig: strafRanking[0].name, erklaerung:`${strafRanking[0].name} mit ${formatEur(strafRanking[0].val)}.` });
-  }
-
-  // Schätzung: Gesamtstrafen
-  if (gesamtStrafen > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viel haben alle Strafen diese Saison zusammen gebracht?`, richtig: Math.round(gesamtStrafen * 100) / 100, einheit:'€', erklaerung:`Insgesamt ${formatEur(gesamtStrafen)} an Strafen.` });
-  }
-
-  // MC: Meiste Kegel-Abende
-  if (anwRanking[0]?.val > 0) {
-    const antworten = pick4(anwRanking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer war diese Saison am häufigsten beim Kegeln?`, antworten, richtig: anwRanking[0].name, erklaerung:`${anwRanking[0].name} war bei ${anwRanking[0].val} von ${sessions.length} Abenden dabei.` });
-  }
-
-  // Schätzung: Kassenstand
-  if (Math.abs(kassenstand) > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viel ist aktuell in der Vereinskasse?`, richtig: Math.round(kassenstand * 100) / 100, einheit:'€', erklaerung:`Kassenstand: ${formatEur(kassenstand)}.` });
-  }
-
-
-  // Schätzung: Anzahl Sessions
-  if (sessions.length > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viele Kegel-Abende hatten wir diese Saison?`, richtig: sessions.length, einheit:'×', erklaerung:`${sessions.length} Kegel-Sessions insgesamt.` });
-  }
-
-  // MC: Lieblingsfehler Pumpe vs Verl. Spiel
-  if (pumpenGesamt > 0 && verlSpielGesamt > 0) {
-    const mehr = pumpenGesamt > verlSpielGesamt ? 'Pumpe' : 'Verl. Spiel';
-    const antworten = shuffle(['Pumpe', 'Verl. Spiel', 'Klingel', 'Lustwurf']);
-    fragen.push({ typ:'mc', frage:`Welche Strafe gab es diese Saison am häufigsten?`, antworten, richtig: mehr, erklaerung:`${mehr}: ${Math.max(pumpenGesamt, verlSpielGesamt)}× — die häufigste Strafe!` });
-  }
-
-  // Schätzung: Verl. Spiele
-  if (verlSpielGesamt > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viele Verl. Spiele gab es diese Saison insgesamt?`, richtig: verlSpielGesamt, einheit:'×', erklaerung:`${verlSpielGesamt}× Verl. Spiel in allen Sessions.` });
-  }
-
-  // MC: Sauberster Kegler
-  if (strafRanking.length > 1 && strafRanking[strafRanking.length-1].val === 0) {
-    const sauber = strafRanking.filter(m => m.val === 0).map(m => m.name);
-    if (sauber.length === 1) {
-      const antworten = pick4(sauber[0], mitglieder);
-      fragen.push({ typ:'mc', frage:`Wer hat diese Saison KEINE einzige Strafe bekommen?`, antworten, richtig: sauber[0], erklaerung:`${sauber[0]} — eine weiße Weste!` });
-    }
-  }
-
-  // Schätzung: Anzahl verschiedene Strafkategorien
-  const kategorienImEinsatz = new Set(alle.map(e => e.kategorie)).size;
-  if (kategorienImEinsatz > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viele verschiedene Strafkategorien wurden diese Saison vergeben?`, richtig: kategorienImEinsatz, einheit:'×', erklaerung:`${kategorienImEinsatz} verschiedene Kategorien.` });
-  }
-
-  // MC: Wer hat die meisten Klingeln
-  const klingelRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Klingel']||0})).sort((a,b)=>b.val-a.val);
-  if (klingelRanking[0]?.val > 0) {
-    const antworten = pick4(klingelRanking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer hat diese Saison am meisten die Klingel getroffen?`, antworten, richtig: klingelRanking[0].name, erklaerung:`${klingelRanking[0].name} mit ${klingelRanking[0].val}× Klingel.` });
-  }
-
-  // Schätzung: Gesamtanzahl Strafen (Anzahl, nicht Betrag)
-  if (strafen.length > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viele Strafen wurden diese Saison insgesamt eingetragen?`, richtig: strafen.length, einheit:'×', erklaerung:`${strafen.length} Strafeinträge insgesamt.` });
-  }
-
-  // MC: Wer hat die meisten Behinderungen
-  const behRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Behinderung']||0})).sort((a,b)=>b.val-a.val);
-  if (behRanking[0]?.val > 0) {
-    const antworten = pick4(behRanking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten Behinderungen verursacht?`, antworten, richtig: behRanking[0].name, erklaerung:`${behRanking[0].name} mit ${behRanking[0].val}× Behinderung.` });
-  }
-
-  // MC: Wer hat die meisten Lustwürfe
-  const lustRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Lustwurf']||0})).sort((a,b)=>b.val-a.val);
-  if (lustRanking[0]?.val > 0) {
-    const antworten = pick4(lustRanking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten Lustwürfe gemacht?`, antworten, richtig: lustRanking[0].name, erklaerung:`${lustRanking[0].name} mit ${lustRanking[0].val}× Lustwurf.` });
-  }
-
-  // Schätzung: Kasseneinnahmen aus Strafen
-  const strafenEinnahmen = state.kassenbuch.filter(b=>b.kat==='Strafen'&&b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
-  if (strafenEinnahmen > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viel wurde diese Saison aus Strafen in die Kasse eingezahlt?`, richtig: Math.round(strafenEinnahmen*100)/100, einheit:'€', erklaerung:`${formatEur(strafenEinnahmen)} Strafenzahlungen in die Kasse.` });
-  }
-
-  // MC: Wer war am wenigsten dabei
-  if (anwRanking.length > 0 && anwRanking[anwRanking.length-1].val < anwRanking[0].val) {
-    const selten = anwRanking[anwRanking.length-1];
-    const antworten = pick4(selten.name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer war diese Saison am seltensten beim Kegeln?`, antworten, richtig: selten.name, erklaerung:`${selten.name} war nur bei ${selten.val} von ${sessions.length} Abenden.` });
-  }
-
-  // MC: Wer hat die meisten verl. Spiele
-  const verlRanking = mitglieder.map(n=>({name:n, val:perSpielerKat[n]?.['Verl. Spiel']||0})).sort((a,b)=>b.val-a.val);
-  if (verlRanking[0]?.val > 0) {
-    const antworten = pick4(verlRanking[0].name, mitglieder);
-    fragen.push({ typ:'mc', frage:`Wer hat diese Saison die meisten verlorenen Spiele?`, antworten, richtig: verlRanking[0].name, erklaerung:`${verlRanking[0].name} mit ${verlRanking[0].val}× Verl. Spiel.` });
-  }
-
-  // Schätzung: Strafen-Platz 2
-  if (strafRanking[1]?.val > 0) {
-    fragen.push({ typ:'schaetzung', frage:`Wie viel hat ${strafRanking[1].name} diese Saison an Strafen insgesamt?`, richtig: Math.round(strafRanking[1].val*100)/100, einheit:'€', erklaerung:`${strafRanking[1].name}: ${formatEur(strafRanking[1].val)}.` });
-  }
-
-  // Pro-Spieler-Fragen: Pumpen für jeden Spieler mit >0 Pumpen
-  const KATEGORIEN_FRAGEN = [
-    { kat: 'Pumpe', label: 'Pumpen', einheit: '×' },
-    { kat: 'Verl. Spiel', label: 'verlorene Spiele', einheit: '×' },
-    { kat: 'Klingel', label: 'Klingeln', einheit: '×' },
-    { kat: 'Behinderung', label: 'Behinderungen', einheit: '×' },
-    { kat: 'Lustwurf', label: 'Lustwürfe', einheit: '×' },
-    { kat: 'Schnapszahl', label: 'Schnapszahlen', einheit: '×' },
+  // ── GESAMT-KATEGORIEN ─────────────────────────────────────────
+  const KATS = [
+    { kat:'Pumpe',        label:'Pumpen',           verb:'geworfen' },
+    { kat:'Klingel',      label:'Klingeln',          verb:'getroffen' },
+    { kat:'Stina',        label:'Stinas',            verb:'kassiert' },
+    { kat:'Lustwurf',     label:'Lustwürfe',         verb:'gemacht' },
+    { kat:'Behinderung',  label:'Behinderungen',     verb:'verursacht' },
+    { kat:'Schnapszahl',  label:'Schnapszahlen',     verb:'getroffen' },
+    { kat:'Straße',       label:'Straßen',           verb:'geworfen' },
+    { kat:'Kugel z.T.',   label:'Kugel z.T.',        verb:'geworfen' },
+    { kat:'Verl. Spiel',  label:'verlorene Spiele',  verb:'gespielt' },
   ];
 
-  KATEGORIEN_FRAGEN.forEach(({ kat, label, einheit, fallback }) => {
-    // Spieler mit Einträgen in dieser Kategorie
-    const spielerMitKat = mitglieder
-      .map(n => ({ name: n, val: perSpielerKat[n]?.[kat] || (fallback ? perSpielerKat[n]?.[fallback] : 0) || 0 }))
-      .filter(m => m.val > 0)
-      .sort((a, b) => b.val - a.val);
-
-    if (spielerMitKat.length < 2) return;
-
-    // Schätzfrage für Top-Spieler (zufällig aus Top 3)
-    const kandidatenSpieler = shuffle(spielerMitKat.slice(0, Math.min(4, spielerMitKat.length)));
-    kandidatenSpieler.slice(0, 2).forEach(sp => {
-      fragen.push({
-        typ: 'schaetzung',
-        frage: `Wie viele ${label} hat ${sp.name} diese Saison?`,
-        richtig: sp.val, einheit,
-        erklaerung: `${sp.name}: ${sp.val}${einheit} ${label}.`
-      });
-    });
-
-    // MC: Wer hat GENAU X [Kategorie] — wähle einen Spieler, andere sind Ablenkung
-    const zufallsSpieler = shuffle(spielerMitKat)[0];
-    const antwortNames = pick4(zufallsSpieler.name, mitglieder);
-    fragen.push({
-      typ: 'mc',
-      frage: `Wer hat diese Saison genau ${zufallsSpieler.val}${einheit} ${label}?`,
-      antworten: antwortNames, richtig: zufallsSpieler.name,
-      erklaerung: `${zufallsSpieler.name} hat ${zufallsSpieler.val}${einheit} ${label}.`
-    });
+  KATS.forEach(({ kat, label, verb }) => {
+    const total = alle.filter(e => e.kategorie === kat).reduce((s,e)=>s+(e.anzahl||1),0);
+    if (total > 0)
+      F(`Wie viele ${label} wurden diese Saison insgesamt ${verb}?`, total, '×',
+        `${total}× ${label} über alle ${sessions.length} Kegelabende.`);
   });
 
-  // Durchschnitt pro Kegeln für häufige Kategorien
-  const DURCHSCHNITT_KATS = [
-    { kat: 'Pumpe', label: 'Pumpen' },
-    { kat: 'Verl. Spiel', label: 'verlorene Spiele' },
-    { kat: 'Klingel', label: 'Klingeln' },
-    { kat: 'Behinderung', label: 'Behinderungen' },
-    { kat: 'Lustwurf', label: 'Lustwürfe' },
-  ];
-  DURCHSCHNITT_KATS.forEach(({ kat, label }) => {
-    const gesamt = alle.filter(e => e.kategorie === kat).reduce((s,e) => s+(e.anzahl||1), 0);
-    if (gesamt > 0 && sessions.length > 0) {
-      const schnitt = Math.round((gesamt / sessions.length) * 10) / 10;
-      fragen.push({
-        typ: 'schaetzung',
-        frage: `Wie viele ${label} gab es durchschnittlich pro Kegel-Abend?`,
-        richtig: schnitt, einheit: '×',
-        erklaerung: `Ø ${schnitt}× ${label} pro Abend (${gesamt} gesamt / ${sessions.length} Abende).`
-      });
-    }
-  });
+  // ── SESSIONS-ANZAHL ───────────────────────────────────────────
+  if (sessions.length > 0)
+    F(`Wie viele Kegel-Abende hatten die Blackout Boys diese Saison?`, sessions.length, 'Abende',
+      `${sessions.length} Kegelabende diese Saison.`);
 
-  // Pro-Spieler Gesamt für alle Spieler mit genug Daten
-  const SPIELER_KATS = [
-    { kat: 'Pumpe', label: 'Pumpen' },
-    { kat: 'Verl. Spiel', label: 'verlorene Spiele' },
-    { kat: 'Klingel', label: 'Klingeln' },
-    { kat: 'Behinderung', label: 'Behinderungen' },
-    { kat: 'Lustwurf', label: 'Lustwürfe' },
-  ];
-  SPIELER_KATS.forEach(({ kat, label }) => {
+  // ── PRO-SPIELER GESAMT ────────────────────────────────────────
+  KATS.forEach(({ kat, label, verb }) => {
     const spielerMit = mitglieder
-      .map(n => ({ name: n, val: perSpielerKat[n]?.[kat] || 0 }))
+      .map(n => ({ name:n, val: alle.filter(e=>e.kategorie===kat&&e.mitglied===n).reduce((s,e)=>s+(e.anzahl||1),0) }))
       .filter(m => m.val > 0);
-    // Zufällig 2-3 Spieler auswählen für Fragen
-    shuffle(spielerMit).slice(0, 3).forEach(sp => {
-      fragen.push({
-        typ: 'schaetzung',
-        frage: `Wie viele ${label} hatte ${sp.name} diese Saison insgesamt?`,
-        richtig: sp.val, einheit: '×',
-        erklaerung: `${sp.name}: ${sp.val}× ${label} insgesamt.`
-      });
-    });
+    shuffle(spielerMit).slice(0, 3).forEach(sp =>
+      F(`Wie viele ${label} hat ${sp.name} diese Saison insgesamt ${verb}?`, sp.val, '×',
+        `${sp.name}: ${sp.val}× ${label} insgesamt.`));
   });
 
-  // Pro-Spieler Durchschnitt pro Kegeln (nur bei Spielern mit vielen Abenden)
-  SPIELER_KATS.forEach(({ kat, label }) => {
-    const spielerMit = mitglieder
-      .map(n => {
-        const sessAnzahl = sessions.filter(s => (s.angemeldet||[]).includes(n)).length;
-        const total = perSpielerKat[n]?.[kat] || 0;
-        return { name: n, val: total, sess: sessAnzahl, schnitt: sessAnzahl > 0 ? Math.round(total/sessAnzahl*10)/10 : 0 };
-      })
-      .filter(m => m.val > 0 && m.sess >= 2);
-    shuffle(spielerMit).slice(0, 2).forEach(sp => {
-      fragen.push({
-        typ: 'schaetzung',
-        frage: `Wie viele ${label} hatte ${sp.name} durchschnittlich pro Kegeln bei dem er dabei war?`,
-        richtig: sp.schnitt, einheit: '×',
-        erklaerung: `${sp.name}: Ø ${sp.schnitt}× pro Abend (${sp.val} gesamt / ${sp.sess} Abende).`
-      });
-    });
+  // ── PRO-SPIELER DURCHSCHNITT PRO ABEND ───────────────────────
+  ['Pumpe','Klingel','Stina','Lustwurf','Behinderung','Verl. Spiel'].forEach(kat => {
+    const labelObj = KATS.find(k=>k.kat===kat);
+    const label = labelObj ? labelObj.label : kat;
+    const verb = labelObj ? labelObj.verb : 'geworfen';
+    const spielerMit = mitglieder.map(n => {
+      const sessAnz = sessions.filter(s=>(s.spieler||s.angemeldet||[]).includes(n)).length;
+      const total = alle.filter(e=>e.kategorie===kat&&e.mitglied===n).reduce((s,e)=>s+(e.anzahl||1),0);
+      const schnitt = sessAnz >= 2 ? Math.round(total/sessAnz*10)/10 : null;
+      return { name:n, val:total, sess:sessAnz, schnitt };
+    }).filter(m => m.val>0 && m.sess>=2 && m.schnitt!==null);
+    shuffle(spielerMit).slice(0, 2).forEach(sp =>
+      F(`Wie viele ${label} hat ${sp.name} durchschnittlich pro Kegelabend ${verb}?`,
+        sp.schnitt, '×',
+        `${sp.name}: Ø ${sp.schnitt}× pro Abend (${sp.val} gesamt / ${sp.sess} Abende).`));
   });
 
-  // Schätzfragen pro Spieler: Gesamtstrafen (€) für zufällige Spieler
-  shuffle(strafRanking.filter(m => m.val > 0)).slice(0, 4).forEach(sp => {
-    fragen.push({
-      typ: 'schaetzung',
-      frage: `Wie viel hat ${sp.name} diese Saison insgesamt an Strafen?`,
-      richtig: Math.round(sp.val * 100) / 100, einheit: '€',
-      erklaerung: `${sp.name}: ${formatEur(sp.val)} Strafen insgesamt.`
-    });
+  // ── ANWESENHEIT PRO SPIELER ───────────────────────────────────
+  mitglieder.forEach(n => {
+    const anwAnz = sessions.filter(s=>(s.spieler||s.angemeldet||[]).includes(n)).length;
+    if (anwAnz > 0)
+      F(`Wie viele Kegel-Abende war ${n} diese Saison dabei?`, anwAnz, 'Abende',
+        `${n} war bei ${anwAnz} von ${sessions.length} Abenden dabei.`);
   });
 
-  // Schätzfragen pro Session: Pumpen in bestimmter Session
-  sessions.slice(0, 3).forEach(sess => {
-    const pumpenSession = (sess.eintraege||[]).filter(e=>e.kategorie==='Pumpe').reduce((s,e)=>s+(e.anzahl||1),0);
-    if (pumpenSession > 0) {
-      fragen.push({
-        typ: 'schaetzung',
-        frage: `Wie viele Pumpen gab es beim ${sess.name}?`,
-        richtig: pumpenSession, einheit: '×',
-        erklaerung: `${pumpenSession} Pumpen beim ${sess.name}.`
-      });
-    }
+  // ── STRAFEN (€) PRO SPIELER ───────────────────────────────────
+  const strafRanking = mitglieder.map(n=>({
+    name:n, val: strafen.filter(s=>s.mitglied===n).reduce((s,x)=>s+Number(x.betrag),0)
+  })).filter(m=>m.val>0);
+  shuffle(strafRanking).forEach(sp =>
+    F(`Wie viel Strafen (in €) hat ${sp.name} diese Saison kassiert?`,
+      Math.round(sp.val*100)/100, '€',
+      `${sp.name}: ${formatEur(sp.val)} Strafen insgesamt.`));
+
+  // ── GESAMTSTRAFEN + KASSENSTAND ───────────────────────────────
+  const gesamtStrafen = strafen.reduce((s,x)=>s+Number(x.betrag),0);
+  if (gesamtStrafen > 0)
+    F(`Wie viel haben alle Strafen dieser Saison zusammen gebracht (in €)?`,
+      Math.round(gesamtStrafen*100)/100, '€',
+      `Insgesamt ${formatEur(gesamtStrafen)} an Strafen.`);
+
+  const kassenstand = (() => {
+    const e = state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
+    const a = state.kassenbuch.filter(b=>b.typ==='ausgabe').reduce((s,b)=>s+Number(b.betrag),0);
+    return Math.round((e-a)*100)/100;
+  })();
+  if (Math.abs(kassenstand) > 0)
+    F(`Wie viel ist aktuell in der Vereinskasse (in €)?`, kassenstand, '€',
+      `Kassenstand: ${formatEur(kassenstand)}.`);
+
+  // ── PUMPEN PRO SESSION ────────────────────────────────────────
+  sessions.forEach(sess => {
+    const p = (sess.eintraege||[]).filter(e=>e.kategorie==='Pumpe').reduce((s,e)=>s+(e.anzahl||1),0);
+    if (p > 0)
+      F(`Wie viele Pumpen gab es beim Kegelabend „${sess.name}"?`, p, '×',
+        `${p} Pumpen beim ${sess.name}.`);
   });
 
-  // MC: In welcher Session gab es die meisten Pumpen?
-  const sessionsPumpen = sessions.map(s => ({
-    name: s.name,
-    pumpen: (s.eintraege||[]).filter(e=>e.kategorie==='Pumpe').reduce((sum,e)=>sum+(e.anzahl||1),0)
-  })).filter(s=>s.pumpen>0).sort((a,b)=>b.pumpen-a.pumpen);
-  if (sessionsPumpen.length >= 3) {
-    const antworten = pick4(sessionsPumpen[0].name, sessionsPumpen.map(s=>s.name));
-    fragen.push({
-      typ: 'mc',
-      frage: `Bei welchem Kegel-Abend gab es die meisten Pumpen?`,
-      antworten, richtig: sessionsPumpen[0].name,
-      erklaerung: `${sessionsPumpen[0].name}: ${sessionsPumpen[0].pumpen} Pumpen.`
-    });
-  }
-
-  const basis = shuffle(fragen).slice(0, anzahl);
-  while (basis.length < Math.min(anzahl, fragen.length + 1)) {
-    basis.push({ typ:'mc', frage:`Wer hat die wenigsten Strafen diese Saison?`, antworten: pick4(strafRanking[strafRanking.length-1]?.name || mitglieder[0], mitglieder), richtig: strafRanking[strafRanking.length-1]?.name || mitglieder[0], erklaerung:'Die sauberste Person der Saison!' });
-  }
-  return basis.slice(0, anzahl).map(f => ({ ...f, quelle: f.quelle || 'saison' }));
+  return shuffle(fragen).slice(0, anzahl);
 }
 
 // ---- BLACKJACK ----
@@ -10165,64 +9977,107 @@ function renderQuizAdmin() {
 
   if (q.phase === 'frage' || q.phase === 'reveal') {
     const frage = q.fragen[q.aktuelleQ];
-    const beantwortet = Object.keys(q.antworten || {});
+    const antworten = q.antworten || {};
+    const beantwortet = Object.keys(antworten);
     const ausstehend = q.spieler.filter(p => !beantwortet.includes(p));
-    const alleGeantwortet = ausstehend.length === 0;
 
-    container.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-        <div style="font-size:.8rem;font-weight:700;color:var(--text-muted)">Frage ${q.aktuelleQ+1} / ${q.fragen.length}</div>
-        <button class="btn btn-danger btn-sm" onclick="beendeQuiz()">✕ Beenden</button>
-      </div>
-
-      <div class="quiz-frage">
-        <div class="q-num">Frage ${q.aktuelleQ+1}</div>
-        <div class="q-text">${frage.frage}</div>
-        <div class="q-typ">${frage.typ === 'mc' ? '🔤 Multiple Choice' : '🔢 Schätzfrage'}</div>
-      </div>
-
-      <!-- Antworten-Fortschritt -->
-      <div class="card" style="margin-bottom:.75rem">
-        <div style="font-size:.8rem;font-weight:700;margin-bottom:.4rem">
-          Antworten: ${beantwortet.length} / ${q.spieler.length}
+    if (q.phase === 'frage') {
+      // ── MASTER DEVICE: LIVE ANTWORT-TABELLE ──
+      const einheitFmt = v => frage.einheit === '€' ? formatEur(v) : v + (frage.einheit ? ' ' + frage.einheit : '');
+      container.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <div style="font-size:.8rem;font-weight:700;color:var(--text-muted)">🎙 Master · Frage ${q.aktuelleQ+1} / ${q.fragen.length}</div>
+          <button class="btn btn-danger btn-sm" onclick="beendeQuiz()">✕</button>
         </div>
-        <div class="quiz-avatar-row">
-          ${q.spieler.map(p => `<span class="quiz-player-chip ${beantwortet.includes(p)?'geantwortet':'wartet'}">${beantwortet.includes(p)?'✓':'⏳'} ${p}</span>`).join('')}
+        <div class="quiz-frage" style="margin-bottom:.75rem">
+          <div class="q-num">Frage ${q.aktuelleQ+1} · 🔢 Schätzfrage</div>
+          <div class="q-text">${frage.frage}</div>
         </div>
-      </div>
-
-      ${q.phase === 'frage' ? `
-        ${alleGeantwortet
-          ? `<button class="btn btn-primary btn-full" onclick="veroeffentlicheAntwort()">🎯 Auflösen!</button>`
-          : `<div class="quiz-warten">Warte auf ${ausstehend.join(', ')}…</div>`}
-      ` : `
-        <!-- Auflösung -->
-        <div class="card" style="margin-bottom:.75rem;border-color:var(--success)">
-          <div style="font-size:.75rem;font-weight:700;color:var(--success);margin-bottom:.5rem">✅ RICHTIGE ANTWORT</div>
-          <div style="font-weight:800;font-size:1.1rem">${frage.typ==='schaetzung' ? (frage.einheit==='€'?formatEur(frage.richtig):frage.richtig+frage.einheit) : frage.richtig}</div>
-          <div style="font-size:.82rem;color:var(--text-muted);margin-top:.3rem">${frage.erklaerung}</div>
-        </div>
-        <!-- Antworten der Spieler -->
-        <div class="card" style="margin-bottom:.75rem">
-          <div style="font-size:.8rem;font-weight:700;margin-bottom:.5rem">Antworten</div>
+        <div class="card" style="margin-bottom:.75rem;padding:.75rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+            <span style="font-size:.8rem;font-weight:700">📊 Live-Antworten</span>
+            <span class="tag ${beantwortet.length===q.spieler.length?'tag-green':'tag-yellow'}">${beantwortet.length} / ${q.spieler.length}</span>
+          </div>
           ${q.spieler.map(p => {
-            const antwort = q.antworten?.[p];
-            const korrekt = frage.typ==='mc' ? antwort===frage.richtig : null;
-            const punkte = q.punkte?.[p] || 0;
-            return `<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.875rem">
-              <span><strong>${p}</strong>: ${antwort ?? '—'}</span>
-              <span style="font-weight:800;color:${punkte>0?'var(--success)':'var(--text-muted)'}">${punkte>0?'+'+punkte:korrekt===false?'✗':''}</span>
+            const hat = antworten[p] !== undefined;
+            const val = hat ? einheitFmt(antworten[p]) : '';
+            return `<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
+              <span style="flex:1;font-size:.875rem;font-weight:600">${p}</span>
+              ${hat
+                ? `<span style="font-size:.875rem;color:var(--success);font-weight:700">✅ ${val}</span>
+                   <button class="btn btn-ghost btn-sm" onclick="masterKorrigieren('${p}')">✏️</button>`
+                : `<div style="display:flex;gap:.3rem;align-items:center">
+                     <input id="master-inp-${p.replace(/\s/g,'_')}" type="number" step="${frage.einheit==='€'?'0.01':'1'}"
+                       placeholder="?" style="width:70px;padding:3px 6px;font-size:.82rem;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--text)"
+                       oninput="masterInputCache['${p}']=this.value">
+                     <button class="btn btn-primary btn-sm" onclick="masterEintragen('${p}')">Eintragen</button>
+                   </div>`}
             </div>`;
           }).join('')}
         </div>
-        ${q.aktuelleQ < q.fragen.length - 1
-          ? `<button class="btn btn-primary btn-full" onclick="naechsteFrage()">Nächste Frage →</button>`
-          : `<button class="btn btn-success btn-full" onclick="zeigeQuizErgebnis()">🏆 Endergebnis!</button>`}
-      `}`;
+        <button class="btn btn-primary btn-full" onclick="veroeffentlicheAntwort()"
+          ${beantwortet.length===0?'disabled style="opacity:.5"':''}>
+          🎯 Auflösen (${beantwortet.length}/${q.spieler.length} geantwortet)
+        </button>`;
+      return;
+    }
+
+    // ── REVEAL: ALLE ANTWORTEN MIT ABSTAND ──
+    const richtig = frage.richtig;
+    const einheitFmtR = v => frage.einheit === '€' ? formatEur(v) : v + (frage.einheit ? ' ' + frage.einheit : '');
+    const punkte = q.punkte || {};
+    const rangReihe = q.spieler
+      .map(p => ({ p, antwort: antworten[p], diff: antworten[p]!==undefined ? Math.abs(Number(antworten[p])-richtig) : Infinity, pkt: punkte[p]||0 }))
+      .sort((a,b) => a.diff - b.diff);
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <div style="font-size:.8rem;font-weight:700;color:var(--text-muted)">Frage ${q.aktuelleQ+1} · Auflösung</div>
+        <button class="btn btn-danger btn-sm" onclick="beendeQuiz()">✕</button>
+      </div>
+      <div class="quiz-frage" style="margin-bottom:.75rem">
+        <div class="q-num">🔢 Schätzfrage</div>
+        <div class="q-text">${frage.frage}</div>
+      </div>
+      <div class="card" style="margin-bottom:.75rem;border-color:var(--success)">
+        <div style="font-size:.72rem;font-weight:700;color:var(--success);margin-bottom:.25rem">✅ RICHTIGE ANTWORT</div>
+        <div style="font-weight:800;font-size:1.4rem">${einheitFmtR(richtig)}</div>
+        <div style="font-size:.82rem;color:var(--text-muted);margin-top:.25rem">${frage.erklaerung}</div>
+      </div>
+      <div class="card" style="margin-bottom:.75rem;padding:.75rem">
+        <div style="font-size:.8rem;font-weight:700;margin-bottom:.6rem">🏅 Rangliste</div>
+        ${rangReihe.map(({ p, antwort, diff, pkt }, i) => {
+          const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+          const exakt = diff === 0;
+          return `<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
+            <span style="width:1.5rem;font-size:1rem">${medal || (i+1)+'. '}</span>
+            <span style="flex:1;font-size:.875rem;font-weight:600">${p}</span>
+            <span style="font-size:.875rem;color:${exakt?'var(--success)':'var(--text)'};font-weight:${exakt?800:400}">
+              ${antwort!==undefined ? einheitFmtR(antwort) : '—'}
+            </span>
+            <span style="font-size:.78rem;color:var(--text-muted);width:50px;text-align:right">
+              ${antwort!==undefined ? (diff===0?'✅ exakt!':'±'+einheitFmtR(diff)) : '—'}
+            </span>
+            <span style="font-size:.85rem;font-weight:800;color:var(--success);width:40px;text-align:right">
+              ${pkt>0?'+'+pkt+'P':''}
+            </span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="card" style="margin-bottom:.75rem;padding:.6rem .75rem">
+        <div style="font-size:.75rem;font-weight:700;color:var(--text-muted);margin-bottom:.4rem">Gesamtstand</div>
+        ${Object.entries(q.scores||{}).sort((a,b)=>b[1]-a[1]).map(([name,p])=>`
+          <div style="display:flex;justify-content:space-between;font-size:.82rem;padding:.2rem 0">
+            <span>${name}</span><span style="font-weight:700">${p} Punkte</span>
+          </div>`).join('')}
+      </div>
+      ${q.aktuelleQ < q.fragen.length - 1
+        ? `<button class="btn btn-primary btn-full" onclick="naechsteFrage()">Nächste Frage →</button>`
+        : `<button class="btn btn-success btn-full" onclick="zeigeQuizErgebnis()">🏆 Endergebnis!</button>`}`;
     return;
   }
 
-  if (q.phase === 'ergebnis') {
+    if (q.phase === 'ergebnis') {
     const scores = q.scores || {};
     const ranking = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
     container.innerHTML = `
@@ -10294,24 +10149,48 @@ function renderQuizMember() {
   }
 
   if (q.phase === 'reveal') {
-    const korrekt = frage.typ==='mc' ? meineAntwort===frage.richtig : null;
     const punkte = q.punkte?.[meinName] || 0;
-    const istSchaetzung = frage.typ === 'schaetzung';
-    const richtigFormatiert = istSchaetzung ? (frage.einheit==='€'?formatEur(frage.richtig):frage.richtig+frage.einheit) : frage.richtig;
+    const richtig = frage.richtig;
+    const einheitFmt = v => frage.einheit === '€' ? formatEur(v) : (v !== undefined && v !== null ? v + (frage.einheit ? ' ' + frage.einheit : '') : '—');
+    const meineDiff = meineAntwort !== undefined ? Math.abs(Number(meineAntwort) - richtig) : null;
+    const exakt = meineDiff === 0;
+
+    // Alle Spieler sortiert nach Nähe
+    const rangReihe = q.spieler
+      .map(p => ({ p, a: (q.antworten||{})[p], diff: (q.antworten||{})[p]!==undefined ? Math.abs(Number((q.antworten||{})[p])-richtig) : Infinity, pkt: q.punkte?.[p]||0 }))
+      .sort((a,b) => a.diff - b.diff);
+
     container.innerHTML = `
-      <div class="quiz-frage"><div class="q-num">Frage ${q.aktuelleQ+1} · Auflösung</div><div class="q-text">${frage.frage}</div></div>
-      <div class="card" style="border-color:var(--success);margin-bottom:.75rem">
-        <div style="font-size:.75rem;color:var(--success);font-weight:700;margin-bottom:.3rem">✅ Richtige Antwort</div>
-        <div style="font-weight:800;font-size:1.1rem">${richtigFormatiert}</div>
-        <div style="font-size:.82rem;color:var(--text-muted);margin-top:.25rem">${frage.erklaerung}</div>
+      <div class="quiz-frage" style="margin-bottom:.75rem">
+        <div class="q-num">Frage ${q.aktuelleQ+1} · Auflösung</div>
+        <div class="q-text">${frage.frage}</div>
       </div>
-      <div class="card" style="text-align:center">
-        <div style="font-size:.875rem;color:var(--text-muted)">Deine Antwort: <strong>${meineAntwort ?? '—'}</strong></div>
-        ${punkte > 0
-          ? `<div style="font-size:1.5rem;font-weight:800;color:var(--success);margin-top:.5rem">+${punkte} Punkte! 🎉</div>`
-          : korrekt === false ? `<div style="font-size:1.1rem;color:var(--danger);margin-top:.5rem">Leider falsch 😅</div>`
-          : `<div style="font-size:.875rem;color:var(--text-muted);margin-top:.5rem">Warte auf Wertung…</div>`}
-        <div style="font-size:.8rem;color:var(--text-muted);margin-top:.4rem">Gesamt: ${q.scores?.[meinName]||0} Punkte</div>
+      <div class="card" style="border-color:var(--success);margin-bottom:.75rem">
+        <div style="font-size:.72rem;color:var(--success);font-weight:700;margin-bottom:.2rem">✅ Richtige Antwort</div>
+        <div style="font-weight:800;font-size:1.3rem">${einheitFmt(richtig)}</div>
+        <div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${frage.erklaerung}</div>
+      </div>
+      ${punkte > 0
+        ? `<div style="text-align:center;font-size:1.4rem;font-weight:800;color:var(--success);margin-bottom:.75rem">+${punkte} Punkte! 🎉${exakt?' Genau getroffen!':''}</div>`
+        : `<div style="text-align:center;font-size:.9rem;color:var(--text-muted);margin-bottom:.75rem">
+             ${meineDiff!==null ? 'Deine Abweichung: ±' + einheitFmt(meineDiff) : 'Keine Antwort'}
+           </div>`}
+      <div class="card" style="padding:.75rem">
+        <div style="font-size:.75rem;font-weight:700;margin-bottom:.5rem">Alle Antworten</div>
+        ${rangReihe.map(({ p, a, diff, pkt }, i) => {
+          const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+          const istIch = p === meinName;
+          return `<div style="display:flex;align-items:center;gap:.4rem;padding:.35rem 0;border-bottom:1px solid var(--border);background:${istIch?'#eff6ff':'transparent'};border-radius:${istIch?'6px':0};padding-left:${istIch?'.4rem':0}">
+            <span style="width:1.4rem">${medal||(i+1)+'.'}</span>
+            <span style="flex:1;font-size:.82rem;font-weight:${istIch?700:400}">${p}${istIch?' (du)':''}</span>
+            <span style="font-size:.82rem">${a!==undefined?einheitFmt(a):'—'}</span>
+            <span style="font-size:.75rem;color:var(--text-muted);width:55px;text-align:right">${a!==undefined?(diff===0?'✅':('±'+einheitFmt(diff))):'—'}</span>
+            <span style="font-size:.8rem;font-weight:700;color:var(--success);width:35px;text-align:right">${pkt>0?'+'+pkt:''}</span>
+          </div>`;
+        }).join('')}
+        <div style="display:flex;justify-content:space-between;margin-top:.6rem;font-size:.8rem;font-weight:700;border-top:1px solid var(--border);padding-top:.4rem">
+          <span>Dein Gesamtstand</span><span style="color:var(--primary)">${q.scores?.[meinName]||0} Punkte</span>
+        </div>
       </div>`;
   }
 }
@@ -10358,13 +10237,30 @@ function quizZurueck() {
 
 function starteQuizMitAuswahl() {
   const q = state.quiz;
-  const maxSel = Math.min((q.fragenKandidaten||[]).length, 10);
-  if ((q.fragenAusgewaehlt||[]).length !== maxSel) { alert(`Genau ${maxSel} Fragen auswählen!`); return; }
+  const sel = (q.fragenAusgewaehlt||[]).length;
+  if (sel < 5) { alert('Mindestens 5 Fragen auswählen!'); return; }
   const fragen = q.fragenAusgewaehlt.map(i => q.fragenKandidaten[i]);
   db.collection('quiz').doc('aktiv').update({
     phase: 'frage', fragen, aktuelleQ: 0,
     antworten: {}, startedAt: Date.now()
   });
+}
+
+// Master-Device Hilfsfunktionen
+let masterInputCache = {};
+function masterEintragen(name) {
+  const inp = document.getElementById('master-inp-' + name.replace(/\s/g,'_'));
+  const val = inp ? parseFloat(inp.value) : NaN;
+  if (isNaN(val)) { alert('Zahl eingeben!'); return; }
+  db.collection('quiz').doc('aktiv').update({ ['antworten.' + name]: val });
+  masterInputCache[name] = '';
+}
+function masterKorrigieren(name) {
+  // Entfernt die gespeicherte Antwort so dass das Eingabefeld wieder erscheint
+  const q = state.quiz;
+  const updated = Object.assign({}, q.antworten);
+  delete updated[name];
+  db.collection('quiz').doc('aktiv').update({ antworten: updated });
 }
 
 function veroeffentlicheAntwort() {

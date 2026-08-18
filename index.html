@@ -805,6 +805,7 @@
   </div>
 
   <!-- KPI Boxes -->
+  <div id="stats-kasse-hinweis"></div>
   <div class="grid-3" id="stats-boxes"></div>
 
   <!-- Rankings -->
@@ -5135,6 +5136,53 @@ function statsFilterDatum() {
   return d.toISOString().split('T')[0];
 }
 
+// Vollständige Straf-Bilanz pro Mitglied.
+// Kegelbuch-Strafen kommen aus den Session-Einträgen (deckt auch importierte Abende ab),
+// dazu die Straf-Dokumente die NICHT aus dem Kegelbuch stammen (Tippspiel, Ausfall, Spiele
+// außerhalb einer Session, manuell). 'Kegelbuch'-Dokumente werden übersprungen, weil sie
+// die Session-Einträge nur zusammenfassen und sonst doppelt zählen würden.
+function strafBilanzProMitglied() {
+  const von = statsFilterDatum();
+  const sessions = (state.kegelsessions || []).filter(s => {
+    if (!von) return true;
+    return (getSessionKegeldatum(s) || s.datum || '') >= von;
+  });
+
+  const bilanz = {};
+  const get = n => (bilanz[n] = bilanz[n] || { betrag: 0, anzahl: 0, kegelbuch: 0, extra: 0 });
+
+  // 1. Kegelbuch-Einträge aus allen Sessions
+  sessions.forEach(s => {
+    (s.eintraege || []).forEach(e => {
+      if (e.kategorie === 'Alle 9 (geworfen)') return;   // Zähl-Spalte, keine Strafe
+      const b = get(e.mitglied);
+      const betrag = Number(e.betrag) || 0;
+      b.betrag += betrag;
+      b.kegelbuch += betrag;
+      b.anzahl += Number(e.anzahl) || 1;
+    });
+  });
+
+  // 2. Straf-Dokumente die nicht aus dem Kegelbuch stammen
+  (state.strafen || []).forEach(s => {
+    if (s.kategorie === 'Kegelbuch') return;
+    if (von && (s.datum || '') < von) return;
+    const b = get(s.mitglied);
+    const betrag = Number(s.betrag) || 0;
+    b.betrag += betrag;
+    b.extra += betrag;
+    b.anzahl += 1;
+  });
+
+  // Beträge runden
+  Object.values(bilanz).forEach(b => {
+    b.betrag = Math.round(b.betrag * 100) / 100;
+    b.kegelbuch = Math.round(b.kegelbuch * 100) / 100;
+    b.extra = Math.round(b.extra * 100) / 100;
+  });
+  return bilanz;
+}
+
 function statsFilteredStrafen() {
   let s = state.strafen;
   const von = statsFilterDatum();
@@ -5205,30 +5253,50 @@ function renderStatistiken() {
   const sessions = state.kegelsessions || [];
 
   // KPIs
-  const gesamtBetrag   = strafen.reduce((s,x) => s + Number(x.betrag), 0);
+  // Gebuchte Beträge (Kasse) — nur aus Straf-Dokumenten
   const offenBetrag    = strafen.filter(s => !s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
   const bezahltBetrag  = strafen.filter(s => s.bezahlt).reduce((s,x) => s + Number(x.betrag), 0);
+  const gebuchtBetrag  = offenBetrag + bezahltBetrag;
+  // Tatsächliche Strafen der Saison — aus allen Sessions inkl. importierter
+  const bilanzKpi      = strafBilanzProMitglied();
+  const strafenGesamt  = Object.values(bilanzKpi).reduce((s,b) => s + b.betrag, 0);
+  const strafenAnzahl  = Object.values(bilanzKpi).reduce((s,b) => s + b.anzahl, 0);
   const anzAbende      = sessions.length;
-  const avgProAbend    = anzAbende > 0 ? gesamtBetrag / anzAbende : 0;
-  const hochsteStrafe  = strafen.reduce((m,s) => Number(s.betrag) > m ? Number(s.betrag) : m, 0);
+  const avgProAbend    = anzAbende > 0 ? strafenGesamt / anzAbende : 0;
   const spielVerl      = (state.spielverluste||[]).length;
 
   document.getElementById('stats-boxes').innerHTML = `
-    <div class="stat"><div class="val">${formatEur(gesamtBetrag)}</div><div class="lbl">Strafen gesamt</div></div>
-    <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offenBetrag)}</div><div class="lbl">Noch offen</div></div>
-    <div class="stat"><div class="val" style="color:#16a34a">${formatEur(bezahltBetrag)}</div><div class="lbl">Bezahlt</div></div>
+    <div class="stat"><div class="val">${formatEur(strafenGesamt)}</div><div class="lbl">Strafen gesamt</div></div>
+    <div class="stat"><div class="val">${strafenAnzahl}</div><div class="lbl">Einzelstrafen</div></div>
     <div class="stat"><div class="val">${formatEur(avgProAbend)}</div><div class="lbl">Ø pro Abend</div></div>
+    <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offenBetrag)}</div><div class="lbl">Offen (Kasse)</div></div>
+    <div class="stat"><div class="val" style="color:#16a34a">${formatEur(bezahltBetrag)}</div><div class="lbl">Bezahlt (Kasse)</div></div>
     <div class="stat"><div class="val">${anzAbende}</div><div class="lbl">Abende gespielt</div></div>
-    <div class="stat"><div class="val">${spielVerl}</div><div class="lbl">Spiele verloren</div></div>
   `;
+  const hinweisEl = document.getElementById('stats-kasse-hinweis');
+  if (hinweisEl) {
+    const diff = Math.round((strafenGesamt - gebuchtBetrag) * 100) / 100;
+    hinweisEl.innerHTML = diff > 0.01
+      ? `<div style="font-size:.75rem;color:var(--text-muted);background:var(--bg-page);border-radius:8px;padding:.5rem .7rem;margin-bottom:1rem">
+           ℹ️ <strong>${formatEur(diff)}</strong> der Strafen sind nicht in der Kasse gebucht — sie stammen aus importierten Abenden, die damals bar abgerechnet wurden. Die Statistik zeigt alle ${anzAbende} Abende, die Kasse nur die gebuchten.
+         </div>`
+      : '';
+  }
 
-  // Strafranking
-  const strafSummen = state.mitglieder.map(m => ({
-    name: m.name.split(' ')[0],
-    fullName: m.name,
-    total: strafen.filter(s=>s.mitglied===m.name).reduce((sum,s)=>sum+Number(s.betrag),0),
-    count: strafen.filter(s=>s.mitglied===m.name).length
-  })).sort((a,b) => b.total - a.total);
+  // Strafranking — aus allen Sessions (inkl. importierter) plus Extra-Strafen
+  const bilanz = strafBilanzProMitglied();
+  const strafSummen = state.mitglieder.map(m => {
+    const b = bilanz[m.name] || { betrag: 0, anzahl: 0, kegelbuch: 0, extra: 0 };
+    return {
+      name: m.name.split(' ')[0],
+      fullName: m.name,
+      total: b.betrag,
+      count: b.anzahl,
+      kegelbuch: b.kegelbuch,
+      extra: b.extra
+    };
+  }).filter(m => statsFilter.person === 'all' || m.fullName === statsFilter.person)
+    .sort((a,b) => b.total - a.total);
 
   document.getElementById('straf-ranking').innerHTML =
     svgBarChart(strafSummen, 'total', 'name',
@@ -5237,8 +5305,11 @@ function renderStatistiken() {
     `<div style="margin-top:.5rem">` +
     strafSummen.map((m,i) => `<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:.15rem 0;border-top:1px solid var(--border)">
       <span><strong>${i+1}.</strong> ${m.fullName}</span>
-      <span><strong>${formatEur(m.total)}</strong> <span style="color:var(--text-muted);font-size:.72rem">(${m.count}×)</span></span>
-    </div>`).join('') + `</div>`;
+      <span><strong>${formatEur(m.total)}</strong> <span style="color:var(--text-muted);font-size:.72rem" title="${m.count} Einzelstrafen · Kegelbuch ${formatEur(m.kegelbuch)} + Sonstige ${formatEur(m.extra)}">(${m.count}×)</span></span>
+    </div>`).join('') +
+    `<div style="font-size:.7rem;color:var(--text-muted);margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border)">
+       Aus allen ${(state.kegelsessions||[]).length} Kegelabenden der Saison, importierte inklusive. Zählt Einzelstrafen, nicht Sammelbuchungen.
+     </div></div>`;
 
   // Anwesenheitsranking — nur tatsächlich gespielte Sessions
   const alleAbende = sessions.map(s => ({ datum: getSessionKegeldatum(s), anwesend: s.angemeldet||[] }));
@@ -8951,7 +9022,8 @@ function subscribeQuiz() {
 function generiereQuizFragen(anzahl = 30) {
   const sessions = state.kegelsessions || [];
   const alle = sessions.flatMap(s => s.eintraege || []);
-  const strafen = state.strafen || [];
+  // Bewusst KEIN state.strafen: dort stecken Abwesenheits-Pauschalen und
+  // Sammelbuchungen drin. Quizfragen rechnen nur mit echten Kegelbuch-Einträgen.
   const mitglieder = state.mitglieder.map(m => m.name);
   const shuffle = arr => [...arr].sort(() => Math.random() - .5);
 
@@ -9033,20 +9105,42 @@ function generiereQuizFragen(anzahl = 30) {
   });
 
   // ── STRAFEN (€) PRO SPIELER ───────────────────────────────────
-  const strafRanking = mitglieder.map(n=>({
-    name:n, val: strafen.filter(s=>s.mitglied===n).reduce((s,x)=>s+Number(x.betrag),0)
-  })).filter(m=>m.val>0);
-  strafRanking.forEach(sp =>
-    F(`Wie viel Strafen (in €) hat ${sp.name} diese Saison kassiert?`,
-      Math.round(sp.val*100)/100, '€',
-      `${sp.name}: ${formatEur(sp.val)} Strafen insgesamt.`, sp.name));
+  // Basis sind die Kegelbuch-Einträge: die entstehen nur an Abenden, an denen
+  // die Person auch wirklich dabei war. Abwesenheits-Beträge (Durchschnitt +
+  // Kegelbahn) bleiben damit außen vor — sonst wären es keine echten Strafen.
+  const strafeVon = name => Math.round(
+    alle.filter(e => e.mitglied === name && e.kategorie !== 'Alle 9 (geworfen)')
+        .reduce((s,e) => s + (Number(e.betrag) || 0), 0) * 100) / 100;
+
+  mitglieder.forEach(name => {
+    const val = strafeVon(name);
+    const abende = abendeVon(name);
+    if (val > 0 && abende > 0)
+      F(`Wie viel Strafen (in €) hat ${name} an den ${abende} Kegelabenden kassiert, an denen ${name} dabei war?`,
+        val, '€',
+        `${name}: ${formatEur(val)} an ${abende} Abenden — das sind Ø ${formatEur(Math.round(val/abende*100)/100)} pro Abend, an dem ${name} dabei war.`,
+        name);
+  });
+
+  // Ø Strafen pro Abend, an dem die Person dabei war
+  mitglieder.forEach(name => {
+    const val = strafeVon(name);
+    const abende = abendeVon(name);
+    if (val > 0 && abende >= 2)
+      F(`Wie viel Strafen (in €) hat ${name} durchschnittlich pro Kegelabend kassiert, an dem ${name} dabei war?`,
+        Math.round(val/abende*100)/100, '€',
+        `${name}: ${formatEur(val)} geteilt durch ${abende} Abende = Ø ${formatEur(Math.round(val/abende*100)/100)} pro Abend.`,
+        name);
+  });
 
   // ── GESAMTSTRAFEN + KASSENSTAND ───────────────────────────────
-  const gesamtStrafen = strafen.reduce((s,x)=>s+Number(x.betrag),0);
+  const gesamtStrafen = alle
+    .filter(e => e.kategorie !== 'Alle 9 (geworfen)')
+    .reduce((s,e) => s + (Number(e.betrag) || 0), 0);
   if (gesamtStrafen > 0)
-    F(`Wie viel haben alle Strafen dieser Saison zusammen gebracht (in €)?`,
+    F(`Wie viel Strafen (in €) wurden diese Saison im Kegelbuch insgesamt notiert?`,
       Math.round(gesamtStrafen*100)/100, '€',
-      `Insgesamt ${formatEur(gesamtStrafen)} an Strafen.`);
+      `Insgesamt ${formatEur(gesamtStrafen)} an Strafen über alle ${sessions.length} Kegelabende.`);
 
   const kassenstand = (() => {
     const e = state.kassenbuch.filter(b=>b.typ==='einnahme').reduce((s,b)=>s+Number(b.betrag),0);
@@ -9065,12 +9159,137 @@ function generiereQuizFragen(anzahl = 30) {
         `${p} Pumpen beim ${sess.name}.`);
   });
 
+  // ── STANDARDFRAGEN ────────────────────────────────────────────
+  // Feste Fragen mit handgeschriebenen Fun Facts. Die Zahlen kommen aus den
+  // echten Daten, damit sie nicht veralten — auch die genannten Rekordhalter
+  // werden berechnet, nicht hart hinterlegt.
+  const std = [];
+  const S = (frage, richtig, einheit, erklaerung, fakt, person) => {
+    if (richtig === null || richtig === undefined || !isFinite(richtig)) return;
+    std.push({ typ:'schaetzung', quelle:'standard', frage, richtig, einheit, erklaerung, fakt, person: person || null });
+  };
+
+  const nAbende  = sessions.length;
+  const katTotal = kat => alle.filter(e => e.kategorie === kat).reduce((s,e)=>s+(e.anzahl||1),0);
+  const katVon   = (kat, name) => alle.filter(e => e.kategorie === kat && e.mitglied === name)
+                                      .reduce((s,e)=>s+(e.anzahl||1),0);
+  const katFuehrend = kat => {
+    const r = mitglieder.map(n => ({ n, v: katVon(kat, n) })).filter(x => x.v > 0)
+                        .sort((a,b) => b.v - a.v);
+    return r.length ? r[0] : null;
+  };
+  // Höchster Einzelwert einer Person an einem Abend
+  const katRekord = kat => {
+    let best = null;
+    sessions.forEach(sess => {
+      const pro = {};
+      (sess.eintraege || []).filter(e => e.kategorie === kat).forEach(e => {
+        pro[e.mitglied] = (pro[e.mitglied] || 0) + (e.anzahl || 1);
+      });
+      Object.entries(pro).forEach(([n, v]) => {
+        if (!best || v > best.v) best = { n, v, sess: sess.name, datum: getSessionKegeldatum(sess) || sess.datum };
+      });
+    });
+    return best;
+  };
+  const hat = name => mitglieder.includes(name);
+  const r1 = v => Math.round(v * 10) / 10;
+
+  // 1. Pumpen insgesamt
+  const pumpenGes = katTotal('Pumpe');
+  const pumpenTop = katFuehrend('Pumpe');
+  if (pumpenGes > 0 && nAbende > 0) {
+    S(`Wie viele Pumpen wurden insgesamt bei unseren ${nAbende} Kegeln geworfen?`,
+      pumpenGes, '×',
+      `${pumpenGes} Pumpen über alle ${nAbende} Kegelabende.`,
+      `Die meisten Pumpen hat tatsächlich ${pumpenTop ? pumpenTop.n : '—'} geworfen (${pumpenTop ? pumpenTop.v : 0}×). Im Schnitt kamen wir auf ${r1(pumpenGes / nAbende)} Pumpen pro Kegeln.`);
+  }
+
+  // 2. Pumpen-Durchschnitt des Pumpenkönigs
+  if (pumpenTop && abendeVon(pumpenTop.n) > 0) {
+    const ab = abendeVon(pumpenTop.n);
+    S(`Wie viele Pumpen hat ${pumpenTop.n.split(' ')[0]} im Durchschnitt pro Kegeln geworfen?`,
+      r1(pumpenTop.v / ab), '×',
+      `${pumpenTop.n}: ${pumpenTop.v} Pumpen an ${ab} Abenden = Ø ${r1(pumpenTop.v / ab)} pro Kegeln.`,
+      `${pumpenTop.n} ist damit unangefochtener Pumpenkönig — ${pumpenGes > 0 ? Math.round(pumpenTop.v / pumpenGes * 100) : 0}% aller Pumpen der Saison gehen auf sein Konto.`,
+      pumpenTop.n);
+  }
+
+  // 3. Pumpen-Rekord an einem Abend
+  const pumpRek = katRekord('Pumpe');
+  if (pumpRek) {
+    S(`Wie viele Pumpen hat der Rekordhalter bei einem einzigen Kegeln geworfen?`,
+      pumpRek.v, '×',
+      `${pumpRek.v} Pumpen an einem Abend — aufgestellt beim ${pumpRek.sess}.`,
+      `Auch das war ${pumpRek.n}. ${pumpRek.datum ? 'Am ' + formatDate(pumpRek.datum) + ' ' : ''}wurde Geschichte geschrieben.`);
+  }
+
+  // 4. Klingeln insgesamt
+  const klingelGes = katTotal('Klingel');
+  const klingelTop = katFuehrend('Klingel');
+  if (klingelGes > 0 && nAbende > 0) {
+    S(`Wie viele Klingeln gab es bei unseren ${nAbende} Kegeln?`,
+      klingelGes, '×',
+      `${klingelGes} Klingeln über alle ${nAbende} Kegelabende.`,
+      `Das sind ${r1(klingelGes / nAbende)} pro Abend. Führender wenig überraschend ${klingelTop ? klingelTop.n : '—'}.`);
+  }
+
+  // 5. Klingeln des Führenden
+  if (klingelTop && klingelGes > 0) {
+    S(`Wie viele Klingeln hat ${klingelTop.n.split(' ')[0]} insgesamt geworfen?`,
+      klingelTop.v, '×',
+      `${klingelTop.n}: ${klingelTop.v} Klingeln.`,
+      `Das sind ${Math.round(klingelTop.v / klingelGes * 100)}% aller Klingeln der Saison.`,
+      klingelTop.n);
+  }
+
+  // 6. Behinderungen pro Kegeln
+  const behGes = katTotal('Behinderung');
+  const behTop = katFuehrend('Behinderung');
+  if (behGes > 0 && nAbende > 0) {
+    S(`Wie viele Behinderungen gab es im Durchschnitt pro Kegeln?`,
+      r1(behGes / nAbende), '×',
+      `${behGes} Behinderungen geteilt durch ${nAbende} Abende = Ø ${r1(behGes / nAbende)} pro Kegeln.`,
+      `Jeder wusste es vermutlich: Rekordhalter ist ${behTop ? behTop.n : '—'}.`);
+  }
+
+  // 7. Behinderungen des Rekordhalters
+  if (behTop && abendeVon(behTop.n) > 0) {
+    const ab = abendeVon(behTop.n);
+    S(`Wie viele Behinderungen hat ${behTop.n.split(' ')[0]} insgesamt bekommen?`,
+      behTop.v, '×',
+      `${behTop.n}: ${behTop.v} Behinderungen.`,
+      `Das sind ${r1(behTop.v / ab)} Behinderungen pro Kegeln, an dem ${behTop.n.split(' ')[0]} dabei war.`,
+      behTop.n);
+  }
+
+  // 8. Kugel zum Tisch insgesamt
+  const kugelGes = katTotal('Kugel z.T.');
+  const kugelTop = katFuehrend('Kugel z.T.');
+  if (kugelGes > 0) {
+    S(`Wie oft wurde die Kugel insgesamt zum Tisch gebracht?`,
+      kugelGes, '×',
+      `${kugelGes}× Kugel zum Tisch über alle ${nAbende} Kegelabende.`,
+      `Auch hier, wenig überraschend… ${kugelTop ? kugelTop.n : '—'}.`);
+  }
+
+  // 9. Kugel zum Tisch beim Führenden
+  if (kugelTop && kugelGes > 0) {
+    S(`Wie oft wurde ${kugelTop.n.split(' ')[0]} die Kugel zum Tisch gebracht?`,
+      kugelTop.v, '×',
+      `${kugelTop.n}: ${kugelTop.v}× Kugel zum Tisch.`,
+      `Das sind ${Math.round(kugelTop.v / kugelGes * 100)}% aller Fälle der Saison.`,
+      kugelTop.n);
+  }
+
   // ── AUSWAHL: jedes Mitglied kommt mindestens einmal vor ───────
-  const auswahl = [];
+  const auswahl = [...std];
   const rest = shuffle(fragen);
 
-  // Schritt 1: pro Mitglied eine zufällige personenbezogene Frage
-  shuffle(mitglieder).forEach(name => {
+  // Schritt 1: pro Mitglied eine personenbezogene Frage — Mitglieder, die schon
+  // in einer Standardfrage vorkommen, sind damit bereits abgedeckt.
+  const abgedeckt = new Set(std.map(f => f.person).filter(Boolean));
+  shuffle(mitglieder).filter(n => !abgedeckt.has(n)).forEach(name => {
     const idx = rest.findIndex(f => f.person === name);
     if (idx !== -1) auswahl.push(rest.splice(idx, 1)[0]);
   });
@@ -10032,6 +10251,7 @@ function renderQuizAdmin() {
         <div style="font-size:.72rem;font-weight:700;color:var(--success);margin-bottom:.2rem">✅ RICHTIGE ANTWORT</div>
         <div style="font-weight:800;font-size:1.5rem">${fmt(richtig)}</div>
         <div style="font-size:.82rem;color:var(--text-muted);margin-top:.25rem">${frage.erklaerung}</div>
+        ${frage.fakt ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem .75rem;margin-top:.5rem;font-size:.82rem;color:#92400e;line-height:1.55">💡 <strong>Fun Fact:</strong> ${frage.fakt}</div>` : ''}
       </div>
       ${gewinner.length ? `
       <div style="background:#fef3c7;border:2px solid #fcd34d;border-radius:12px;padding:.9rem 1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.8rem">
@@ -10260,6 +10480,7 @@ function renderQuizMember() {
         <div style="font-size:.72rem;color:var(--success);font-weight:700;margin-bottom:.2rem">✅ Richtige Antwort</div>
         <div style="font-weight:800;font-size:1.4rem">${fmt(richtig)}</div>
         <div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${frage.erklaerung}</div>
+        ${frage.fakt ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem .75rem;margin-top:.5rem;font-size:.82rem;color:#92400e;line-height:1.55">💡 <strong>Fun Fact:</strong> ${frage.fakt}</div>` : ''}
       </div>
 
       ${ichGewinner

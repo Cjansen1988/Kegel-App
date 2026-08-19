@@ -9045,17 +9045,21 @@ function generiereQuizFragen(anzahl = 30) {
     fragen.push({ typ:'schaetzung', quelle:'saison', frage, richtig, einheit, erklaerung, person: person || null });
 
   // ── GESAMT-KATEGORIEN ─────────────────────────────────────────
+  // Kategorien, die in keiner Quizfrage auftauchen dürfen. Straße und Schnapszahl
+  // folgen einer anderen Logik (ein Eintrag ist nicht ein Vorfall), Alle 9 ist
+  // invertiert — daraus würden falsche Antworten entstehen.
+  const QUIZ_AUSGESCHLOSSEN = ['Straße', 'Schnapszahl', 'Alle 9', 'Alle 9 (geworfen)'];
+  const katErlaubt = k => !QUIZ_AUSGESCHLOSSEN.includes(k);
+
   const KATS = [
     { kat:'Pumpe',        label:'Pumpen',           verb:'geworfen' },
     { kat:'Klingel',      label:'Klingeln',          verb:'getroffen' },
     { kat:'Stina',        label:'Stinas',            verb:'kassiert' },
     { kat:'Lustwurf',     label:'Lustwürfe',         verb:'gemacht' },
     { kat:'Behinderung',  label:'Behinderungen',     verb:'verursacht' },
-    { kat:'Schnapszahl',  label:'Schnapszahlen',     verb:'getroffen' },
-    { kat:'Straße',       label:'Straßen',           verb:'geworfen' },
     { kat:'Kugel z.T.',   label:'Kugel z.T.',        verb:'geworfen' },
     { kat:'Verl. Spiel',  label:'verlorene Spiele',  verb:'gespielt' },
-  ];
+  ].filter(k => katErlaubt(k.kat));
 
   KATS.forEach(({ kat, label, verb }) => {
     const total = alle.filter(e => e.kategorie === kat).reduce((s,e)=>s+(e.anzahl||1),0);
@@ -9080,7 +9084,7 @@ function generiereQuizFragen(anzahl = 30) {
   });
 
   // ── PRO-SPIELER DURCHSCHNITT PRO ABEND ───────────────────────
-  ['Pumpe','Klingel','Stina','Lustwurf','Behinderung','Verl. Spiel'].forEach(kat => {
+  ['Pumpe','Klingel','Stina','Lustwurf','Behinderung','Verl. Spiel'].filter(katErlaubt).forEach(kat => {
     const labelObj = KATS.find(k=>k.kat===kat);
     const label = labelObj ? labelObj.label : kat;
     const verb = labelObj ? labelObj.verb : 'geworfen';
@@ -9170,9 +9174,11 @@ function generiereQuizFragen(anzahl = 30) {
   };
 
   const nAbende  = sessions.length;
-  const katTotal = kat => alle.filter(e => e.kategorie === kat).reduce((s,e)=>s+(e.anzahl||1),0);
-  const katVon   = (kat, name) => alle.filter(e => e.kategorie === kat && e.mitglied === name)
-                                      .reduce((s,e)=>s+(e.anzahl||1),0);
+  const katTotal = kat => !katErlaubt(kat) ? 0
+    : alle.filter(e => e.kategorie === kat).reduce((s,e)=>s+(e.anzahl||1),0);
+  const katVon   = (kat, name) => !katErlaubt(kat) ? 0
+    : alle.filter(e => e.kategorie === kat && e.mitglied === name)
+          .reduce((s,e)=>s+(e.anzahl||1),0);
   const katFuehrend = kat => {
     const r = mitglieder.map(n => ({ n, v: katVon(kat, n) })).filter(x => x.v > 0)
                         .sort((a,b) => b.v - a.v);
@@ -9180,6 +9186,7 @@ function generiereQuizFragen(anzahl = 30) {
   };
   // Höchster Einzelwert einer Person an einem Abend
   const katRekord = kat => {
+    if (!katErlaubt(kat)) return null;
     let best = null;
     sessions.forEach(sess => {
       const pro = {};
@@ -9301,7 +9308,12 @@ function generiereQuizFragen(anzahl = 30) {
     if (auswahl.length < anzahl) auswahl.push(f);
   });
 
-  return auswahl.slice(0, anzahl);
+  // Sicherheitsnetz: nichts durchlassen, was eine ausgeschlossene Kategorie nennt
+  const verboten = ['Straße', 'Straßen', 'Schnapszahl', 'Schnapszahlen', 'Alle 9'];
+  return auswahl
+    .filter(f => f.typ === 'schaetzung')
+    .filter(f => !verboten.some(w => (f.frage || '').includes(w)))
+    .slice(0, anzahl);
 }
 
 // ---- BLACKJACK ----

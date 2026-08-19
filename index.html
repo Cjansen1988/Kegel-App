@@ -11888,10 +11888,10 @@ function renderMitgliedskarten(force) {
         stats[e.mitglied].strafen += Number(e.betrag) || 0;
     });
   });
-  // Spiel-Verluste
-  (state.spielverluste || []).forEach(v => {
-    if (stats[v.spieler]) stats[v.spieler].spieleVerloren++;
-  });
+  // Verlorene Spiele: die 'Verl. Spiel'-Striche aus dem Kegelbuch sind die
+  // vollständige Quelle. state.spielverluste enthält nur Spiele, die über den
+  // Spiele-Tab ausgetragen wurden — bei importierten Abenden also nichts.
+  Object.values(stats).forEach(st => { st.spieleVerloren = st.verlSpiele; });
 
   // Abgeleitete Werte
   Object.values(stats).forEach(st => {
@@ -11906,23 +11906,24 @@ function renderMitgliedskarten(force) {
     neuner: maxVon('neuner'), klingeln: maxVon('klingeln'),
     behinderungen: maxVon('behinderungen'), kugelZT: maxVon('kugelZT'),
     pk: maxVon('pk'), rekord: maxVon('rekord'), abende: maxVon('abende'),
+    stinas: maxVon('stinas'), verlSpiele: maxVon('verlSpiele'),
     strafen: maxVon('strafen')
   };
   const minStrafen = Math.min(...state.mitglieder.map(m => stats[m.name].strafen));
 
-  // Rangliste nach Strafen (teuerster = #1)
-  const rangListe = state.mitglieder.map(m => ({ name: m.name, v: stats[m.name].strafen }))
+  // Rangliste nach Pumpen (meiste Pumpen = #1)
+  const rangListe = state.mitglieder.map(m => ({ name: m.name, v: stats[m.name].pumpen }))
     .sort((a,b) => b.v - a.v);
   const rangVon = {};
   let rr_ = 0;
   rangListe.forEach((r, i) => { if (i > 0 && r.v !== rangListe[i-1].v) rr_ = i; rangVon[r.name] = rr_ + 1; });
 
-  // Seltenheitsstufe — relativ zum besten Neuner-Werfer, damit die Stufen
-  // aussagekräftig bleiben statt bei jedem "legendär" zu stehen.
+  // Seltenheitsstufe — nach Ø Pumpen pro Abend, relativ zum Höchstwert.
+  // Der Schnitt statt der Gesamtzahl, damit wer selten da war nicht benachteiligt wird.
   const stufeVon = st => {
-    if (!st.neuner || max.neuner < 1) return 'normal';
-    const q = st.neuner / max.neuner;
-    return q >= 0.8 ? 'legendaer' : q >= 0.55 ? 'episch' : q >= 0.3 ? 'selten' : 'normal';
+    if (!st.pumpenSchnitt || max.pumpenSchnitt <= 0) return 'normal';
+    const q = st.pumpenSchnitt / max.pumpenSchnitt;
+    return q >= 0.8 ? 'legendaer' : q >= 0.6 ? 'episch' : q >= 0.4 ? 'selten' : 'normal';
   };
 
   state.mitglieder.forEach((m, idx) => {
@@ -11931,13 +11932,12 @@ function renderMitgliedskarten(force) {
     // Titel
     let title = 'Stammspieler';
     if (st.pumpen > 0 && st.pumpen === max.pumpen)               title = 'Pumpenkönig der Saison';
-    else if (st.neuner > 0 && st.neuner === max.neuner)          title = 'Neuner-Maschine';
     else if (st.klingeln > 0 && st.klingeln === max.klingeln)    title = 'Klingelmeister';
     else if (st.behinderungen > 0 && st.behinderungen === max.behinderungen) title = 'Wandelnde Behinderung';
     else if (st.kugelZT > 0 && st.kugelZT === max.kugelZT)       title = 'Kugel zum Tisch, immer wieder';
     else if (st.pk >= 3)                                        title = 'Häufiger Pumpenkönig';
     else if (st.abende > 0 && st.abende === max.abende)          title = 'Immer dabei';
-    else if (st.strafen === minStrafen && st.strafen < max.strafen) title = 'Die weiße Weste';
+    else if (st.verlSpiele > 0 && st.verlSpiele === max.verlSpiele) title = 'Dauerverlierer';
     else if (st.pk === 1)                                       title = 'War schon Pumpenkönig';
 
     const wrap = document.createElement('div');
@@ -11950,8 +11950,9 @@ function renderMitgliedskarten(force) {
     drawMitgliedsKarte(canvas, {
       name: m.name, title, color: avatarColor(m.name), idx, saisonLabel,
       rang: rangVon[m.name], rarity: stufeVon(st),
-      pumpen: st.pumpen, pumpenSchnitt: st.pumpenSchnitt, neuner: st.neuner,
-      klingeln: st.klingeln, behinderungen: st.behinderungen, kugelZT: st.kugelZT,
+      pumpen: st.pumpen, pumpenSchnitt: st.pumpenSchnitt,
+      klingeln: st.klingeln, behinderungen: st.behinderungen,
+      kugelZT: st.kugelZT, stinas: st.stinas,
       pk: st.pk, rekord: st.rekord, abende: st.abende, abendeGesamt: nAbende,
       quote: st.quote, spieleVerloren: st.spieleVerloren,
       strafen: st.strafen.toFixed(2).replace('.', ','),
@@ -12087,9 +12088,9 @@ function drawMitgliedsKarte(canvas, m) {
 
   // Drei Hauptwerte
   const hero = [
-    { v: String(m.pumpen),                    l: 'PUMPEN' },
-    { v: String(m.neuner),                    l: 'NEUNER' },
-    { v: m.abende + '/' + m.abendeGesamt,     l: 'ABENDE' }
+    { v: String(m.pumpen),                        l: 'PUMPEN' },
+    { v: m.pumpenSchnitt.toFixed(1),              l: 'Ø / ABEND' },
+    { v: m.abende + '/' + m.abendeGesamt,         l: 'ABENDE' }
   ];
   hero.forEach((s, i) => {
     const x = W/6 + (W/3) * i;
@@ -12108,11 +12109,11 @@ function drawMitgliedsKarte(canvas, m) {
   // Balken im Vergleich zum Teambesten
   const mx = m.max || {};
   const bars = [
-    { l:'Ø Pumpen / Abend',       v: m.pumpenSchnitt.toFixed(1), f: m.pumpenSchnitt / (mx.pumpenSchnitt || 1) },
-    { l:'Klingeln',               v: String(m.klingeln),         f: m.klingeln / (mx.klingeln || 1) },
-    { l:'Behinderungen',          v: String(m.behinderungen),    f: m.behinderungen / (mx.behinderungen || 1) },
-    { l:'Pumpenkönig',            v: m.pk + '×',                 f: m.pk / (mx.pk || 1) },
-    { l:'Rekord an einem Abend',  v: m.rekord + ' P',            f: m.rekord / (mx.rekord || 1) }
+    { l:'Klingeln',               v: String(m.klingeln),      f: m.klingeln / (mx.klingeln || 1) },
+    { l:'Behinderungen',          v: String(m.behinderungen), f: m.behinderungen / (mx.behinderungen || 1) },
+    { l:'Stinas',                 v: String(m.stinas),        f: m.stinas / (mx.stinas || 1) },
+    { l:'Kugel zum Tisch',        v: String(m.kugelZT),       f: m.kugelZT / (mx.kugelZT || 1) },
+    { l:'Rekord an einem Abend',  v: m.rekord + ' P',         f: m.rekord / (mx.rekord || 1) }
   ];
   bars.forEach((b, i) => {
     const y = 280 + i * 22;
@@ -12137,14 +12138,14 @@ function drawMitgliedsKarte(canvas, m) {
   // Fußzeile
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
-  ctx.fillText('STRAFEN GESAMT', 17, 404);
-  fit('€ ' + m.strafen, W/2 - 26, 15, 'bold');
-  ctx.fillStyle = '#fca5a5'; ctx.fillText('€ ' + m.strafen, 17, 419);
+  ctx.fillText('SPIELE VERLOREN', 17, 404);
+  ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = '#fca5a5';
+  ctx.fillText(String(m.spieleVerloren), 17, 419);
   ctx.textAlign = 'right';
   ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
-  ctx.fillText('SPIELE VERLOREN', W-17, 404);
-  ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = '#e2e8f0';
-  ctx.fillText(String(m.spieleVerloren), W-17, 419);
+  ctx.fillText('PUMPENKÖNIG', W-17, 404);
+  ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = m.pk > 0 ? '#fbbf24' : '#475569';
+  ctx.fillText(m.pk + '×', W-17, 419);
 
   // Rahmen
   rr(1.25,1.25,W-2.5,H-2.5,15); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.stroke();

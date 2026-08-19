@@ -857,7 +857,7 @@
       <button class="btn btn-sm btn-ghost" onclick="renderMitgliedskarten(true)" style="font-size:.78rem">↺ Aktualisieren</button>
     </div>
     <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Jede Karte kann als PNG gespeichert und geteilt werden.</p>
-    <div id="mitgliedskarten-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px"></div>
+    <div id="mitgliedskarten-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:24px;justify-items:center"></div>
   </div>
 
   <!-- Foto-Galerie -->
@@ -9143,7 +9143,7 @@ function subscribeQuiz() {
 }
 
 // Fragen generieren aus echten Daten
-function generiereQuizFragen(anzahl = 30) {
+function generiereQuizFragen(anzahl = 60) {
   const sessions = state.kegelsessions || [];
   const alle = sessions.flatMap(s => s.eintraege || []);
   // Bewusst KEIN state.strafen: dort stecken Abwesenheits-Pauschalen und
@@ -9279,13 +9279,54 @@ function generiereQuizFragen(anzahl = 30) {
     F(`Wie viel ist aktuell in der Vereinskasse (in €)?`, kassenstand, '€',
       `Kassenstand: ${formatEur(kassenstand)}.`);
 
-  // ── PUMPEN PRO SESSION ────────────────────────────────────────
+  // ── KATEGORIE PRO SESSION ─────────────────────────────────────
   sessions.forEach(sess => {
-    const p = (sess.eintraege||[]).filter(e=>e.kategorie==='Pumpe').reduce((s,e)=>s+(e.anzahl||1),0);
-    if (p > 0)
-      F(`Wie viele Pumpen gab es beim Kegelabend „${sess.name}"?`, p, '×',
-        `${p} Pumpen beim ${sess.name}.`);
+    KATS.forEach(({ kat, label, verb }) => {
+      const v = (sess.eintraege||[]).filter(e=>e.kategorie===kat).reduce((s,e)=>s+(e.anzahl||1),0);
+      if (v > 0)
+        F(`Wie viele ${label} gab es beim Kegelabend „${sess.name}"?`, v, '×',
+          `${v}× ${label} beim ${sess.name}.`);
+    });
   });
+
+  // ── TEAM-DURCHSCHNITT PRO ABEND ───────────────────────────────
+  KATS.forEach(({ kat, label }) => {
+    const total = alle.filter(e => e.kategorie === kat).reduce((s,e)=>s+(e.anzahl||1),0);
+    if (total > 0 && sessions.length > 1)
+      F(`Wie viele ${label} gab es im Durchschnitt pro Kegelabend?`,
+        Math.round(total / sessions.length * 10) / 10, '×',
+        `${total}× ${label} geteilt durch ${sessions.length} Abende = Ø ${Math.round(total/sessions.length*10)/10}.`);
+  });
+
+  // ── REKORDE: höchster Einzelwert an einem Abend ────────────────
+  KATS.forEach(({ kat, label }) => {
+    let best = 0;
+    sessions.forEach(sess => {
+      const pro = {};
+      (sess.eintraege||[]).filter(e=>e.kategorie===kat).forEach(e => {
+        pro[e.mitglied] = (pro[e.mitglied]||0) + (e.anzahl||1);
+      });
+      Object.values(pro).forEach(v => { if (v > best) best = v; });
+    });
+    if (best > 1)
+      F(`Was ist der Rekord für ${label} von einer Person an einem einzigen Abend?`, best, '×',
+        `Rekord: ${best}× ${label} an einem Abend.`);
+  });
+
+  // ── ANWESENHEITSQUOTE PRO SPIELER ─────────────────────────────
+  if (sessions.length > 1) mitglieder.forEach(n => {
+    const ab = abendeVon(n);
+    if (ab > 0)
+      F(`Bei wie viel Prozent der Kegelabende war ${n} diese Saison dabei?`,
+        Math.round(ab / sessions.length * 100), '%',
+        `${n}: ${ab} von ${sessions.length} Abenden = ${Math.round(ab/sessions.length*100)}%.`, n);
+  });
+
+  // ── ANZAHL VERSCHIEDENER STRAFARTEN ───────────────────────────
+  const artenAnz = new Set(alle.map(e => e.kategorie).filter(katErlaubt)).size;
+  if (artenAnz > 1)
+    F(`Wie viele verschiedene Strafarten wurden diese Saison notiert?`, artenAnz, 'Arten',
+      `${artenAnz} verschiedene Strafarten kamen vor.`);
 
   // ── STANDARDFRAGEN ────────────────────────────────────────────
   // Feste Fragen mit handgeschriebenen Fun Facts. Die Zahlen kommen aus den
@@ -9763,7 +9804,7 @@ function starteOfflineQuiz() {
   quizOfflineState = {
     phase: 'setup',
     spieler: state.mitglieder.map(m => m.name),
-    fragenPool: generiereQuizFragen(30),
+    fragenPool: generiereQuizFragen(60),
     fragenAusgewaehlt: [],
     _vorauswahlGesetzt: false,
     fragen: null,
@@ -10232,53 +10273,108 @@ function renderQuizAdmin() {
     const maxSel = Math.min(kandidaten.length, 20);
     const N = q.spieler.length;
     const vAnz = q.verliererAnzahl !== undefined ? q.verliererAnzahl : Math.min(4, N - 1);
+    const offen = kandidaten.map((f, i) => i).filter(i => !ausgewaehlt.includes(i));
+    const passtZuFilter = i => {
+      const f = kandidaten[i];
+      if (quizPoolFilter === 'standard') return f.quelle === 'standard';
+      if (quizPoolFilter === 'person')   return !!f.person && f.quelle !== 'standard';
+      if (quizPoolFilter === 'saison')   return !f.person && f.quelle !== 'standard';
+      if (quizPoolFilter === 'euro')     return f.einheit === '€';
+      return true;
+    };
+    const gefiltert = offen.filter(passtZuFilter);
+
+    const badge = f => f.quelle === 'standard'
+      ? `<span style="font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap">⭐ Standard</span>`
+      : f.person
+        ? `<span style="font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;white-space:nowrap">👤 ${f.person}</span>`
+        : `<span style="font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;white-space:nowrap">📊 Saison</span>`;
+
     container.innerHTML = `
       <div class="card" style="margin-bottom:.75rem;padding:.85rem 1rem">
         <div style="font-size:.8rem;font-weight:700;margin-bottom:.5rem">⚠️ Verlierer mit Behinderung</div>
         <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
           <select onchange="quizSetVerlierer(this.value)" style="padding:5px 10px;font-size:.85rem;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text)">
             ${Array.from({length: N}, (_, i) => i).map(i =>
-              `<option value="${i}"${i===vAnz?' selected':''}>${i === 0 ? 'keine' : i + (i===1?' Verlierer':' Verlierer')}</option>`).join('')}
+              `<option value="${i}"${i===vAnz?' selected':''}>${i === 0 ? 'keine' : i + ' Verlierer'}</option>`).join('')}
           </select>
           <span style="font-size:.8rem;color:var(--text-muted)">
-            ${vAnz === 0
-              ? 'Niemand bekommt eine Behinderung.'
-              : `Die letzten ${vAnz} von ${N} bekommen je eine Behinderung.`}
+            ${vAnz === 0 ? 'Niemand bekommt eine Behinderung.'
+                         : `Die letzten ${vAnz} von ${N} bekommen je eine Behinderung.`}
           </span>
         </div>
       </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-          <div class="card-title" style="margin:0">Fragen auswählen</div>
-          <span class="tag ${ausgewaehlt.length>=5?'tag-green':'tag-yellow'}">${ausgewaehlt.length} / ${maxSel} gewählt</span>
+
+      <!-- GEWÄHLTE REIHENFOLGE -->
+      <div class="card" style="margin-bottom:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem">
+          <div class="card-title" style="margin:0">🔢 Reihenfolge</div>
+          <div style="display:flex;gap:.3rem;align-items:center">
+            <span class="tag ${ausgewaehlt.length>=5?'tag-green':'tag-yellow'}">${ausgewaehlt.length} / ${maxSel}</span>
+            ${ausgewaehlt.length > 1 ? `<button class="btn btn-ghost btn-sm" onclick="quizReihenfolgeMischen()" title="Zufällig mischen">🔀</button>` : ''}
+            ${ausgewaehlt.length ? `<button class="btn btn-ghost btn-sm" onclick="quizAuswahlLeeren()" title="Alle abwählen">🗑</button>` : ''}
+          </div>
         </div>
-        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:1rem">Wähle 5–${maxSel} Saison-Fragen aus. Tippen zum An-/Abwählen.</p>
-        ${kandidaten.map((f, i) => {
-          const sel = ausgewaehlt.includes(i);
-          const detailsHTML = f.typ === 'mc'
-            ? `<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem">
-                ${(f.antworten||[]).map(a => `<span style="font-size:.72rem;padding:2px 7px;border-radius:20px;background:${sel?'#dbeafe':'var(--bg-page)'};color:var(--text-muted);border:1px solid ${sel?'#bfdbfe':'var(--border)'}">${a}</span>`).join('')}
-               </div>`
-            : `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem">Schätzung${f.einheit ? ' in ' + f.einheit : ''}</div>`;
-          return `<div onclick="toggleFrageAuswahl(${i})" style="display:flex;align-items:start;gap:.75rem;padding:.75rem;border-radius:10px;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'#eff6ff':'white'};margin-bottom:.4rem;cursor:pointer">
-            <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${sel?'var(--primary)':'var(--border)'};background:${sel?'var(--primary)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:.75rem;font-weight:800;color:white">${sel?ausgewaehlt.indexOf(i)+1:''}</div>
-            <div style="flex:1">
-              <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.2rem">
-                <span style="font-size:.78rem;font-weight:700;color:${sel?'var(--primary)':'var(--text-muted)'}">${f.typ==='mc'?'🔤 MC':'🔢 Schätzung'}</span>
-                ${f.person ? `<span style="font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;white-space:nowrap">👤 ${f.person}</span>` : quizQuelleBadge(f)}
-              </div>
-              <div style="font-size:.875rem;font-weight:600">${f.frage}</div>
-              ${detailsHTML}
-            </div>
-          </div>`;
-        }).join('')}
-        <div style="display:flex;gap:.75rem;margin-top:1rem">
+        <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.7rem">
+          In dieser Reihenfolge werden die Fragen gestellt. Mit ↑ ↓ verschieben.
+        </p>
+        ${ausgewaehlt.length === 0
+          ? `<div style="font-size:.85rem;color:var(--text-muted);padding:.6rem;background:var(--bg-page);border-radius:8px;text-align:center">Noch keine Frage gewählt — unten aussuchen.</div>`
+          : ausgewaehlt.map((kIdx, pos) => {
+              const f = kandidaten[kIdx];
+              if (!f) return '';
+              return `<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .55rem;border-radius:10px;border:1px solid var(--border);background:#eff6ff;margin-bottom:.35rem">
+                <div style="width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.72rem;font-weight:800">${pos+1}</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:.82rem;font-weight:600;line-height:1.35">${f.frage}</div>
+                  <div style="margin-top:.2rem">${badge(f)}</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:1px;flex-shrink:0">
+                  <button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.7rem;line-height:1.3" onclick="quizFrageVerschieben(${pos},-1)" ${pos===0?'disabled style="opacity:.3;padding:1px 6px;font-size:.7rem"':''}>↑</button>
+                  <button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.7rem;line-height:1.3" onclick="quizFrageVerschieben(${pos},1)" ${pos===ausgewaehlt.length-1?'disabled style="opacity:.3;padding:1px 6px;font-size:.7rem"':''}>↓</button>
+                </div>
+                <button class="btn btn-ghost btn-sm" style="flex-shrink:0;color:var(--danger)" onclick="toggleFrageAuswahl(${kIdx})">✕</button>
+              </div>`;
+            }).join('')}
+        <div style="display:flex;gap:.75rem;margin-top:.85rem">
           <button class="btn btn-ghost" onclick="quizZurueck()">← Zurück</button>
           <button class="btn btn-primary" style="flex:1" onclick="starteQuizMitAuswahl()"
             ${ausgewaehlt.length<5?'disabled style="opacity:.5"':''}>
             🧠 Quiz starten (${ausgewaehlt.length} Fragen)
           </button>
         </div>
+      </div>
+
+      <!-- FRAGENPOOL -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+          <div class="card-title" style="margin:0">➕ Weitere Fragen</div>
+          <span style="font-size:.75rem;color:var(--text-muted)">${gefiltert.length} von ${offen.length}</span>
+        </div>
+        <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.6rem">
+          ${[['alle','Alle'],['standard','⭐ Standard'],['person','👤 Personen'],['saison','📊 Saison'],['euro','€ Geld']].map(([k,l]) =>
+            `<button class="btn btn-sm ${quizPoolFilter===k?'btn-primary':'btn-ghost'}" style="font-size:.74rem;padding:3px 9px" onclick="quizSetPoolFilter('${k}')">${l}</button>`
+          ).join('')}
+        </div>
+        ${ausgewaehlt.length >= maxSel
+          ? `<div style="font-size:.8rem;color:var(--text-muted);padding:.5rem;background:var(--bg-page);border-radius:8px;margin-bottom:.6rem">Maximum von ${maxSel} erreicht. Erst oben eine Frage entfernen.</div>`
+          : ''}
+        ${gefiltert.length === 0
+          ? `<div style="font-size:.85rem;color:var(--text-muted);padding:.6rem;text-align:center">${offen.length === 0 ? 'Alle Fragen sind gewählt.' : 'Keine Frage in diesem Filter.'}</div>`
+          : gefiltert.map(i => {
+              const f = kandidaten[i];
+              const voll = ausgewaehlt.length >= maxSel;
+              return `<div onclick="${voll ? '' : `toggleFrageAuswahl(${i})`}" style="display:flex;align-items:center;gap:.6rem;padding:.55rem;border-radius:10px;border:1px solid var(--border);background:white;margin-bottom:.3rem;cursor:${voll?'not-allowed':'pointer'};opacity:${voll?'.45':'1'}">
+                <div style="width:22px;height:22px;border-radius:50%;border:2px solid var(--border);flex-shrink:0"></div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:.82rem;font-weight:600;line-height:1.35">${f.frage}</div>
+                  <div style="margin-top:.2rem;display:flex;gap:.3rem;align-items:center;flex-wrap:wrap">
+                    ${badge(f)}
+                    <span style="font-size:.68rem;color:var(--text-muted)">Schätzung${f.einheit ? ' in ' + f.einheit : ''}</span>
+                  </div>
+                </div>
+              </div>`;
+            }).join('')}
       </div>`;
     return;
   }
@@ -10707,7 +10803,7 @@ function zeigeFragenAuswahl() {
   const spieler = [...document.querySelectorAll('#quiz-spieler-auswahl .kg-auswahl-chip.aktiv')].map(c => c.dataset.name);
   if (spieler.length < 2) { alert('Mindestens 2 Spieler auswählen!'); return; }
   // Nur Saison-Fragen aus echten Session-Daten (keine allgemeinen Kegelfragen)
-  const kandidaten = generiereQuizFragen(30);
+  const kandidaten = generiereQuizFragen(60);
   if (kandidaten.length < 5) { alert('Nicht genug Daten für ein Quiz. Spielt erst ein paar Kegel-Abende!'); return; }
   // Vorauswahl: die ersten 20 (enthalten je eine Frage pro Mitglied)
   const vorauswahl = kandidaten.slice(0, Math.min(20, kandidaten.length)).map((_, i) => i);
@@ -10732,6 +10828,29 @@ function toggleFrageAuswahl(idx) {
   db.collection('quiz').doc('aktiv').update({ fragenAusgewaehlt: ausgewaehlt });
 }
 
+let quizPoolFilter = 'alle';
+function quizSetPoolFilter(f) { quizPoolFilter = f; renderQuizAdmin(); }
+
+function quizFrageVerschieben(pos, richtung) {
+  const q = state.quiz;
+  const arr = [...(q.fragenAusgewaehlt || [])];
+  const ziel = pos + richtung;
+  if (ziel < 0 || ziel >= arr.length) return;
+  [arr[pos], arr[ziel]] = [arr[ziel], arr[pos]];
+  db.collection('quiz').doc('aktiv').update({ fragenAusgewaehlt: arr });
+}
+
+function quizReihenfolgeMischen() {
+  const q = state.quiz;
+  const arr = [...(q.fragenAusgewaehlt || [])].sort(() => Math.random() - .5);
+  db.collection('quiz').doc('aktiv').update({ fragenAusgewaehlt: arr });
+}
+
+function quizAuswahlLeeren() {
+  if (!confirm('Alle gewählten Fragen entfernen?')) return;
+  db.collection('quiz').doc('aktiv').update({ fragenAusgewaehlt: [] });
+}
+
 function quizZurueck() {
   db.collection('quiz').doc('aktiv').update({ phase: 'setup' });
 }
@@ -10740,7 +10859,8 @@ function starteQuizMitAuswahl() {
   const q = state.quiz;
   const sel = (q.fragenAusgewaehlt||[]).length;
   if (sel < 5) { alert('Mindestens 5 Fragen auswählen!'); return; }
-  const fragen = q.fragenAusgewaehlt.map(i => q.fragenKandidaten[i]).sort(() => Math.random() - .5);
+  // Reihenfolge wie im Auswahl-Screen festgelegt — kein Mischen mehr
+  const fragen = q.fragenAusgewaehlt.map(i => q.fragenKandidaten[i]);
   db.collection('quiz').doc('aktiv').update({
     phase: 'regeln', fragen, aktuelleQ: 0,
     antworten: {}, punkte: {}, preise: {}, frageGewinner: [],
@@ -11704,84 +11824,145 @@ function renderMitgliedskarten(force) {
 
   const sessions = state.kegelsessions || [];
   const saisonLabel = (state.aktiveSaison?.name || 'Aktuelle Saison').toUpperCase();
+  const nAbende = sessions.length;
 
-  // Pre-compute per-member stats
+  // ── Statistiken pro Mitglied ────────────────────────────────────
+  const leer = () => ({ pumpen:0, neuner:0, klingeln:0, behinderungen:0, stinas:0,
+                        lustwuerfe:0, kugelZT:0, verlSpiele:0,
+                        pk:0, abende:0, strafen:0, rekord:0, spieleVerloren:0 });
   const stats = {};
-  state.mitglieder.forEach(m => { stats[m.name] = { pumpen:0, pk:0, abende:0, strafen:0 }; });
+  state.mitglieder.forEach(m => { stats[m.name] = leer(); });
+
+  const KAT_FELD = {
+    'Pumpe':'pumpen', 'Klingel':'klingeln', 'Behinderung':'behinderungen',
+    'Stina':'stinas', 'Lustwurf':'lustwuerfe', 'Kugel z.T.':'kugelZT',
+    'Verl. Spiel':'verlSpiele', 'Alle 9 (geworfen)':'neuner'
+  };
 
   sessions.forEach(s => {
     const eintraege = s.eintraege || [];
-    // Pumpen & Abende
-    const pumpenPerPerson = {};
+    const pumpenHier = {};
     eintraege.forEach(e => {
-      if (!stats[e.mitglied]) return;
-      if (e.kategorie === 'Pumpe') {
-        stats[e.mitglied].pumpen += (e.anzahl || 1);
-        pumpenPerPerson[e.mitglied] = (pumpenPerPerson[e.mitglied]||0) + (e.anzahl||1);
-      }
+      const st = stats[e.mitglied];
+      if (!st) return;
+      const feld = KAT_FELD[e.kategorie];
+      if (feld) st[feld] += (e.anzahl || 1);
+      if (e.kategorie === 'Pumpe') pumpenHier[e.mitglied] = (pumpenHier[e.mitglied]||0) + (e.anzahl||1);
     });
-    // Abende: anyone in spieler array
-    (s.spieler || s.angemeldet || []).forEach(name => {
-      if (stats[name] !== undefined) stats[name].abende++;
+    // Neuner auch aus dem separaten Feld, falls vorhanden
+    Object.entries(s.alle9Wuerfe || {}).forEach(([name, n]) => {
+      const st = stats[name];
+      if (!st) return;
+      const schonGezaehlt = eintraege.some(e => e.mitglied === name && e.kategorie === 'Alle 9 (geworfen)');
+      if (!schonGezaehlt) st.neuner += n;
     });
-    // Pumpenkönig dieser Session
-    const maxP = Math.max(...Object.values(pumpenPerPerson), 0);
-    if (maxP > 0) {
-      Object.keys(pumpenPerPerson).forEach(name => {
-        if (pumpenPerPerson[name] === maxP && stats[name] !== undefined) stats[name].pk++;
-      });
-    }
+    // Anwesenheit
+    const anwesend = (s.angemeldet && s.angemeldet.length) ? s.angemeldet : (s.spieler || []);
+    anwesend.forEach(name => { if (stats[name]) stats[name].abende++; });
+    eintraege.forEach(e => {
+      if (stats[e.mitglied] && !anwesend.includes(e.mitglied)) { /* Einträge ohne Anmeldung */ }
+    });
+    // Rekord & Pumpenkönig
+    const maxP = Math.max(...Object.values(pumpenHier), 0);
+    Object.entries(pumpenHier).forEach(([name, v]) => {
+      const st = stats[name];
+      if (!st) return;
+      if (v > st.rekord) st.rekord = v;
+      if (maxP > 0 && v === maxP) st.pk++;
+    });
   });
 
-  // Strafen aus state.strafen (bereits nach aktiver Saison gefiltert)
-  (state.strafen || []).forEach(s => {
-    if (stats[s.mitglied] !== undefined) stats[s.mitglied].strafen += Number(s.betrag);
+  // Abende korrigieren: wer Einträge hat, war dabei
+  sessions.forEach(s => {
+    const anwesend = (s.angemeldet && s.angemeldet.length) ? s.angemeldet : (s.spieler || []);
+    const mitEintrag = new Set((s.eintraege || []).map(e => e.mitglied));
+    mitEintrag.forEach(name => {
+      if (stats[name] && !anwesend.includes(name)) stats[name].abende++;
+    });
   });
 
-  // Highlights ermitteln
-  const maxPumpen  = Math.max(...state.mitglieder.map(m => stats[m.name]?.pumpen || 0), 0);
-  const maxStrafen = Math.max(...state.mitglieder.map(m => stats[m.name]?.strafen || 0), 0);
-  const minStrafen = Math.min(...state.mitglieder.map(m => stats[m.name]?.strafen || 0));
-  const maxAbende  = Math.max(...state.mitglieder.map(m => stats[m.name]?.abende || 0), 0);
+  // Strafen: echte Kegelbuch-Einträge (nur Abende, an denen man dabei war)
+  sessions.forEach(s => {
+    (s.eintraege || []).forEach(e => {
+      if (stats[e.mitglied] && e.kategorie !== 'Alle 9 (geworfen)')
+        stats[e.mitglied].strafen += Number(e.betrag) || 0;
+    });
+  });
+  // Spiel-Verluste
+  (state.spielverluste || []).forEach(v => {
+    if (stats[v.spieler]) stats[v.spieler].spieleVerloren++;
+  });
+
+  // Abgeleitete Werte
+  Object.values(stats).forEach(st => {
+    st.pumpenSchnitt = st.abende > 0 ? Math.round(st.pumpen / st.abende * 10) / 10 : 0;
+    st.quote = nAbende > 0 ? Math.round(st.abende / nAbende * 100) : 0;
+  });
+
+  // Team-Maxima für die Balken
+  const maxVon = f => Math.max(...state.mitglieder.map(m => stats[m.name][f] || 0), 0.01);
+  const max = {
+    pumpen: maxVon('pumpen'), pumpenSchnitt: maxVon('pumpenSchnitt'),
+    neuner: maxVon('neuner'), klingeln: maxVon('klingeln'),
+    behinderungen: maxVon('behinderungen'), kugelZT: maxVon('kugelZT'),
+    pk: maxVon('pk'), rekord: maxVon('rekord'), abende: maxVon('abende'),
+    strafen: maxVon('strafen')
+  };
+  const minStrafen = Math.min(...state.mitglieder.map(m => stats[m.name].strafen));
+
+  // Rangliste nach Strafen (teuerster = #1)
+  const rangListe = state.mitglieder.map(m => ({ name: m.name, v: stats[m.name].strafen }))
+    .sort((a,b) => b.v - a.v);
+  const rangVon = {};
+  let rr_ = 0;
+  rangListe.forEach((r, i) => { if (i > 0 && r.v !== rangListe[i-1].v) rr_ = i; rangVon[r.name] = rr_ + 1; });
+
+  // Seltenheitsstufe — relativ zum besten Neuner-Werfer, damit die Stufen
+  // aussagekräftig bleiben statt bei jedem "legendär" zu stehen.
+  const stufeVon = st => {
+    if (!st.neuner || max.neuner < 1) return 'normal';
+    const q = st.neuner / max.neuner;
+    return q >= 0.8 ? 'legendaer' : q >= 0.55 ? 'episch' : q >= 0.3 ? 'selten' : 'normal';
+  };
 
   state.mitglieder.forEach((m, idx) => {
-    const s = stats[m.name] || { pumpen:0, pk:0, abende:0, strafen:0 };
+    const st = stats[m.name];
 
-    // Subtitle
-    let title = 'Mitglied';
-    if (s.pumpen > 0 && s.pumpen === maxPumpen) title = 'Pumpenkönig der Saison';
-    else if (s.pk >= 3) title = 'Häufiger Pumpenkönig';
-    else if (s.pk === 1) title = 'War schon Pumpenkönig';
-    else if (s.strafen === minStrafen && s.strafen < maxStrafen) title = 'Wenigste Strafen';
-    else if (s.strafen === maxStrafen && maxStrafen > 0) title = 'Meiste Strafen';
-    else if (s.abende === maxAbende && maxAbende > 0) title = 'Immer dabei';
-
-    const color = avatarColor(m.name);
+    // Titel
+    let title = 'Stammspieler';
+    if (st.pumpen > 0 && st.pumpen === max.pumpen)               title = 'Pumpenkönig der Saison';
+    else if (st.neuner > 0 && st.neuner === max.neuner)          title = 'Neuner-Maschine';
+    else if (st.klingeln > 0 && st.klingeln === max.klingeln)    title = 'Klingelmeister';
+    else if (st.behinderungen > 0 && st.behinderungen === max.behinderungen) title = 'Wandelnde Behinderung';
+    else if (st.kugelZT > 0 && st.kugelZT === max.kugelZT)       title = 'Kugel zum Tisch, immer wieder';
+    else if (st.pk >= 3)                                        title = 'Häufiger Pumpenkönig';
+    else if (st.abende > 0 && st.abende === max.abende)          title = 'Immer dabei';
+    else if (st.strafen === minStrafen && st.strafen < max.strafen) title = 'Die weiße Weste';
+    else if (st.pk === 1)                                       title = 'War schon Pumpenkönig';
 
     const wrap = document.createElement('div');
     wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px';
 
     const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'border-radius:12px;display:block;cursor:pointer';
+    canvas.style.cssText = 'border-radius:16px;display:block;cursor:pointer';
     canvas.title = 'Karte von ' + m.name + ' – zum Speichern klicken';
 
     drawMitgliedsKarte(canvas, {
-      name: m.name,
-      title,
-      pumpen: s.pumpen,
-      pk: s.pk,
-      strafen: s.strafen.toFixed(2).replace('.', ','),
-      abende: s.abende,
-      color,
-      idx,
-      saisonLabel
+      name: m.name, title, color: avatarColor(m.name), idx, saisonLabel,
+      rang: rangVon[m.name], rarity: stufeVon(st),
+      pumpen: st.pumpen, pumpenSchnitt: st.pumpenSchnitt, neuner: st.neuner,
+      klingeln: st.klingeln, behinderungen: st.behinderungen, kugelZT: st.kugelZT,
+      pk: st.pk, rekord: st.rekord, abende: st.abende, abendeGesamt: nAbende,
+      quote: st.quote, spieleVerloren: st.spieleVerloren,
+      strafen: st.strafen.toFixed(2).replace('.', ','),
+      max
     });
 
     canvas.onclick = () => downloadMitgliedsKarte(canvas, m.name);
 
     const btn = document.createElement('button');
     btn.className = 'btn btn-sm btn-ghost';
-    btn.style.cssText = 'font-size:.78rem;width:100%;max-width:200px';
+    btn.style.cssText = 'font-size:.78rem;width:100%;max-width:280px';
     btn.textContent = '⬇ Karte speichern';
     btn.onclick = () => downloadMitgliedsKarte(canvas, m.name);
 
@@ -11791,115 +11972,191 @@ function renderMitgliedskarten(force) {
   });
 }
 
+const KARTEN_STUFEN = {
+  legendaer: { t:'LEGENDÄR',      a:'#fbbf24', b:'#78350f' },
+  episch:    { t:'EPISCH',        a:'#c084fc', b:'#4c1d95' },
+  selten:    { t:'SELTEN',        a:'#60a5fa', b:'#1e3a8a' },
+  normal:    { t:'STAMMSPIELER',  a:'#94a3b8', b:'#1e293b' }
+};
+
 function drawMitgliedsKarte(canvas, m) {
-  const S = 2;
-  const W = 200, H = 300;
-  canvas.width = W * S;
-  canvas.height = H * S;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
+  const S = 3, W = 280, H = 440;
+  canvas.width = W * S; canvas.height = H * S;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
   ctx.scale(S, S);
+  const col = m.color;
+  const rar = KARTEN_STUFEN[m.rarity] || KARTEN_STUFEN.normal;
 
-  function rr(x,y,w,h,r) {
+  function rr(x, y, w, h, r) {
     ctx.beginPath();
-    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
-    ctx.quadraticCurveTo(x+w,y,x+w,y+r);
-    ctx.lineTo(x+w,y+h-r);
-    ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
-    ctx.lineTo(x+r,y+h);
-    ctx.quadraticCurveTo(x,y+h,x,y+h-r);
-    ctx.lineTo(x,y+r);
-    ctx.quadraticCurveTo(x,y,x+r,y);
+    ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
+    ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+    ctx.lineTo(x+w, y+h-r);
+    ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+    ctx.lineTo(x+r, y+h);
+    ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+    ctx.lineTo(x, y+r);
+    ctx.quadraticCurveTo(x, y, x+r, y);
     ctx.closePath();
   }
+  // Schrift so weit verkleinern, dass der Text in maxW passt
+  function fit(text, maxW, startPx, weight, style) {
+    let px = startPx;
+    for (;;) {
+      ctx.font = (style ? style + ' ' : '') + (weight ? weight + ' ' : '') + px + 'px -apple-system,Segoe UI,sans-serif';
+      if (ctx.measureText(text).width <= maxW || px <= 8) return px;
+      px -= 0.5;
+    }
+  }
 
-  // Background
-  rr(0,0,W,H,12); ctx.fillStyle='#0f172a'; ctx.fill();
-  // Colored border
-  rr(1,1,W-2,H-2,11); ctx.strokeStyle=m.color; ctx.lineWidth=2; ctx.stroke();
+  // Grundfläche
+  rr(0,0,W,H,16); ctx.fillStyle = '#0a1020'; ctx.fill();
 
-  // Top stripe
-  ctx.save(); rr(0,0,W,46,12); ctx.clip();
-  ctx.fillStyle=m.color; ctx.fillRect(0,0,W,46);
-  ctx.fillStyle='rgba(0,0,0,0.38)'; ctx.fillRect(0,0,W,46);
+  // Folieneffekt
+  ctx.save(); rr(0,0,W,H,16); ctx.clip();
+  const bg = ctx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0, col + '26'); bg.addColorStop(.45, '#0a1020'); bg.addColorStop(1, col + '14');
+  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha = .05; ctx.strokeStyle = col; ctx.lineWidth = 13;
+  for (let i = -H; i < W + H; i += 30) {
+    ctx.beginPath(); ctx.moveTo(i, H+20); ctx.lineTo(i+H+20, -20); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const rg = ctx.createRadialGradient(W/2,108,10,W/2,108,120);
+  rg.addColorStop(0, col + '3a'); rg.addColorStop(1, 'transparent');
+  ctx.fillStyle = rg; ctx.fillRect(0,0,W,240);
   ctx.restore();
-  ctx.font='bold 10px -apple-system,sans-serif';
-  ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText('BLACKOUT BOYS KEGELCLUB', W/2, 16);
-  ctx.font='8px -apple-system,sans-serif';
-  ctx.fillStyle='rgba(255,255,255,0.6)';
-  ctx.fillText(m.saisonLabel || 'AKTUELLE SAISON', W/2, 33);
 
-  // Avatar glow
-  const cx=W/2, cy=96, cr=32;
-  ctx.beginPath(); ctx.arc(cx,cy,cr+5,0,Math.PI*2);
-  ctx.fillStyle=m.color+'28'; ctx.fill();
-  ctx.beginPath(); ctx.arc(cx,cy,cr+2,0,Math.PI*2);
-  ctx.strokeStyle=m.color+'55'; ctx.lineWidth=1.5; ctx.stroke();
-  // Avatar circle
-  ctx.beginPath(); ctx.arc(cx,cy,cr,0,Math.PI*2);
-  ctx.fillStyle='#0f172a'; ctx.fill();
+  // Kopfband
+  ctx.save(); rr(0,0,W,46,16); ctx.clip();
+  ctx.fillStyle = col; ctx.fillRect(0,0,W,46);
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0,0,W,46);
+  ctx.restore();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 11px -apple-system,sans-serif'; ctx.fillStyle = '#fff';
+  ctx.fillText('B L A C K O U T   B O Y S', W/2, 17);
+  ctx.font = '8px -apple-system,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.62)';
+  ctx.fillText(m.saisonLabel, W/2, 33);
 
-  const fotoImg = profilfotoCache[m.name];
-  if (fotoImg && fotoImg.complete && fotoImg.naturalWidth) {
-    // Foto rund einpassen (Bild ist quadratisch vorverarbeitet)
+  // Seltenheits-Pille
+  ctx.font = 'bold 8px -apple-system,sans-serif';
+  const pw = Math.max(ctx.measureText(rar.t).width + 16, 60);
+  rr(W/2 - pw/2, 52, pw, 16, 8); ctx.fillStyle = rar.b; ctx.fill();
+  ctx.strokeStyle = rar.a + '88'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = rar.a; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(rar.t, W/2, 60.5);
+
+  // Foto / Initiale
+  const cx = W/2, cy = 122, cr = 42;
+  ctx.beginPath(); ctx.arc(cx,cy,cr+9,0,Math.PI*2); ctx.fillStyle = col + '1f'; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy,cr+4,0,Math.PI*2); ctx.strokeStyle = col + '44'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,cr,0,Math.PI*2); ctx.fillStyle = '#0f172a'; ctx.fill();
+  const img = profilfotoCache[m.name];
+  if (img && img.complete && img.naturalWidth) {
     ctx.save();
-    ctx.beginPath(); ctx.arc(cx,cy,cr-1,0,Math.PI*2); ctx.clip();
-    ctx.drawImage(fotoImg, cx-cr+1, cy-cr+1, (cr-1)*2, (cr-1)*2);
+    ctx.beginPath(); ctx.arc(cx,cy,cr-1.5,0,Math.PI*2); ctx.clip();
+    ctx.drawImage(img, cx-cr+1.5, cy-cr+1.5, (cr-1.5)*2, (cr-1.5)*2);
     ctx.restore();
   } else {
-    // Fallback: Initiale
-    ctx.font='bold 26px -apple-system,sans-serif';
-    ctx.fillStyle=m.color; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font = 'bold 34px -apple-system,sans-serif'; ctx.fillStyle = col;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(m.name[0].toUpperCase(), cx, cy);
   }
-  // Ring zuletzt, damit er über der Fotokante liegt
-  ctx.beginPath(); ctx.arc(cx,cy,cr,0,Math.PI*2);
-  ctx.strokeStyle=m.color; ctx.lineWidth=2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,cr,0,Math.PI*2); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,cr,-0.85,0.5); ctx.strokeStyle = rar.a; ctx.lineWidth = 2.5; ctx.stroke();
 
-  // Name
-  ctx.font='bold 20px -apple-system,sans-serif';
-  ctx.fillStyle='#f1f5f9'; ctx.textBaseline='alphabetic'; ctx.textAlign='center';
-  ctx.fillText(m.name, W/2, 148);
+  // Rang-Plakette (Platz im Strafranking)
+  ctx.beginPath(); ctx.arc(cx-cr-4, cy+cr-10, 15, 0, Math.PI*2);
+  ctx.fillStyle = '#0a1020'; ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.font = 'bold 13px -apple-system,sans-serif'; ctx.fillStyle = col;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('#' + m.rang, cx-cr-4, cy+cr-10);
 
-  // Title (italic, accent color)
-  ctx.font='italic 9px -apple-system,sans-serif';
-  ctx.fillStyle=m.color+'bb';
-  let titleText = m.title;
-  if (ctx.measureText(titleText).width > W-24) titleText = titleText.substring(0,26) + '…';
-  ctx.fillText(titleText, W/2, 163);
+  // Name & Titel
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  fit(m.name, W-34, 23, 'bold');
+  ctx.fillStyle = '#f8fafc'; ctx.fillText(m.name, W/2, 190);
+  fit(m.title, W-30, 9.5, '', 'italic');
+  ctx.fillStyle = col + 'd0'; ctx.fillText(m.title, W/2, 205);
 
-  // Dividers
-  ctx.strokeStyle='#334155'; ctx.lineWidth=.5;
-  ctx.beginPath(); ctx.moveTo(18,173); ctx.lineTo(W-18,173); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(W/2,173); ctx.lineTo(W/2,263); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(18,219); ctx.lineTo(W-18,219); ctx.stroke();
+  const line = y => { ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(16,y); ctx.lineTo(W-16,y); ctx.stroke(); };
+  line(214);
 
-  // Stats 2×2
-  const statsArr=[
-    {l:'PUMPEN',      v:String(m.pumpen)},
-    {l:'PUMPENKÖNIG', v:m.pk+'×'},
-    {l:'STRAFEN',     v:'€ '+m.strafen},
-    {l:'ABENDE',      v:String(m.abende)},
+  // Drei Hauptwerte
+  const hero = [
+    { v: String(m.pumpen),                    l: 'PUMPEN' },
+    { v: String(m.neuner),                    l: 'NEUNER' },
+    { v: m.abende + '/' + m.abendeGesamt,     l: 'ABENDE' }
   ];
-  statsArr.forEach((s,i) => {
-    const col=i%2, row=Math.floor(i/2);
-    const x=col===0?W*0.27:W*0.73;
-    const y=197+row*46;
-    ctx.font='bold 16px -apple-system,sans-serif';
-    ctx.fillStyle='#f1f5f9'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-    ctx.fillText(s.v, x, y);
-    ctx.font='7px -apple-system,sans-serif';
-    ctx.fillStyle='#64748b';
-    ctx.fillText(s.l, x, y+13);
+  hero.forEach((s, i) => {
+    const x = W/6 + (W/3) * i;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    fit(s.v, W/3 - 14, 22, 'bold');
+    ctx.fillStyle = '#f8fafc'; ctx.fillText(s.v, x, 242);
+    ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
+    ctx.fillText(s.l, x, 254);
+    if (i < 2) {
+      ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(W/3*(i+1), 222); ctx.lineTo(W/3*(i+1), 258); ctx.stroke();
+    }
+  });
+  line(266);
+
+  // Balken im Vergleich zum Teambesten
+  const mx = m.max || {};
+  const bars = [
+    { l:'Ø Pumpen / Abend',       v: m.pumpenSchnitt.toFixed(1), f: m.pumpenSchnitt / (mx.pumpenSchnitt || 1) },
+    { l:'Klingeln',               v: String(m.klingeln),         f: m.klingeln / (mx.klingeln || 1) },
+    { l:'Behinderungen',          v: String(m.behinderungen),    f: m.behinderungen / (mx.behinderungen || 1) },
+    { l:'Pumpenkönig',            v: m.pk + '×',                 f: m.pk / (mx.pk || 1) },
+    { l:'Rekord an einem Abend',  v: m.rekord + ' P',            f: m.rekord / (mx.rekord || 1) }
+  ];
+  bars.forEach((b, i) => {
+    const y = 280 + i * 22;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.font = '8.5px -apple-system,sans-serif'; ctx.fillStyle = '#94a3b8';
+    ctx.fillText(b.l, 17, y);
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 9.5px -apple-system,sans-serif'; ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(b.v, W-17, y);
+    const bw = W - 34;
+    const f = Math.max(0, Math.min(1, isFinite(b.f) ? b.f : 0));
+    rr(17, y+3.5, bw, 4, 2); ctx.fillStyle = '#1e293b'; ctx.fill();
+    if (f > 0) {
+      rr(17, y+3.5, Math.max(3, bw*f), 4, 2);
+      const g = ctx.createLinearGradient(17, 0, 17+bw, 0);
+      g.addColorStop(0, col); g.addColorStop(1, rar.a);
+      ctx.fillStyle = g; ctx.fill();
+    }
   });
 
-  // Bottom strip
-  ctx.fillStyle=m.color+'18'; ctx.fillRect(2,H-28,W-4,26);
-  ctx.font='bold 7px -apple-system,sans-serif';
-  ctx.fillStyle=m.color+'99'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText('BLACKOUT BOYS · Nr.' + String(m.idx+1).padStart(2,'0'), W/2, H-14);
+  line(392);
+  // Fußzeile
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
+  ctx.fillText('STRAFEN GESAMT', 17, 404);
+  fit('€ ' + m.strafen, W/2 - 26, 15, 'bold');
+  ctx.fillStyle = '#fca5a5'; ctx.fillText('€ ' + m.strafen, 17, 419);
+  ctx.textAlign = 'right';
+  ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
+  ctx.fillText('SPIELE VERLOREN', W-17, 404);
+  ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = '#e2e8f0';
+  ctx.fillText(String(m.spieleVerloren), W-17, 419);
+
+  // Rahmen
+  rr(1.25,1.25,W-2.5,H-2.5,15); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.stroke();
+  rr(4.5,4.5,W-9,H-9,12); ctx.strokeStyle = rar.a + '33'; ctx.lineWidth = 1; ctx.stroke();
+
+  // Kartennummer seitlich
+  ctx.save();
+  ctx.translate(W-9, H/2); ctx.rotate(Math.PI/2);
+  ctx.font = 'bold 6.5px -apple-system,sans-serif'; ctx.fillStyle = col + '70';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('NR. ' + String(m.idx+1).padStart(3,'0'), 0, 0);
+  ctx.restore();
 }
 
 function downloadMitgliedsKarte(canvas, name) {

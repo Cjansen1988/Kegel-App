@@ -3866,18 +3866,126 @@ function renameMitglied(id, altName) {
   state.kassenbuch.filter(b => b.beschr?.includes(altName)).forEach(b => db.collection('kassenbuch').doc(b.id).update({ beschr: b.beschr.replace(altName, n) }));
 }
 
+// ========== PROFILFOTOS ==========
+// Bewusst als Data-URL in Firestore statt in Firebase Storage: die Baseball-Karte
+// wird per canvas.toDataURL() exportiert, und ein Bild von einer fremden Domain
+// würde das Canvas "tainten" — der Export würde dann fehlschlagen. Ein auf 240px
+// quadratisch zugeschnittenes JPEG liegt bei ~15 KB, weit unter dem 1-MB-Limit
+// eines Firestore-Dokuments.
+const FOTO_GROESSE = 240;
+
+function komprimiereProfilfoto(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Das ist kein gültiges Bild.'));
+      img.onload = () => {
+        // Quadratisch aus der Mitte zuschneiden
+        const seite = Math.min(img.width, img.height);
+        const sx = (img.width - seite) / 2;
+        const sy = (img.height - seite) / 2;
+        const cv = document.createElement('canvas');
+        cv.width = FOTO_GROESSE; cv.height = FOTO_GROESSE;
+        const cx = cv.getContext('2d');
+        cx.imageSmoothingQuality = 'high';
+        cx.drawImage(img, sx, sy, seite, seite, 0, 0, FOTO_GROESSE, FOTO_GROESSE);
+        let q = 0.82, out = cv.toDataURL('image/jpeg', q);
+        // Sicherheitsnetz: notfalls weiter runterdrehen
+        while (out.length > 200000 && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+        resolve(out);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function profilfotoWaehlen(mitgliedId, mitgliedName) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/*';
+  inp.onchange = async () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    try {
+      showNotification('⏳ Foto wird verarbeitet…', 'info');
+      const foto = await komprimiereProfilfoto(file);
+      await db.collection('mitglieder').doc(mitgliedId).update({ foto });
+      mitgliedskartenRendered = false;
+      renderMitglieder();
+      renderMitgliedskarten(true);
+      renderMitgliedStats();
+      showNotification('✅ Profilfoto für ' + mitgliedName + ' gespeichert.', 'success');
+    } catch (e) {
+      alert('Foto konnte nicht gespeichert werden: ' + e.message);
+    }
+  };
+  inp.click();
+}
+
+function profilfotoEntfernen(mitgliedId, mitgliedName) {
+  if (!confirm('Profilfoto von ' + mitgliedName + ' entfernen?')) return;
+  db.collection('mitglieder').doc(mitgliedId).update({ foto: null }).then(() => {
+    mitgliedskartenRendered = false;
+    renderMitglieder();
+    renderMitgliedskarten(true);
+    renderMitgliedStats();
+  });
+}
+
+// Kleiner Avatar: Foto wenn vorhanden, sonst farbiger Kreis mit Initiale
+function avatarHTML(name, groesse, foto) {
+  const g = groesse || 34;
+  const f = foto !== undefined ? foto : (state.mitglieder.find(m => m.name === name) || {}).foto;
+  const farbe = avatarColor(name);
+  if (f) {
+    return `<img src="${f}" alt="${name}" style="width:${g}px;height:${g}px;border-radius:50%;object-fit:cover;border:2px solid ${farbe};flex-shrink:0;display:block">`;
+  }
+  return `<div style="width:${g}px;height:${g}px;border-radius:50%;background:${farbe};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${Math.round(g*0.42)}px;flex-shrink:0">${name[0].toUpperCase()}</div>`;
+}
+
+// Bild vorladen, damit es beim Canvas-Zeichnen synchron verfügbar ist
+const profilfotoCache = {};
+function ladeProfilfotos() {
+  // Vergleich über den src, damit ein geändertes Foto nicht das alte im Cache behält
+  const offen = state.mitglieder.filter(m =>
+    m.foto && (!profilfotoCache[m.name] || profilfotoCache[m.name].src !== m.foto));
+  // Fotos entfernter Mitglieder aus dem Cache werfen
+  Object.keys(profilfotoCache).forEach(n => {
+    const m = state.mitglieder.find(x => x.name === n);
+    if (!m || !m.foto) delete profilfotoCache[n];
+  });
+  return Promise.all(offen.map(m => new Promise(res => {
+    const img = new Image();
+    img.onload = () => { profilfotoCache[m.name] = img; res(); };
+    img.onerror = () => res();
+    img.src = m.foto;
+  })));
+}
+// ========== END PROFILFOTOS ==========
+
 function renderMitglieder() {
   document.getElementById('m-count').textContent = state.mitglieder.length;
   const tbody = document.getElementById('mitglieder-tbody');
   if (!tbody) return;
   tbody.innerHTML = state.mitglieder.map(m => {
     const offenBetrag = state.strafen.filter(s => s.mitglied === m.name && !s.bezahlt).reduce((sum,s) => sum+Number(s.betrag), 0);
+    const nameEsc = m.name.replace(/'/g, "\\'");
     return `<tr>
-      <td><strong>${m.name}</strong></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.6rem">
+          ${avatarHTML(m.name, 34, m.foto)}
+          <strong>${m.name}</strong>
+        </div>
+      </td>
       <td>${offenBetrag > 0 ? `<span class="tag tag-red">${formatEur(offenBetrag)}</span>` : '<span class="tag tag-green">Keine</span>'}</td>
-      <td style="display:flex;gap:.3rem">
-        <button class="btn btn-ghost btn-sm" onclick="renameMitglied('${m.id}','${m.name}')">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteMitglied('${m.id}','${m.name}')">🗑</button>
+      <td style="display:flex;gap:.3rem;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="profilfotoWaehlen('${m.id}','${nameEsc}')" title="${m.foto ? 'Foto ändern' : 'Foto hinzufügen'}">${m.foto ? '🖼' : '📷'}</button>
+        ${m.foto ? `<button class="btn btn-ghost btn-sm" onclick="profilfotoEntfernen('${m.id}','${nameEsc}')" title="Foto entfernen">🚫</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="renameMitglied('${m.id}','${nameEsc}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteMitglied('${m.id}','${nameEsc}')">🗑</button>
       </td>
     </tr>`;
   }).join('');
@@ -5390,7 +5498,23 @@ function renderMitgliedStats() {
   });
   const katSorted = Object.entries(byKat).sort((a,b)=>b[1].total-a[1].total);
 
+  const mObj = state.mitglieder.find(x => x.name === name) || {};
+  const nameEscMs = name.replace(/'/g, "\\'");
+
   document.getElementById('mitglied-stats-detail').innerHTML = `
+    <!-- Profilkopf -->
+    <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1rem;padding-bottom:.85rem;border-bottom:1px solid var(--border)">
+      ${avatarHTML(name, 64, mObj.foto)}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:1.15rem;font-weight:800;line-height:1.2">${name}</div>
+        <div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">${anwesend} von ${alleAbendeM.length} Abenden dabei</div>
+      </div>
+      <div style="display:flex;gap:.3rem;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" onclick="profilfotoWaehlen('${mObj.id}','${nameEscMs}')" title="${mObj.foto ? 'Foto ändern' : 'Foto hinzufügen'}">${mObj.foto ? '🖼' : '📷'}</button>
+        ${mObj.foto ? `<button class="btn btn-ghost btn-sm" onclick="profilfotoEntfernen('${mObj.id}','${nameEscMs}')" title="Foto entfernen">🚫</button>` : ''}
+      </div>
+    </div>
+
     <!-- KPI-Zeile -->
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:1rem">
       <div class="stat"><div class="val">${anwesend}</div><div class="lbl">Abende</div></div>
@@ -11568,6 +11692,14 @@ function renderMitgliedskarten(force) {
   if (!container) return;
   if (mitgliedskartenRendered && !force) return; // lazy: only draw once unless forced
   mitgliedskartenRendered = true;
+  // Profilfotos erst laden, dann zeichnen — sonst wäre das Canvas leer
+  const fehlen = state.mitglieder.some(m =>
+    m.foto && (!profilfotoCache[m.name] || profilfotoCache[m.name].src !== m.foto));
+  if (fehlen) {
+    container.innerHTML = '<div style="grid-column:1/-1;font-size:.85rem;color:var(--text-muted);padding:.5rem 0">⏳ Fotos werden geladen…</div>';
+    ladeProfilfotos().then(() => { mitgliedskartenRendered = false; renderMitgliedskarten(true); });
+    return;
+  }
   container.innerHTML = '';
 
   const sessions = state.kegelsessions || [];
@@ -11708,11 +11840,23 @@ function drawMitgliedsKarte(canvas, m) {
   // Avatar circle
   ctx.beginPath(); ctx.arc(cx,cy,cr,0,Math.PI*2);
   ctx.fillStyle='#0f172a'; ctx.fill();
+
+  const fotoImg = profilfotoCache[m.name];
+  if (fotoImg && fotoImg.complete && fotoImg.naturalWidth) {
+    // Foto rund einpassen (Bild ist quadratisch vorverarbeitet)
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx,cy,cr-1,0,Math.PI*2); ctx.clip();
+    ctx.drawImage(fotoImg, cx-cr+1, cy-cr+1, (cr-1)*2, (cr-1)*2);
+    ctx.restore();
+  } else {
+    // Fallback: Initiale
+    ctx.font='bold 26px -apple-system,sans-serif';
+    ctx.fillStyle=m.color; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(m.name[0].toUpperCase(), cx, cy);
+  }
+  // Ring zuletzt, damit er über der Fotokante liegt
+  ctx.beginPath(); ctx.arc(cx,cy,cr,0,Math.PI*2);
   ctx.strokeStyle=m.color; ctx.lineWidth=2; ctx.stroke();
-  // Initial
-  ctx.font='bold 26px -apple-system,sans-serif';
-  ctx.fillStyle=m.color; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(m.name[0].toUpperCase(), cx, cy);
 
   // Name
   ctx.font='bold 20px -apple-system,sans-serif';

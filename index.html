@@ -5251,30 +5251,61 @@ function statsFilterDatum() {
 // die Session-Einträge nur zusammenfassen und sonst doppelt zählen würden.
 function strafBilanzProMitglied() {
   const von = statsFilterDatum();
-  const sessions = (state.kegelsessions || []).filter(s => {
-    if (!von) return true;
-    return (getSessionKegeldatum(s) || s.datum || '') >= von;
-  });
+  const imZeitraum = d => !von || (d || '') >= von;
+  const sessions = (state.kegelsessions || [])
+    .filter(s => imZeitraum(getSessionKegeldatum(s) || s.datum));
+  const alleStrafen = (state.strafen || []).filter(s => imZeitraum(s.datum));
+
+  // Sammelstrafen: pro Abend ein Dokument je Person, enthält die eigenen
+  // Kegelbuch-Striche + Kegelbahn-Gebühr, bei Abwesenheit den Durchschnitt.
+  // Das ist der Betrag, der tatsächlich fällig wurde.
+  const sammelStrafen = alleStrafen.filter(s => s.kategorie === 'Kegelbuch');
+  // Für welche Abende gibt es eine Sammelstrafe? Nur dort darf sie zählen,
+  // sonst würden die Einträge desselben Abends doppelt erfasst.
+  const abgedeckt = new Set(sammelStrafen.map(s => s.sessionId).filter(Boolean));
 
   const bilanz = {};
-  const get = n => (bilanz[n] = bilanz[n] || { betrag: 0, anzahl: 0, kegelbuch: 0, extra: 0 });
+  const get = n => (bilanz[n] = bilanz[n] || {
+    betrag: 0, anzahl: 0, sammel: 0, kegelbuch: 0, extra: 0,
+    abendeMitSammel: 0, abendeOhneSammel: 0
+  });
+  state.mitglieder.forEach(m => get(m.name));
 
-  // 1. Kegelbuch-Einträge aus allen Sessions
-  sessions.forEach(s => {
-    (s.eintraege || []).forEach(e => {
-      if (e.kategorie === 'Alle 9 (geworfen)') return;   // Zähl-Spalte, keine Strafe
+  // 1. Sammelstrafen — der gezahlte Betrag pro Abend
+  sammelStrafen.forEach(s => {
+    const b = get(s.mitglied);
+    const betrag = Number(s.betrag) || 0;
+    b.betrag += betrag;
+    b.sammel += betrag;
+    b.abendeMitSammel++;
+  });
+
+  // 2. Abende ohne Sammelstrafe (z.B. importierte): Striche direkt summieren
+  sessions.forEach(sess => {
+    if (sess.id && abgedeckt.has(sess.id)) return;
+    const beteiligt = new Set();
+    (sess.eintraege || []).forEach(e => {
+      if (e.kategorie === 'Alle 9 (geworfen)') return;
       const b = get(e.mitglied);
       const betrag = Number(e.betrag) || 0;
       b.betrag += betrag;
       b.kegelbuch += betrag;
-      b.anzahl += Number(e.anzahl) || 1;
+      beteiligt.add(e.mitglied);
+    });
+    beteiligt.forEach(n => get(n).abendeOhneSammel++);
+  });
+
+  // 3. Einzelstrafen zählen — immer aus den Strichen aller Abende
+  sessions.forEach(sess => {
+    (sess.eintraege || []).forEach(e => {
+      if (e.kategorie === 'Alle 9 (geworfen)') return;
+      get(e.mitglied).anzahl += Number(e.anzahl) || 1;
     });
   });
 
-  // 2. Straf-Dokumente die nicht aus dem Kegelbuch stammen
-  (state.strafen || []).forEach(s => {
+  // 4. Sonstige Straf-Dokumente (Tippspiel, Termin-Ausfall, manuell …)
+  alleStrafen.forEach(s => {
     if (s.kategorie === 'Kegelbuch') return;
-    if (von && (s.datum || '') < von) return;
     const b = get(s.mitglied);
     const betrag = Number(s.betrag) || 0;
     b.betrag += betrag;
@@ -5282,11 +5313,10 @@ function strafBilanzProMitglied() {
     b.anzahl += 1;
   });
 
-  // Beträge runden
   Object.values(bilanz).forEach(b => {
-    b.betrag = Math.round(b.betrag * 100) / 100;
-    b.kegelbuch = Math.round(b.kegelbuch * 100) / 100;
-    b.extra = Math.round(b.extra * 100) / 100;
+    ['betrag','sammel','kegelbuch','extra'].forEach(k => {
+      b[k] = Math.round(b[k] * 100) / 100;
+    });
   });
   return bilanz;
 }
@@ -5375,7 +5405,7 @@ function renderStatistiken() {
 
   document.getElementById('stats-boxes').innerHTML = `
     <div class="stat"><div class="val">${formatEur(strafenGesamt)}</div><div class="lbl">Strafen gesamt</div></div>
-    <div class="stat"><div class="val">${strafenAnzahl}</div><div class="lbl">Einzelstrafen</div></div>
+    <div class="stat"><div class="val">${strafenAnzahl}</div><div class="lbl">Striche im Kegelbuch</div></div>
     <div class="stat"><div class="val">${formatEur(avgProAbend)}</div><div class="lbl">Ø pro Abend</div></div>
     <div class="stat"><div class="val" style="color:var(--danger)">${formatEur(offenBetrag)}</div><div class="lbl">Offen (Kasse)</div></div>
     <div class="stat"><div class="val" style="color:#16a34a">${formatEur(bezahltBetrag)}</div><div class="lbl">Bezahlt (Kasse)</div></div>
@@ -5385,38 +5415,52 @@ function renderStatistiken() {
   if (hinweisEl) {
     const diff = Math.round((strafenGesamt - gebuchtBetrag) * 100) / 100;
     hinweisEl.innerHTML = diff > 0.01
-      ? `<div style="font-size:.75rem;color:var(--text-muted);background:var(--bg-page);border-radius:8px;padding:.5rem .7rem;margin-bottom:1rem">
-           ℹ️ <strong>${formatEur(diff)}</strong> der Strafen sind nicht in der Kasse gebucht — sie stammen aus importierten Abenden, die damals bar abgerechnet wurden. Die Statistik zeigt alle ${anzAbende} Abende, die Kasse nur die gebuchten.
+      ? `<div style="font-size:.75rem;color:var(--text-muted);background:var(--bg-page);border-radius:8px;padding:.5rem .7rem;margin-bottom:1rem;line-height:1.55">
+           ℹ️ <strong>${formatEur(diff)}</strong> davon sind nicht in der Kasse gebucht. Diese Beträge stammen aus Abenden ohne Sammelbuchung — meist importierte, die damals bar abgerechnet wurden. „Strafen gesamt" zeigt alle ${anzAbende} Abende, „Offen" und „Bezahlt" nur was die Kasse kennt.
          </div>`
       : '';
   }
 
-  // Strafranking — aus allen Sessions (inkl. importierter) plus Extra-Strafen
+  // Strafranking — was jede Person die Saison über an Strafen zu zahlen hatte:
+  // Sammelstrafen der Abende plus Striche der Abende ohne Sammelbuchung plus
+  // sonstige Strafen (Tippspiel, Termin-Ausfall, manuell).
   const bilanz = strafBilanzProMitglied();
   const strafSummen = state.mitglieder.map(m => {
-    const b = bilanz[m.name] || { betrag: 0, anzahl: 0, kegelbuch: 0, extra: 0 };
+    const b = bilanz[m.name] || { betrag:0, anzahl:0, sammel:0, kegelbuch:0, extra:0 };
     return {
-      name: m.name.split(' ')[0],
-      fullName: m.name,
-      total: b.betrag,
-      count: b.anzahl,
-      kegelbuch: b.kegelbuch,
-      extra: b.extra
+      name: m.name.split(' ')[0], fullName: m.name,
+      total: b.betrag, count: b.anzahl,
+      sammel: b.sammel, kegelbuch: b.kegelbuch, extra: b.extra
     };
   }).filter(m => statsFilter.person === 'all' || m.fullName === statsFilter.person)
     .sort((a,b) => b.total - a.total);
+
+  const sumSammel = strafSummen.reduce((s,m) => s + m.sammel, 0);
+  const sumStriche = strafSummen.reduce((s,m) => s + m.kegelbuch, 0);
+  const sumExtra = strafSummen.reduce((s,m) => s + m.extra, 0);
 
   document.getElementById('straf-ranking').innerHTML =
     svgBarChart(strafSummen, 'total', 'name',
       (i) => i===0?'var(--danger)':i===1?'var(--warning)':'var(--primary)',
       formatEur) +
     `<div style="margin-top:.5rem">` +
-    strafSummen.map((m,i) => `<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:.15rem 0;border-top:1px solid var(--border)">
-      <span><strong>${i+1}.</strong> ${m.fullName}</span>
-      <span><strong>${formatEur(m.total)}</strong> <span style="color:var(--text-muted);font-size:.72rem" title="${m.count} Einzelstrafen · Kegelbuch ${formatEur(m.kegelbuch)} + Sonstige ${formatEur(m.extra)}">(${m.count}×)</span></span>
-    </div>`).join('') +
-    `<div style="font-size:.7rem;color:var(--text-muted);margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border)">
-       Aus allen ${(state.kegelsessions||[]).length} Kegelabenden der Saison, importierte inklusive. Zählt Einzelstrafen, nicht Sammelbuchungen.
+    strafSummen.map((m,i) => {
+      const teile = [];
+      if (m.sammel)    teile.push('Sammelstrafen ' + formatEur(m.sammel));
+      if (m.kegelbuch) teile.push('Striche ' + formatEur(m.kegelbuch));
+      if (m.extra)     teile.push('Sonstige ' + formatEur(m.extra));
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;font-size:.78rem;padding:.2rem 0;border-top:1px solid var(--border)">
+        <span><strong>${i+1}.</strong> ${m.fullName}</span>
+        <span style="text-align:right;white-space:nowrap">
+          <strong>${formatEur(m.total)}</strong>
+          <span style="color:var(--text-muted);font-size:.7rem" title="${m.count} Einzelstriche${teile.length ? ' · ' + teile.join(' · ') : ''}">(${m.count} Striche)</span>
+        </span>
+      </div>`;
+    }).join('') +
+    `<div style="font-size:.7rem;color:var(--text-muted);margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border);line-height:1.55">
+       Gesamtbetrag der Saison über alle ${(state.kegelsessions||[]).length} Abende:
+       ${sumSammel > 0 ? `<strong>${formatEur(sumSammel)}</strong> Sammelstrafen (inkl. Kegelbahn und Abwesenheit)` : ''}${sumSammel > 0 && sumStriche > 0 ? ' · ' : ''}${sumStriche > 0 ? `<strong>${formatEur(sumStriche)}</strong> Striche aus Abenden ohne Sammelbuchung` : ''}${sumExtra > 0 ? ` · <strong>${formatEur(sumExtra)}</strong> Sonstige` : ''}.
+       Die Klammer zeigt die Anzahl Einzelstriche im Kegelbuch.
      </div></div>`;
 
   // Anwesenheitsranking — nur tatsächlich gespielte Sessions
@@ -12134,7 +12178,7 @@ function renderMitgliedskarten(force) {
       const kandidaten = [
         { f:'klingeln',      m:max.klingeln,      t:'Klingel-Freund' },
         { f:'stinas',        m:max.stinas,        t:'Stina-Sammler' },
-        { f:'behinderungen', m:max.behinderungen, t:'Störfaktor' },
+        { f:'behinderungen', m:max.behinderungen, t:'Immer im Weg' },
         { f:'kugelZT',       m:max.kugelZT,       t:'Kugel-Sucher' },
         { f:'lustwuerfe',    m:max.lustwuerfe,    t:'Lustwurf-Freund' },
         { f:'verlSpiele',    m:max.verlSpiele,    t:'Pechvogel' },

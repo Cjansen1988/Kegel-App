@@ -12238,6 +12238,88 @@ clubLogoImg.onload = () => {
 };
 clubLogoImg.src = CLUB_LOGO_URL;
 
+// ── AUTOGRAMM ─────────────────────────────────────────────────────
+// Aus dem Namen abgeleitete Unterschrift: gleicher Name ergibt immer dasselbe
+// Autogramm, verschiedene Namen sehen verschieden aus. Kein Zufall zur Laufzeit,
+// sonst würde jede Karte beim Neuzeichnen anders unterschrieben aussehen.
+function autogrammSeed(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function autogrammRng(seed) {
+  let s = seed || 1;
+  return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+}
+
+// Schreibschrift-Stack: erst was auf iOS/macOS existiert, dann Windows,
+// zuletzt das generische cursive des Systems.
+const AUTOGRAMM_SCHRIFT = "'Snell Roundhand','Segoe Script','Bradley Hand','Lucida Handwriting','Brush Script MT',cursive";
+
+function zeichneAutogramm(ctx, name, cx, baseY, maxW, hoehe, farbe) {
+  const rnd    = autogrammRng(autogrammSeed(name));
+  const stil   = Math.floor(rnd() * 3);
+  const neig   = -0.20 + rnd() * 0.16;    // Schräglage der ganzen Unterschrift
+  const zitter = 0.5 + rnd() * 0.7;       // wie unruhig die Hand war
+  const dicke  = 0.5 + rnd() * 0.5;
+
+  // Schriftgröße so weit verkleinern, dass der Name in die Breite passt
+  let gr = hoehe * 1.9;
+  const nutzW = maxW * 0.90;
+  for (;;) {
+    ctx.font = 'italic ' + gr.toFixed(1) + 'px ' + AUTOGRAMM_SCHRIFT;
+    if (ctx.measureText(name).width <= nutzW || gr <= 9) break;
+    gr -= 0.5;
+  }
+
+  ctx.save();
+  ctx.translate(cx, baseY);
+  ctx.transform(1, 0, neig, 1, 0, 0);
+  ctx.fillStyle = farbe;
+  ctx.strokeStyle = farbe;
+  ctx.lineWidth = dicke;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+
+  // Buchstabenweise mit leichtem Versatz — sonst sähe es wie gesetzter Text aus
+  const gesamt = ctx.measureText(name).width;
+  let x = -gesamt / 2;
+  for (const ch of name) {
+    const bw = ctx.measureText(ch).width;
+    const dy = (rnd() - 0.5) * gr * 0.055 * zitter;
+    const dreh = (rnd() - 0.5) * 0.055 * zitter;
+    const skal = 0.97 + rnd() * 0.07;
+    ctx.save();
+    ctx.translate(x + bw/2, dy);
+    ctx.rotate(dreh);
+    ctx.scale(skal, skal);
+    ctx.fillText(ch, -bw/2, 0);
+    ctx.strokeText(ch, -bw/2, 0);
+    ctx.restore();
+    x += bw * (0.985 + rnd() * 0.03);
+  }
+
+  // Abschluss-Schwung, drei Varianten
+  const li = -gesamt/2, re = gesamt/2, u = gr * 0.30;
+  ctx.lineWidth = dicke + 0.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (stil === 0) {
+    ctx.moveTo(re*0.92, -gr*0.10);
+    ctx.bezierCurveTo(re*1.10, u*0.55, li*0.55, u*1.25, li*1.06, u*0.45);
+  } else if (stil === 1) {
+    ctx.moveTo(li*1.02, u*0.95);
+    ctx.quadraticCurveTo(0, u*1.45, re*1.02, u*0.70);
+  } else {
+    ctx.moveTo(li*1.04, u*0.80);
+    ctx.quadraticCurveTo(0, u*1.30, re*0.70, u*0.60);
+    ctx.moveTo(li*0.70, u*1.25);
+    ctx.quadraticCurveTo(0, u*1.62, re*0.45, u*1.05);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 const KARTEN_STUFEN = {
   legendaer: { t:'LEGENDÄR',      a:'#fbbf24', b:'#78350f' },
   episch:    { t:'EPISCH',        a:'#c084fc', b:'#4c1d95' },
@@ -12246,7 +12328,7 @@ const KARTEN_STUFEN = {
 };
 
 function drawMitgliedsKarte(canvas, m) {
-  const S = 3, W = 280, H = 440;
+  const S = 3, W = 280, H = 486;
   canvas.width = W * S; canvas.height = H * S;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
@@ -12428,6 +12510,11 @@ function drawMitgliedsKarte(canvas, m) {
   fit(rekTxt, W/2 - 26, 15, 'bold');
   ctx.fillStyle = '#e2e8f0';
   ctx.fillText(rekTxt, W-17, 419);
+
+  // Autogramm-Feld
+  ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(30, 432); ctx.lineTo(W-30, 432); ctx.stroke();
+  zeichneAutogramm(ctx, m.name, W/2, 462, W - 56, 16, 'rgba(248,250,252,0.9)');
 
   // Rahmen
   rr(1.25,1.25,W-2.5,H-2.5,15); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.stroke();

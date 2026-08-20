@@ -9454,6 +9454,180 @@ function generiereQuizFragen(anzahl = 60) {
       kugelTop.n);
   }
 
+  // ── FESTE FRAGEN ZU BESTIMMTEN PERSONEN ───────────────────────
+  // Namen werden per Teiltreffer aufgelöst, damit eine Umbenennung oder ein
+  // Rufname die Frage nicht stillschweigend verschwinden lässt.
+  // Wichtig: nur auf ganze Namensteile matchen. Ein Teilstring-Vergleich würde
+  // z.B. bei "Jan" fälschlich "Christian JANsen" treffen.
+  const finde = teil => {
+    const t = teil.toLowerCase().trim();
+    const teile = t.split(/[\s-]+/).filter(Boolean);
+    const woerter = n => n.toLowerCase().split(/[\s-]+/);
+    // 1. exakter voller Name
+    let hit = mitglieder.find(n => n.toLowerCase() === t);
+    if (hit) return hit;
+    // 2. alle gesuchten Wörter kommen als ganze Namensteile vor
+    hit = mitglieder.find(n => teile.every(w => woerter(n).includes(w)));
+    if (hit) return hit;
+    // 3. mindestens ein gesuchtes Wort ist ein ganzer Namensteil
+    hit = mitglieder.find(n => teile.some(w => woerter(n).includes(w)));
+    return hit || null;
+  };
+  // Vorname nur wenn eindeutig, sonst voller Name — es gibt drei Christians
+  const vorname = n => {
+    const vn = n.split(' ')[0];
+    const mehrfach = mitglieder.filter(x => x.split(' ')[0] === vn).length > 1;
+    return mehrfach ? n : vn;
+  };
+
+  // Ø Pumpen pro Kegeln einer bestimmten Person
+  (() => {
+    const n = finde('Christian Lehmann');
+    if (!n) return;
+    const v = katVon('Pumpe', n), ab = abendeVon(n);
+    if (!v || ab < 1) return;
+    S(`Wie viele Pumpen hat ${vorname(n)} durchschnittlich pro Kegeln geworfen?`,
+      r1(v / ab), '×',
+      `${n}: ${v} Pumpen an ${ab} Abenden = Ø ${r1(v / ab)} pro Kegeln.`,
+      `Insgesamt ${v} Pumpen — das sind ${pumpenGes > 0 ? Math.round(v / pumpenGes * 100) : 0}% aller Pumpen der Saison.`,
+      n);
+  })();
+
+  // Rekord: meiste verlorene Spiele an einem Abend
+  (() => {
+    const rek = katRekord('Verl. Spiel');
+    if (!rek) return;
+    S(`Was ist der Rekord für verlorene Spiele an einem einzigen Abend?`,
+      rek.v, '×',
+      `${rek.v} verlorene Spiele an einem Abend — beim ${rek.sess}.`,
+      `Der Rekordhalter ist ${rek.n}.${rek.datum ? ' Aufgestellt am ' + formatDate(rek.datum) + '.' : ''}`);
+  })();
+
+  // Striche insgesamt (alle Strafarten zusammen)
+  (() => {
+    const n = finde('Laurenz Held');
+    if (!n) return;
+    // Wirklich alle Strafarten. Nur 'Alle 9 (geworfen)' bleibt draußen —
+    // das ist die Zählspalte für selbst geworfene Neuner, kein Strich.
+    const gesamt = alle.filter(e => e.mitglied === n && e.kategorie !== 'Alle 9 (geworfen)')
+                       .reduce((s,e) => s + (e.anzahl || 1), 0);
+    if (!gesamt) return;
+    const ab = abendeVon(n);
+    const arten = new Set(alle.filter(e => e.mitglied === n && e.kategorie !== 'Alle 9 (geworfen)')
+                              .map(e => e.kategorie)).size;
+    S(`Wie viele Striche hat ${vorname(n)} insgesamt bekommen — egal welche Strafart?`,
+      gesamt, 'Striche',
+      `${n}: ${gesamt} Striche über alle ${arten} Strafarten zusammen.`,
+      `Das sind Ø ${ab > 0 ? r1(gesamt / ab) : 0} Striche pro Kegelabend, an dem ${vorname(n)} dabei war.`,
+      n);
+  })();
+
+  // Bester Abend: niedrigster Pumpenwert an einem Abend, an dem die Person da war
+  (() => {
+    const n = finde('Dimi Renje');
+    if (!n) return;
+    const werte = sessions
+      .filter(s => anwesendeIn(s).includes(n) || (s.eintraege||[]).some(e => e.mitglied === n))
+      .map(s => ({
+        v: (s.eintraege||[]).filter(e => e.mitglied === n && e.kategorie === 'Pumpe')
+                            .reduce((a,e) => a + (e.anzahl||1), 0),
+        name: s.name
+      }));
+    if (werte.length < 2) return;
+    const best = werte.reduce((m,x) => x.v < m.v ? x : m, werte[0]);
+    const schlecht = werte.reduce((m,x) => x.v > m.v ? x : m, werte[0]);
+    S(`Wie viele Pumpen hat ${vorname(n)} an seinem besten Abend geworfen?`,
+      best.v, '×',
+      `Nur ${best.v} Pumpen — beim ${best.name}. Das ist ${vorname(n)}s niedrigster Wert aus ${werte.length} Abenden.`,
+      `Zum Vergleich: sein schlechtester Abend war der ${schlecht.name} mit ${schlecht.v} Pumpen.`,
+      n);
+  })();
+
+  // Ø Strafen in Euro pro Kegelabend (teamweit)
+  (() => {
+    const euroGes = alle.filter(e => e.kategorie !== 'Alle 9 (geworfen)')
+                        .reduce((s,e) => s + (Number(e.betrag) || 0), 0);
+    if (euroGes <= 0 || nAbende < 1) return;
+    const schnitt = Math.round(euroGes / nAbende * 100) / 100;
+    S(`Wie viel Euro Strafe kommen bei uns durchschnittlich pro Kegeln zusammen?`,
+      schnitt, '€',
+      `${formatEur(euroGes)} geteilt durch ${nAbende} Kegelabende = Ø ${formatEur(schnitt)} pro Abend.`,
+      `Auf ${state.mitglieder.length} Mitglieder gerechnet sind das Ø ${formatEur(Math.round(schnitt / state.mitglieder.length * 100) / 100)} pro Person und Abend.`);
+  })();
+
+  // Stuhl umwerfen
+  (() => {
+    const total = katTotal('Stuhl umwerfen');
+    if (!total) return;
+    const top = katFuehrend('Stuhl umwerfen');
+    S(`Wie oft wurde diese Saison insgesamt der Stuhl umgeworfen?`,
+      total, '×',
+      `${total}× Stuhl umgeworfen über alle ${nAbende} Kegelabende.`,
+      `${top ? 'Verantwortlich vor allem: ' + top.n + ' (' + top.v + '×). ' : ''}Bei 2 € pro Stuhl macht das ${formatEur(total * 2)} für die Kasse.`);
+  })();
+
+  // Verlorene Spiele einer bestimmten Person
+  (() => {
+    const n = finde('Sebastian Jansen');
+    if (!n) return;
+    const v = katVon('Verl. Spiel', n);
+    if (!v) return;
+    const gesamtVerl = katTotal('Verl. Spiel');
+    S(`Wie viele Spiele hat ${n} insgesamt verloren?`,
+      v, '×',
+      `${n}: ${v} verlorene Spiele.`,
+      `Das sind ${gesamtVerl > 0 ? Math.round(v / gesamtVerl * 100) : 0}% aller verlorenen Spiele der Saison.`,
+      n);
+  })();
+
+  // Ø Behinderungen pro Kegeln einer bestimmten Person
+  (() => {
+    const n = finde('Jan-Henning') || finde('Jan');
+    if (!n) return;
+    const v = katVon('Behinderung', n), ab = abendeVon(n);
+    if (!v || ab < 1) return;
+    S(`Wie viele Behinderungen hat ${vorname(n)} im Durchschnitt pro Kegeln?`,
+      r1(v / ab), '×',
+      `${n}: ${v} Behinderungen an ${ab} Abenden = Ø ${r1(v / ab)} pro Kegeln.`,
+      `${behTop && behTop.n === n ? 'Damit ist ' + vorname(n) + ' auch der absolute Rekordhalter bei Behinderungen.' : 'Rekordhalter bei Behinderungen ist ' + (behTop ? behTop.n : '—') + '.'}`,
+      n);
+  })();
+
+  // Stinas insgesamt
+  (() => {
+    const total = katTotal('Stina');
+    if (!total) return;
+    const top = katFuehrend('Stina');
+    S(`Wie viele Stinas wurden diese Saison insgesamt geworfen?`,
+      total, '×',
+      `${total} Stinas über alle ${nAbende} Kegelabende.`,
+      `Das sind ${r1(total / nAbende)} pro Abend.${top ? ' Die meisten hat ' + top.n + ' (' + top.v + '×).' : ''}`);
+  })();
+
+  // Rekord: Klingeln an einem Abend
+  (() => {
+    const rek = katRekord('Klingel');
+    if (!rek) return;
+    S(`Was ist der Rekord für Klingeln an einem einzigen Abend?`,
+      rek.v, '×',
+      `${rek.v} Klingeln an einem Abend — beim ${rek.sess}.`,
+      `Der Rekord gehört ${rek.n}.${rek.datum ? ' Aufgestellt am ' + formatDate(rek.datum) + '.' : ''}`);
+  })();
+
+  // Pumpen insgesamt einer bestimmten Person
+  (() => {
+    const n = finde('Hannes Kötter');
+    if (!n) return;
+    const v = katVon('Pumpe', n);
+    if (!v) return;
+    const ab = abendeVon(n);
+    S(`Wie viele Pumpen hat ${n} insgesamt geworfen?`,
+      v, '×',
+      `${n}: ${v} Pumpen.`,
+      `Bei ${ab} Abenden sind das Ø ${ab > 0 ? r1(v / ab) : 0} pro Kegeln — ${pumpenTop && pumpenTop.n === n ? 'Spitzenwert!' : 'zum Vergleich: ' + (pumpenTop ? pumpenTop.n + ' liegt bei ' + pumpenTop.v : '')}.`,
+      n);
+  })();
+
   // ── AUSWAHL: jedes Mitglied kommt mindestens einmal vor ───────
   const auswahl = [...std];
   const rest = shuffle(fragen);

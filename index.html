@@ -12090,7 +12090,7 @@ function drawMitgliedsKarte(canvas, m) {
   const hero = [
     { v: String(m.pumpen),                        l: 'PUMPEN' },
     { v: m.pumpenSchnitt.toFixed(1),              l: 'Ø / ABEND' },
-    { v: m.abende + '/' + m.abendeGesamt,         l: 'ABENDE' }
+    { v: m.abende + '/' + m.abendeGesamt,         l: 'ANWESEND' }
   ];
   hero.forEach((s, i) => {
     const x = W/6 + (W/3) * i;
@@ -12109,11 +12109,11 @@ function drawMitgliedsKarte(canvas, m) {
   // Balken im Vergleich zum Teambesten
   const mx = m.max || {};
   const bars = [
-    { l:'Klingeln',               v: String(m.klingeln),      f: m.klingeln / (mx.klingeln || 1) },
-    { l:'Behinderungen',          v: String(m.behinderungen), f: m.behinderungen / (mx.behinderungen || 1) },
-    { l:'Stinas',                 v: String(m.stinas),        f: m.stinas / (mx.stinas || 1) },
-    { l:'Kugel zum Tisch',        v: String(m.kugelZT),       f: m.kugelZT / (mx.kugelZT || 1) },
-    { l:'Rekord an einem Abend',  v: m.rekord + ' P',         f: m.rekord / (mx.rekord || 1) }
+    { l:'Verlorene Spiele', v: String(m.spieleVerloren), f: m.spieleVerloren / (mx.verlSpiele || 1) },
+    { l:'Klingeln',         v: String(m.klingeln),       f: m.klingeln / (mx.klingeln || 1) },
+    { l:'Behinderungen',    v: String(m.behinderungen),  f: m.behinderungen / (mx.behinderungen || 1) },
+    { l:'Stinas',           v: String(m.stinas),         f: m.stinas / (mx.stinas || 1) },
+    { l:'Kugel zum Tisch',  v: String(m.kugelZT),        f: m.kugelZT / (mx.kugelZT || 1) }
   ];
   bars.forEach((b, i) => {
     const y = 280 + i * 22;
@@ -12138,14 +12138,16 @@ function drawMitgliedsKarte(canvas, m) {
   // Fußzeile
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
-  ctx.fillText('SPIELE VERLOREN', 17, 404);
-  ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = '#fca5a5';
-  ctx.fillText(String(m.spieleVerloren), 17, 419);
+  ctx.fillText('PUMPENKÖNIG', 17, 404);
+  ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = m.pk > 0 ? '#fbbf24' : '#475569';
+  ctx.fillText(m.pk + '×', 17, 419);
   ctx.textAlign = 'right';
   ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
-  ctx.fillText('PUMPENKÖNIG', W-17, 404);
-  ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = m.pk > 0 ? '#fbbf24' : '#475569';
-  ctx.fillText(m.pk + '×', W-17, 419);
+  ctx.fillText('REKORD / ABEND', W-17, 404);
+  const rekTxt = m.rekord + ' Pumpen';
+  fit(rekTxt, W/2 - 26, 15, 'bold');
+  ctx.fillStyle = '#e2e8f0';
+  ctx.fillText(rekTxt, W-17, 419);
 
   // Rahmen
   rr(1.25,1.25,W-2.5,H-2.5,15); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.stroke();

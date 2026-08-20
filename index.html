@@ -12249,15 +12249,18 @@ function drawMitgliedsKarte(canvas, m) {
   rg.addColorStop(0, col + '3a'); rg.addColorStop(1, 'transparent');
   ctx.fillStyle = rg; ctx.fillRect(0,0,W,240);
 
-  // Clubwappen als Wasserzeichen hinter den Statistiken.
-  // Höhe zuerst festlegen (Bereich zwischen Trennlinie und Kartenrand),
-  // Breite folgt dem Seitenverhältnis — so ragt nichts über die Karte hinaus.
+  // Clubwappen als leicht gekipptes Wasserzeichen. Die Schräge bricht die
+  // strengen Horizontalen der Balken auf. Gedreht wird um den Mittelpunkt,
+  // dadurch bleibt es unabhängig von der Kartenhöhe zentriert.
   if (clubLogoBereit && clubLogoImg.naturalWidth) {
-    const bereichTop = 262, bereichUnten = H - 10;
-    const lh = bereichUnten - bereichTop;
+    const lh = 258;
     const lw = lh * (clubLogoImg.naturalWidth / clubLogoImg.naturalHeight);
-    ctx.globalAlpha = 0.09;
-    ctx.drawImage(clubLogoImg, (W - lw) / 2, bereichTop, lw, lh);
+    ctx.save();
+    ctx.translate(W / 2, 300);
+    ctx.rotate(-12 * Math.PI / 180);
+    ctx.globalAlpha = 0.10;
+    ctx.drawImage(clubLogoImg, -lw / 2, -lh / 2, lw, lh);
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
   ctx.restore();

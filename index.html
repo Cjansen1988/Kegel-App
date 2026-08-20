@@ -12081,8 +12081,16 @@ function renderMitgliedskarten(force) {
     behinderungen: maxVon('behinderungen'), kugelZT: maxVon('kugelZT'),
     pk: maxVon('pk'), rekord: maxVon('rekord'), abende: maxVon('abende'),
     stinas: maxVon('stinas'), verlSpiele: maxVon('verlSpiele'),
-    strafen: maxVon('strafen')
+    lustwuerfe: maxVon('lustwuerfe'), strafen: maxVon('strafen')
   };
+  // Wenigste Pumpen unter denen, die überhaupt dabei waren
+  const dabei = state.mitglieder.filter(m => stats[m.name].abende > 0);
+  const minPumpen = dabei.length ? Math.min(...dabei.map(m => stats[m.name].pumpen)) : 0;
+  // Titel wie "King" oder "Meister" nur bei alleinigem Bestwert vergeben —
+  // ein geteilter Höchstwert würde den Titel an mehrere Leute verteilen.
+  const anzahlMitMax = f => state.mitglieder.filter(m => (stats[m.name][f] || 0) === max[f]).length;
+  const allein = (st, f) => (st[f] || 0) > 0 && st[f] === max[f] && anzahlMitMax(f) === 1;
+  const anzahlMitMinPumpen = dabei.filter(m => stats[m.name].pumpen === minPumpen).length;
   const minStrafen = Math.min(...state.mitglieder.map(m => stats[m.name].strafen));
 
   // Rangliste nach Pumpen (meiste Pumpen = #1)
@@ -12104,15 +12112,38 @@ function renderMitgliedskarten(force) {
     const st = stats[m.name];
 
     // Titel
-    let title = 'Stammspieler';
-    if (st.pumpen > 0 && st.pumpen === max.pumpen)               title = 'Pumpenkönig der Saison';
-    else if (st.klingeln > 0 && st.klingeln === max.klingeln)    title = 'Klingelmeister';
-    else if (st.behinderungen > 0 && st.behinderungen === max.behinderungen) title = 'Wandelnde Behinderung';
-    else if (st.kugelZT > 0 && st.kugelZT === max.kugelZT)       title = 'Kugel zum Tisch, immer wieder';
-    else if (st.pk >= 3)                                        title = 'Häufiger Pumpenkönig';
-    else if (st.abende > 0 && st.abende === max.abende)          title = 'Immer dabei';
-    else if (st.verlSpiele > 0 && st.verlSpiele === max.verlSpiele) title = 'Dauerverlierer';
-    else if (st.pk === 1)                                       title = 'War schon Pumpenkönig';
+    // Titel — erster Treffer gewinnt, deshalb Seltenes zuerst.
+    let title = null;
+    if (st.pumpenSchnitt === 10)                          title = 'Perfect 10';
+    else if (allein(st, 'pumpen'))                        title = 'Pumpenkönig der Saison';
+    else if (allein(st, 'pumpenSchnitt'))                 title = 'Meiste Pumpen pro Kegeln';
+    else if (allein(st, 'stinas'))                        title = 'Stina King';
+    else if (allein(st, 'klingeln'))                      title = 'Klingelmeister';
+    else if (allein(st, 'behinderungen'))                 title = 'Wandelnde Behinderung';
+    else if (allein(st, 'kugelZT'))                       title = 'Wo ist die Kugel?';
+    else if (allein(st, 'lustwuerfe'))                    title = 'Lustwurf-Liebhaber';
+    else if (allein(st, 'verlSpiele'))                    title = 'Dauerverlierer';
+    else if (allein(st, 'rekord'))                        title = 'Rekordhalter für einen Abend';
+    else if (allein(st, 'abende'))                        title = 'Immer dabei';
+    else if (st.pk >= 2)                                  title = 'Häufiger Pumpenkönig';
+    else if (st.pk === 1)                                 title = 'War schon Pumpenkönig';
+    else if (st.abende > 0 && st.pumpen === minPumpen && anzahlMitMinPumpen === 1) title = 'Saubermann';
+
+    // Noch kein Titel: stärkste eigene Disziplin im Vergleich zum Clubbesten
+    if (!title) {
+      const kandidaten = [
+        { f:'klingeln',      m:max.klingeln,      t:'Klingel-Freund' },
+        { f:'stinas',        m:max.stinas,        t:'Stina-Sammler' },
+        { f:'behinderungen', m:max.behinderungen, t:'Störfaktor' },
+        { f:'kugelZT',       m:max.kugelZT,       t:'Kugel-Sucher' },
+        { f:'lustwuerfe',    m:max.lustwuerfe,    t:'Lustwurf-Freund' },
+        { f:'verlSpiele',    m:max.verlSpiele,    t:'Pechvogel' },
+        { f:'pumpen',        m:max.pumpen,        t:'Pumpen-Abonnent' }
+      ].map(k => ({ t:k.t, q: k.m > 0 ? (st[k.f] || 0) / k.m : 0 }))
+       .filter(k => k.q > 0)
+       .sort((a,b) => b.q - a.q);
+      title = kandidaten.length ? kandidaten[0].t : 'Stammspieler';
+    }
 
     const wrap = document.createElement('div');
     wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px';
@@ -12151,7 +12182,7 @@ const KARTEN_STUFEN = {
   legendaer: { t:'LEGENDÄR',      a:'#fbbf24', b:'#78350f' },
   episch:    { t:'EPISCH',        a:'#c084fc', b:'#4c1d95' },
   selten:    { t:'SELTEN',        a:'#60a5fa', b:'#1e3a8a' },
-  normal:    { t:'STAMMSPIELER',  a:'#94a3b8', b:'#1e293b' }
+  normal:    { t:'BRONZE',        a:'#d19a6a', b:'#3f2a1a' }
 };
 
 function drawMitgliedsKarte(canvas, m) {

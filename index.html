@@ -3946,6 +3946,40 @@ function avatarHTML(name, groesse, foto) {
   return `<div style="width:${g}px;height:${g}px;border-radius:50%;background:${farbe};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${Math.round(g*0.42)}px;flex-shrink:0">${name[0].toUpperCase()}</div>`;
 }
 
+// Gewinnerfotos für die Quiz-Auflösung, mit Goldring statt Mitgliedsfarbe
+function quizGewinnerFotos(namen, groesse) {
+  const g = groesse || 58;
+  return `<div style="display:flex;justify-content:center;gap:.6rem;margin-bottom:.4rem">
+    ${namen.map(n => {
+      const m = state.mitglieder.find(x => x.name === n) || {};
+      const inner = m.foto
+        ? `<img src="${m.foto}" alt="${n}" style="width:${g}px;height:${g}px;border-radius:50%;object-fit:cover;display:block">`
+        : `<div style="width:${g}px;height:${g}px;border-radius:50%;background:${avatarColor(n)};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${Math.round(g*0.42)}px">${n[0].toUpperCase()}</div>`;
+      return `<div style="position:relative;flex-shrink:0">
+        <div style="border-radius:50%;padding:3px;background:linear-gradient(135deg,#fbbf24,#b45309)">${inner}</div>
+        <div style="position:absolute;bottom:-2px;right:-2px;background:#78350f;border:2px solid #fef3c7;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:.7rem">🎁</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// Wie quizGewinnerFotos, aber mit Krone — für den Endstand
+function quizSiegerFotos(namen) {
+  const g = 76;
+  return `<div style="display:flex;justify-content:center;gap:.7rem">
+    ${namen.map(n => {
+      const m = state.mitglieder.find(x => x.name === n) || {};
+      const inner = m.foto
+        ? `<img src="${m.foto}" alt="${n}" style="width:${g}px;height:${g}px;border-radius:50%;object-fit:cover;display:block">`
+        : `<div style="width:${g}px;height:${g}px;border-radius:50%;background:${avatarColor(n)};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${Math.round(g*0.42)}px">${n[0].toUpperCase()}</div>`;
+      return `<div style="position:relative;flex-shrink:0">
+        <div style="border-radius:50%;padding:3.5px;background:linear-gradient(135deg,#fde047,#b45309)">${inner}</div>
+        <div style="position:absolute;bottom:-3px;right:-3px;background:#78350f;border:2px solid #fef3c7;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:.8rem">👑</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 // Bild vorladen, damit es beim Canvas-Zeichnen synchron verfügbar ist
 const profilfotoCache = {};
 function ladeProfilfotos() {
@@ -10705,8 +10739,8 @@ function renderQuizAdmin() {
       </div>
       ${gewinner.length ? `
       <div style="background:#fef3c7;border:2px solid #fcd34d;border-radius:12px;padding:1rem;margin-bottom:.75rem;text-align:center">
-        <div style="font-size:2.2rem;line-height:1">🎁</div>
-        <div style="font-size:.68rem;font-weight:700;color:#92400e;letter-spacing:.05em;margin-top:.2rem">PREIS FÜR DIESE FRAGE</div>
+        ${quizGewinnerFotos(gewinner, 64)}
+        <div style="font-size:.68rem;font-weight:700;color:#92400e;letter-spacing:.05em">PREIS FÜR DIESE FRAGE</div>
         <div style="font-size:1.15rem;font-weight:800;color:#78350f;line-height:1.4;margin:.35rem 0">
           ${gewinner.length === 1
             ? `${gewinner[0]} war am nächsten dran —<br>komm und hol dir dein Geschenk!`
@@ -10783,8 +10817,9 @@ function quizEndstandHTML(q, istMaster, meinName) {
 
   return `
     <div style="background:linear-gradient(180deg,#fef3c7,#fde68a);border-radius:14px;padding:1.1rem 1rem;margin-bottom:.75rem;text-align:center">
-      <div style="font-size:2.4rem;line-height:1">👑</div>
-      <div style="font-size:.7rem;font-weight:700;color:#92400e;letter-spacing:.05em;margin-top:.2rem">QUIZ-KÖNIG · PREIS</div>
+      <div style="font-size:1.6rem;line-height:1;margin-bottom:.2rem">👑</div>
+      ${quizSiegerFotos(sieger.map(s => s.p))}
+      <div style="font-size:.7rem;font-weight:700;color:#92400e;letter-spacing:.05em;margin-top:.35rem">QUIZ-KÖNIG · PREIS</div>
       <div style="font-size:1.5rem;font-weight:800;color:#78350f;margin:.1rem 0">${sieger.map(s=>s.p).join(' & ')}</div>
       <div style="font-size:.9rem;color:#92400e;font-weight:600">${sieger[0].pkt} von ${maxPunkte} Punkten</div>
     </div>
@@ -10943,7 +10978,7 @@ function renderQuizMember() {
 
       ${ichGewinner
         ? `<div style="background:linear-gradient(180deg,#fef3c7,#fde68a);border-radius:12px;padding:1rem;margin-bottom:.75rem;text-align:center">
-             <div style="font-size:2.2rem;line-height:1">🎁</div>
+             ${quizGewinnerFotos(gewinner, 64)}
              <div style="font-size:1.15rem;font-weight:800;color:#78350f;line-height:1.4;margin:.35rem 0">
                ${gewinner.length === 1
                  ? 'Du warst am nächsten dran —<br>komm und hol dir dein Geschenk!'
@@ -10957,8 +10992,8 @@ function renderQuizMember() {
            </div>`
         : `${gewinner.length ? `
            <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:12px;padding:.85rem 1rem;margin-bottom:.6rem;text-align:center">
-             <div style="font-size:1.6rem;line-height:1">🎁</div>
-             <div style="font-size:1rem;font-weight:800;color:#78350f;line-height:1.4;margin-top:.25rem">
+             ${quizGewinnerFotos(gewinner, 52)}
+             <div style="font-size:1rem;font-weight:800;color:#78350f;line-height:1.4">
                ${gewinner.length === 1
                  ? `${gewinner[0]} war am nächsten dran —<br>komm und hol dir dein Geschenk!`
                  : `${gewinner.join(' & ')} waren<br>beide am nächsten dran!`}

@@ -9411,9 +9411,11 @@ function generiereQuizFragen(anzahl = 60) {
   // echten Daten, damit sie nicht veralten — auch die genannten Rekordhalter
   // werden berechnet, nicht hart hinterlegt.
   const std = [];
-  const S = (frage, richtig, einheit, erklaerung, fakt, person) => {
+  // Der fünfte Parameter war früher ein Fun Fact. Der verriet teilweise die
+  // Antwort späterer Fragen, deshalb wird er bewusst nicht mehr übernommen.
+  const S = (frage, richtig, einheit, erklaerung, _unbenutzt, person) => {
     if (richtig === null || richtig === undefined || !isFinite(richtig)) return;
-    std.push({ typ:'schaetzung', quelle:'standard', frage, richtig, einheit, erklaerung, fakt, person: person || null });
+    std.push({ typ:'schaetzung', quelle:'standard', frage, richtig, einheit, erklaerung, person: person || null });
   };
 
   const nAbende  = sessions.length;
@@ -10430,9 +10432,7 @@ function renderOfflineQuiz() {
           </div>
         `}
 
-        <div style="background:#f0fdf4;border-radius:8px;padding:.6rem .75rem;margin-bottom:${frage.fakt?'.5rem':'1rem'};font-size:.83rem;color:#15803d">💡 ${frage.erklaerung}</div>
-
-        ${frage.fakt ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem .75rem;margin-bottom:1rem;font-size:.83rem;color:#92400e;white-space:pre-line">📌 ${frage.fakt}</div>` : ''}
+        <div style="background:#f0fdf4;border-radius:8px;padding:.6rem .75rem;margin-bottom:1rem;font-size:.83rem;color:#15803d">💡 ${frage.erklaerung}</div>
 
         <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">Antworten & Punkte</div>
         ${os.reihenfolge.map(p => {
@@ -10536,6 +10536,11 @@ function renderQuizAdmin() {
     };
     const gefiltert = offen.filter(passtZuFilter);
 
+    // Verräter-Prüfung auf der gewählten Reihenfolge
+    const gewaehlteFragen = ausgewaehlt.map(i => kandidaten[i]);
+    const konflikte = quizKonflikte(gewaehlteFragen);
+    const anzKonflikte = Object.values(konflikte).reduce((s,a) => s + a.length, 0);
+
     const badge = f => f.quelle === 'standard'
       ? `<span style="font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap">⭐ Standard</span>`
       : f.person
@@ -10570,16 +10575,33 @@ function renderQuizAdmin() {
         <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.7rem">
           In dieser Reihenfolge werden die Fragen gestellt. Mit ↑ ↓ verschieben.
         </p>
+        ${anzKonflikte > 0 ? `
+        <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.6rem .75rem;margin-bottom:.7rem;font-size:.8rem;color:#92400e;line-height:1.5">
+          ⚠️ <strong>${anzKonflikte} ${anzKonflikte === 1 ? 'Frage wird' : 'Fragen werden'} vorab verraten.</strong>
+          Die Auflösung einer früheren Frage nennt schon die Antwort. Betroffene Fragen sind unten markiert.
+          <button class="btn btn-sm" style="background:#92400e;color:#fef3c7;margin-top:.5rem;width:100%;font-weight:700" onclick="quizKonflikteAufloesen()">
+            🔀 Reihenfolge automatisch korrigieren
+          </button>
+        </div>` : (ausgewaehlt.length > 1 ? `
+        <div style="font-size:.75rem;color:var(--success);margin-bottom:.7rem">✅ Keine Frage verrät eine andere.</div>` : '')}
         ${ausgewaehlt.length === 0
           ? `<div style="font-size:.85rem;color:var(--text-muted);padding:.6rem;background:var(--bg-page);border-radius:8px;text-align:center">Noch keine Frage gewählt — unten aussuchen.</div>`
           : ausgewaehlt.map((kIdx, pos) => {
               const f = kandidaten[kIdx];
               if (!f) return '';
-              return `<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .55rem;border-radius:10px;border:1px solid var(--border);background:#eff6ff;margin-bottom:.35rem">
+              const verraet = konflikte[pos] || [];
+              const wirdVerraten = Object.entries(konflikte).some(([, ziele]) => ziele.includes(pos));
+              const rand = verraet.length ? '#f59e0b' : (wirdVerraten ? '#fca5a5' : 'var(--border)');
+              const flaeche = verraet.length ? '#fffbeb' : (wirdVerraten ? '#fef2f2' : '#eff6ff');
+              return `<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .55rem;border-radius:10px;border:1px solid ${rand};background:${flaeche};margin-bottom:.35rem">
                 <div style="width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.72rem;font-weight:800">${pos+1}</div>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:.82rem;font-weight:600;line-height:1.35">${f.frage}</div>
-                  <div style="margin-top:.2rem">${badge(f)}</div>
+                  <div style="margin-top:.2rem;display:flex;gap:.3rem;align-items:center;flex-wrap:wrap">
+                    ${badge(f)}
+                    ${verraet.length ? `<span style="font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#fde68a;color:#78350f;white-space:nowrap" title="Die Auflösung verrät Frage ${verraet.map(v=>v+1).join(', ')}">⚠️ verrät Nr. ${verraet.map(v=>v+1).join(', ')}</span>` : ''}
+                    ${wirdVerraten ? `<span style="font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;background:#fecaca;color:#7f1d1d;white-space:nowrap">schon verraten</span>` : ''}
+                  </div>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:1px;flex-shrink:0">
                   <button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.7rem;line-height:1.3" onclick="quizFrageVerschieben(${pos},-1)" ${pos===0?'disabled style="opacity:.3;padding:1px 6px;font-size:.7rem"':''}>↑</button>
@@ -10735,7 +10757,6 @@ function renderQuizAdmin() {
         <div style="font-size:.72rem;font-weight:700;color:var(--success);margin-bottom:.2rem">✅ RICHTIGE ANTWORT</div>
         <div style="font-weight:800;font-size:1.5rem">${fmt(richtig)}</div>
         <div style="font-size:.82rem;color:var(--text-muted);margin-top:.25rem">${frage.erklaerung}</div>
-        ${frage.fakt ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem .75rem;margin-top:.5rem;font-size:.82rem;color:#92400e;line-height:1.55">💡 <strong>Fun Fact:</strong> ${frage.fakt}</div>` : ''}
       </div>
       ${gewinner.length ? `
       <div style="background:#fef3c7;border:2px solid #fcd34d;border-radius:12px;padding:1rem;margin-bottom:.75rem;text-align:center">
@@ -10973,7 +10994,6 @@ function renderQuizMember() {
         <div style="font-size:.72rem;color:var(--success);font-weight:700;margin-bottom:.2rem">✅ Richtige Antwort</div>
         <div style="font-weight:800;font-size:1.4rem">${fmt(richtig)}</div>
         <div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${frage.erklaerung}</div>
-        ${frage.fakt ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem .75rem;margin-top:.5rem;font-size:.82rem;color:#92400e;line-height:1.55">💡 <strong>Fun Fact:</strong> ${frage.fakt}</div>` : ''}
       </div>
 
       ${ichGewinner
@@ -11083,6 +11103,80 @@ function toggleFrageAuswahl(idx) {
 
 let quizPoolFilter = 'alle';
 function quizSetPoolFilter(f) { quizPoolFilter = f; renderQuizAdmin(); }
+
+// ── VERRÄTER-PRÜFUNG ──────────────────────────────────────────────
+// Die Auflösung einer Frage nennt oft Zwischenwerte ("49 Pumpen an 3 Abenden").
+// Steht die zugehörige Frage später in der Reihenfolge, ist sie verbrannt.
+// Erkannt wird das über drei Bedingungen gleichzeitig: die Antwort der späteren
+// Frage steht als eigenständige Zahl in der Auflösung der früheren, es geht um
+// dasselbe Thema, und bei Personenfragen wird die Person namentlich genannt.
+const QUIZ_THEMEN = ['Pumpen','Klingeln','Stinas','Lustwürfe','Behinderungen',
+                     'Kugel','verlorene Spiele','Striche','Strafen','Abende','Kasse'];
+
+function quizThemen(text) {
+  const t = (text || '').toLowerCase();
+  return QUIZ_THEMEN.filter(k => t.includes(k.toLowerCase()));
+}
+
+function quizVerraet(frueher, spaeter) {
+  if (!frueher || !spaeter || !frueher.erklaerung) return false;
+  const erk = frueher.erklaerung;
+  // 1. Antwort der späteren Frage als eigenständige Zahl in der Auflösung?
+  const zahl = String(spaeter.richtig).replace('.', ',');
+  const zahlPunkt = String(spaeter.richtig);
+  const alsToken = z => {
+    const esc = z.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(^|[^\\d,.])' + esc + '($|[^\\d,.])').test(erk);
+  };
+  if (!alsToken(zahl) && !alsToken(zahlPunkt)) return false;
+  // 2. Gleiches Thema?
+  const tf = quizThemen(frueher.frage + ' ' + erk);
+  const ts = quizThemen(spaeter.frage);
+  if (!ts.some(k => tf.includes(k))) return false;
+  // 3. Bei Personenfragen muss die Person genannt sein
+  if (spaeter.person && !erk.includes(spaeter.person)) return false;
+  return true;
+}
+
+// Liefert für jede Position, welche späteren Positionen sie verrät
+function quizKonflikte(fragen) {
+  const map = {};
+  for (let i = 0; i < fragen.length; i++) {
+    for (let j = i + 1; j < fragen.length; j++) {
+      if (quizVerraet(fragen[i], fragen[j])) {
+        (map[i] = map[i] || []).push(j);
+      }
+    }
+  }
+  return map;
+}
+
+// Sortiert so um, dass verratene Fragen vor ihren Verrätern stehen
+function quizKonflikteAufloesen() {
+  const q = state.quiz;
+  const idx = [...(q.fragenAusgewaehlt || [])];
+  const fragen = idx.map(i => q.fragenKandidaten[i]);
+  const n = fragen.length;
+  // Kanten: b muss vor a stehen, wenn a b verrät
+  const vorher = Array.from({ length: n }, () => new Set());
+  for (let a = 0; a < n; a++)
+    for (let b = 0; b < n; b++)
+      if (a !== b && quizVerraet(fragen[a], fragen[b])) vorher[a].add(b);
+
+  const fertig = [], offen = new Set(idx.map((_, i) => i));
+  let sicher = 0;
+  while (offen.size && sicher++ < n * n) {
+    let genommen = false;
+    for (const i of [...offen]) {
+      if ([...vorher[i]].every(v => !offen.has(v))) {
+        fertig.push(i); offen.delete(i); genommen = true; break;
+      }
+    }
+    if (!genommen) break;   // Ringschluss — Rest unverändert anhängen
+  }
+  offen.forEach(i => fertig.push(i));
+  db.collection('quiz').doc('aktiv').update({ fragenAusgewaehlt: fertig.map(i => idx[i]) });
+}
 
 function quizFrageVerschieben(pos, richtung) {
   const q = state.quiz;

@@ -1559,7 +1559,7 @@ function renderMemberAll() {
   renderMemberOverview();
   renderMemberTermine();
   renderMemberKasse();
-  renderQuizMember();
+  renderQuizMember(true);   // beim Betreten/Namenswechsel immer frisch zeichnen
 }
 
 function renderMemberOverview() {
@@ -2193,6 +2193,28 @@ function renderMemberTermine() {
   }).join('');
 }
 
+// ── TIPPSPIEL-REGELN ──────────────────────────────────────────────
+// Mindestens so viele Personen müssen getippt haben, sonst fällt das
+// Tippspiel für den Abend aus und es wird nichts verrechnet.
+const TIPPSPIEL_MINDESTTIPPER = 3;
+
+// Wie viele verschiedene Personen haben für diesen Termin getippt?
+function tippspielTipperAnzahl(terminId) {
+  return new Set((state.tipps || [])
+    .filter(tp => tp.terminId === terminId)
+    .map(tp => tp.mitglied)).size;
+}
+
+// Ab dem Start des Kegelbuchs sind Tipps eingefroren. Gesperrt ist ein Termin,
+// wenn dafür gerade live gekegelt wird oder der Abend schon abgeschlossen ist.
+function tippspielGesperrt(terminId) {
+  if (!terminId) return false;
+  const live = state.liveSession;
+  if (live && live.aktiv && live.terminId === terminId) return true;
+  return (state.alleKegelsessions || state.kegelsessions || [])
+    .some(s => s.terminId === terminId);
+}
+
 function renderMemberTippBlock(t, memberName) {
   const termTipps = (state.tipps || []).filter(tp => tp.terminId === t.id);
   const tippedCount = [...new Set(termTipps.map(tp => tp.mitglied))].length;
@@ -2203,6 +2225,39 @@ function renderMemberTippBlock(t, memberName) {
   const hatGetippt = meineTipps.length > 0;
   const mitglieder = state.mitglieder.map(m => m.name);
   const mitgliederGesamt = mitglieder.length;
+  const gesperrt = tippspielGesperrt(t.id);
+  const zuWenige = tippedCount < TIPPSPIEL_MINDESTTIPPER;
+  const fehlen = TIPPSPIEL_MINDESTTIPPER - tippedCount;
+
+  // Gesperrt: nur noch anzeigen, was getippt wurde
+  if (gesperrt) {
+    const zeile = (icon, label, wert) =>
+      `<div style="display:flex;justify-content:space-between;gap:.5rem;font-size:.8rem;padding:.3rem 0;border-bottom:1px solid #e2e8f0">
+         <span style="color:#475569">${icon} ${label}</span>
+         <strong>${wert === '' || wert === undefined ? '— kein Tipp —' : wert}</strong>
+       </div>`;
+    return `
+    <details style="margin-top:.75rem">
+      <summary style="cursor:pointer;font-size:.85rem;color:#475569;font-weight:700;padding:.5rem .75rem;background:#f1f5f9;border-radius:8px;border:1px solid #cbd5e1;list-style:none;display:flex;align-items:center;gap:.4rem">
+        🔒 Tippspiel
+        <span style="font-size:.72rem;color:#64748b;font-weight:400">${zuWenige ? 'ausgefallen' : 'geschlossen'} · ${tippedCount}/${mitgliederGesamt} getippt</span>
+      </summary>
+      <div style="padding:.875rem .75rem;background:#f8fafc;border-radius:0 0 10px 10px;border:1px solid #cbd5e1;border-top:none">
+        ${zuWenige
+          ? `<div style="font-size:.8rem;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.5rem .7rem;margin-bottom:.6rem;line-height:1.5">
+               ⚠️ Nur ${tippedCount} ${tippedCount === 1 ? 'Person hat' : 'Personen haben'} getippt, nötig ${TIPPSPIEL_MINDESTTIPPER}.
+               Das Tippspiel fällt für diesen Abend aus — es wird nichts verrechnet.
+             </div>`
+          : `<div style="font-size:.78rem;color:#475569;margin-bottom:.6rem">Das Kegeln läuft, Tipps sind eingefroren.</div>`}
+        ${!memberName ? '' : (hatGetippt
+          ? `<div style="font-size:.75rem;font-weight:700;color:#334155;margin-bottom:.3rem">Dein Tipp</div>
+             ${zeile('👑','Pumpenkönig', pkTipp)}
+             ${zeile('🎳','Neuner gesamt', neunerTipp ? neunerTipp.antwort : '')}
+             ${zeile('💥','Pumpen gesamt', pumpenTipp ? pumpenTipp.antwort : '')}`
+          : `<div style="font-size:.8rem;color:#64748b;font-style:italic">Du hast für diesen Abend nicht getippt.</div>`)}
+      </div>
+    </details>`;
+  }
 
   return `
   <details style="margin-top:.75rem" ${hatGetippt ? 'open' : ''}>
@@ -2213,6 +2268,7 @@ function renderMemberTippBlock(t, memberName) {
     </summary>
     <div style="padding:.875rem .75rem;background:#f0f9ff;border-radius:0 0 10px 10px;border:1px solid #bae6fd;border-top:none">
       ${!memberName ? '<div style="font-size:.82rem;color:#64748b;font-style:italic">Bitte zuerst Namen auswählen.</div>' : `
+      ${zuWenige ? `<div style="font-size:.75rem;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:.4rem .6rem;margin-bottom:.6rem;line-height:1.45">⚠️ Noch ${fehlen} ${fehlen === 1 ? 'Tipp' : 'Tipps'} nötig, sonst fällt das Tippspiel aus. Bisher ${tippedCount} von ${TIPPSPIEL_MINDESTTIPPER}.</div>` : ''}
       ${hatGetippt ? '<div style="font-size:.75rem;color:#059669;font-weight:700;margin-bottom:.6rem;padding:.35rem .6rem;background:#dcfce7;border-radius:6px">✅ Tipp vorhanden – hier anpassen:</div>' : ''}
       <div style="display:flex;flex-direction:column;gap:.6rem">
         <div>
@@ -2334,7 +2390,7 @@ let aktiverKgTab = 'kegel';
 
 function saveLiveSession() {
   if (!aktiveSession) return;
-  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], abendTeams: aktiveSession.abendTeams || null, updatedAt: Date.now() });
+  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], abendTeams: aktiveSession.abendTeams || null, terminId: aktiveSession.terminId || null, updatedAt: Date.now() });
 }
 function clearLiveSession() { db.collection('live').doc('session').set({ aktiv: false }); }
 
@@ -2351,7 +2407,8 @@ async function restoreLiveSession() {
       counts: data.counts || {},
       spieler: data.spieler || [],
       angemeldet: data.angemeldet || [],
-      abendTeams: data.abendTeams || null
+      abendTeams: data.abendTeams || null,
+      terminId: data.terminId || null
     };
     aktiverKgTab = 'kegel';
     document.getElementById('kegeln-start-screen').style.display = 'none';
@@ -3656,7 +3713,19 @@ function renderTippspielBlock(t) {
         <div style="font-size:.75rem;color:#0369a1;background:#e0f2fe;padding:.25rem .6rem;border-radius:99px;font-weight:600">🎳 Neuner: ${neunerCount} Tipp${neunerCount!==1?'en':''}</div>
         <div style="font-size:.75rem;color:#0369a1;background:#e0f2fe;padding:.25rem .6rem;border-radius:99px;font-weight:600">💥 Pumpen: ${pumpenCount} Tipp${pumpenCount!==1?'en':''}</div>
       </div>
-      <div style="border-top:1px solid #bae6fd;padding-top:.75rem">
+      ${tippspielGesperrt(t.id)
+        ? `<div style="border-top:1px solid #bae6fd;padding-top:.75rem">
+             ${tippedMembers.length < TIPPSPIEL_MINDESTTIPPER
+               ? `<div style="font-size:.8rem;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.5rem .7rem;line-height:1.5">
+                    ⚠️ <strong>Tippspiel ausgefallen.</strong> Nur ${tippedMembers.length} von mindestens ${TIPPSPIEL_MINDESTTIPPER} Tipps.
+                    Bei der Abrechnung wird nichts verrechnet.
+                  </div>`
+               : `<div style="font-size:.8rem;color:#475569">🔒 Das Kegeln hat begonnen — Tipps sind eingefroren und können nicht mehr geändert werden.</div>`}
+           </div>`
+        : `<div style="border-top:1px solid #bae6fd;padding-top:.75rem">
+        ${tippedMembers.length < TIPPSPIEL_MINDESTTIPPER
+          ? `<div style="font-size:.75rem;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:.4rem .6rem;margin-bottom:.6rem;line-height:1.45">⚠️ Noch ${TIPPSPIEL_MINDESTTIPPER - tippedMembers.length} ${TIPPSPIEL_MINDESTTIPPER - tippedMembers.length === 1 ? 'Tipp' : 'Tipps'} nötig, sonst fällt das Tippspiel aus.</div>`
+          : ''}
         <label style="font-size:.78rem;font-weight:700;color:#0369a1;display:block;margin-bottom:.4rem">Wer tippt?</label>
         <select id="tipp-member-${t.id}" onchange="ladeTippFormular('${t.id}')" style="width:100%;padding:8px 10px;border:1.5px solid #bae6fd;border-radius:8px;font-size:.88rem;margin-bottom:.75rem;background:white">
           <option value="">— Mitglied auswählen —</option>
@@ -3666,7 +3735,7 @@ function renderTippspielBlock(t) {
           }).join('')}
         </select>
         <div id="tipp-form-${t.id}" style="font-size:.78rem;color:#64748b;font-style:italic">Mitglied auswählen, um zu tippen.</div>
-      </div>
+      </div>`}
     </div>
   </details>`;
 }
@@ -3716,6 +3785,13 @@ function ladeTippFormular(terminId) {
 }
 
 function speichereTipp(terminId) {
+  // Schutz auch gegen veraltete Ansichten: wer das Formular offen hatte, als
+  // das Kegelbuch startete, kann trotzdem nicht mehr speichern.
+  if (tippspielGesperrt(terminId)) {
+    alert('Das Kegeln hat begonnen — Tipps können nicht mehr geändert werden.');
+    renderMemberAll();
+    return;
+  }
   const sel = document.getElementById('tipp-member-' + terminId);
   const mitglied = sel ? sel.value : '';
   if (!mitglied) { alert('Bitte Mitglied auswählen!'); return; }
@@ -3748,6 +3824,16 @@ function loseTippsAuf(terminId, sessionId, eintraegeFlach) {
   if (!terminId) return;
   const termTipps = (state.tipps || []).filter(tp => tp.terminId === terminId);
   if (!termTipps.length) return;
+
+  // Zu wenige Mitspieler: Tippspiel fällt aus, niemand zahlt und niemand
+  // bekommt etwas gut. Sonst wäre es bei zwei Tippern ein Münzwurf.
+  const tipper = [...new Set(termTipps.map(tp => tp.mitglied))];
+  if (tipper.length < TIPPSPIEL_MINDESTTIPPER) {
+    showNotification(
+      `🎯 Tippspiel ausgefallen — nur ${tipper.length} von mindestens ${TIPPSPIEL_MINDESTTIPPER} Tipps abgegeben. Es wird nichts verrechnet.`,
+      'info');
+    return;
+  }
 
   // Actuals aus Session-Einträgen berechnen
   const pumpenPerMember = {};
@@ -10695,6 +10781,13 @@ function renderQuizAdmin() {
 
     if (q.phase === 'frage') {
       // ── MASTER DEVICE: LIVE ANTWORT-TABELLE ──
+      // Die Tabelle muss bei jeder eingehenden Antwort neu gezeichnet werden.
+      // Deshalb vorher merken, in welchem Feld der Cursor stand und was schon
+      // getippt war — sonst wäre die Eingabe des Masters ständig weg.
+      const aktiv = document.activeElement;
+      const fokusId = (aktiv && aktiv.id && aktiv.id.indexOf('master-inp-') === 0) ? aktiv.id : null;
+      const fokusPos = fokusId ? aktiv.selectionStart : null;
+
       const einheitFmt = v => frage.einheit === '€' ? formatEur(v) : v + (frage.einheit ? ' ' + frage.einheit : '');
       container.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
@@ -10731,6 +10824,21 @@ function renderQuizAdmin() {
           ${beantwortet.length===0?'disabled style="opacity:.5"':''}>
           🎯 Auflösen (${beantwortet.length}/${q.spieler.length} geantwortet)
         </button>`;
+
+      // Getippte Werte und Cursor zurückholen
+      Object.keys(masterInputCache).forEach(name => {
+        const wert = masterInputCache[name];
+        if (!wert) return;
+        const el = document.getElementById('master-inp-' + name.replace(/\s/g, '_'));
+        if (el && !el.value) el.value = wert;
+      });
+      if (fokusId) {
+        const el = document.getElementById(fokusId);
+        if (el) {
+          el.focus();
+          try { el.setSelectionRange(fokusPos, fokusPos); } catch (e) {}
+        }
+      }
       return;
     }
 
@@ -10898,11 +11006,31 @@ function quizEndstandHTML(q, istMaster, meinName) {
 }
 
 // ---- MEMBER ----
-function renderQuizMember() {
+// Zustand der letzten Zeichnung. Nötig, weil bei jeder Antwort irgendeines
+// Mitspielers ein Firestore-Snapshot kommt und ein vollständiger Neuaufbau das
+// Eingabefeld samt bereits getippter Zahl zerstören würde.
+let memberQuizKey = null;
+
+function renderQuizMember(erzwingen) {
   const container = document.getElementById('member-quiz-container');
   if (!container) return;
   const q = state.quiz;
   const meinName = document.getElementById('member-name-sel')?.value;
+
+  // Signatur aus allem, was diese Ansicht für DIESE Person beeinflusst.
+  // Die Antworten der anderen stehen absichtlich nicht drin.
+  const meineAntwortJetzt = q && q.antworten ? q.antworten[meinName] : undefined;
+  const key = [
+    q ? q.phase : 'keins',
+    q ? q.aktuelleQ : -1,
+    meinName || '',
+    meineAntwortJetzt === undefined ? 'offen' : 'abgegeben',
+    q && q.regelnOk && meinName ? (q.regelnOk[meinName] ? 'ok' : 'wartet') : '',
+    q ? (q.fragen || []).length : 0
+  ].join('|');
+
+  if (!erzwingen && key === memberQuizKey) return;   // nichts Relevantes geändert
+  memberQuizKey = key;
 
   if (!q || !q.phase || q.phase === 'setup') {
     container.innerHTML = `<div class="empty-state card">Kein Quiz aktiv. Warte auf den Admin.</div>`; return;
@@ -11282,7 +11410,7 @@ function masterEintragen(name) {
   const val = inp ? parseFloat(inp.value) : NaN;
   if (isNaN(val)) { alert('Zahl eingeben!'); return; }
   db.collection('quiz').doc('aktiv').update({ ['antworten.' + name]: val });
-  masterInputCache[name] = '';
+  delete masterInputCache[name];
 }
 function masterKorrigieren(name) {
   // Entfernt die gespeicherte Antwort so dass das Eingabefeld wieder erscheint
@@ -11336,6 +11464,7 @@ function naechsteFrage() {
   db.collection('quiz').doc('aktiv').update({
     phase: 'frage', aktuelleQ: q.aktuelleQ + 1, antworten: {}, punkte: {}, frageGewinner: []
   });
+  masterInputCache = {};   // Reste der Vorfrage verwerfen
 }
 
 function zeigeQuizErgebnis() {

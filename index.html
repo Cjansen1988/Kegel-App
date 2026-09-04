@@ -646,6 +646,7 @@
       <button class="kg-tab active" onclick="switchKgTab('kegel',this)">Kegel</button>
       <button class="kg-tab" onclick="switchKgTab('allgemein',this)">Allgemein</button>
       <button class="kg-tab" onclick="switchKgTab('spiele',this)" id="kg-tab-spiele">🎮 Spiele</button>
+      <button class="kg-tab" onclick="switchKgTab('schnaps',this)" id="kg-tab-schnaps">🥃 Schnaps</button>
     </div>
     <!-- Matrix -->
     <div class="kg-matrix-wrap" id="kg-matrix-wrap">
@@ -653,6 +654,8 @@
     </div>
     <!-- Spiele-Liste -->
     <div id="kg-spiele-liste" style="display:none;padding:.75rem 1rem"></div>
+    <!-- Getränkeaufteiler -->
+    <div id="kg-schnaps-liste" style="display:none;padding:.75rem 1rem"></div>
     <!-- Gesamt-Leiste -->
     <div class="kg-gesamt-bar" id="kg-gesamt-bar"></div>
   </div>
@@ -907,6 +910,12 @@
     <div id="kasse-schuldner-liste"></div>
   </div>
 
+  <!-- Offene Beträge über alle Saisons -->
+  <div class="card" style="margin-bottom:1rem;display:none" id="kasse-altschulden-card">
+    <div class="card-title">🗄 Offen aus früheren Saisons</div>
+    <div id="kasse-altschulden-liste"></div>
+  </div>
+
   <!-- Prognose -->
   <div class="card" style="margin-bottom:1rem;border-color:#8b5cf6;background:linear-gradient(135deg,#faf5ff,#f3e8ff)">
     <div class="card-title" style="color:#6d28d9">🔮 Kasse Prognose</div>
@@ -1109,6 +1118,7 @@ let state = {
   mitglieder: [],
   termine: [],
   strafen: [],
+  archivSaisons: [],
   strafKategorien: [
     { id: uid(), name: 'Verspätung pro 15 Min', betrag: 2.00 },
     { id: uid(), name: 'Handy spielen', betrag: 5.00 },
@@ -1271,7 +1281,7 @@ function subscribeAll() {
     state._alleStrafen = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     applySaisonFilterStrafen();
     loaded.strafen = true; checkAllLoaded();
-    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose(); renderKasseSchuldner();
+    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose(); renderKasseSchuldner(); renderKasseAltschulden();
   }, () => { loaded.strafen = true; checkAllLoaded(); }));
 
   // Strafkategorien
@@ -1293,11 +1303,17 @@ function subscribeAll() {
   subscribeQuiz();
 
   // Saison — nach dem Laden Strafen neu filtern
+  // Archivierte Saisons — nur für die Namensanzeige bei alten offenen Strafen
+  unsubscribers.push(db.collection('saisons').onSnapshot(snap => {
+    state.archivSaisons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderKasseAltschulden();
+  }, () => {}));
+
   unsubscribers.push(db.collection('config').doc('saison').onSnapshot(snap => {
     state.aktiveSaison = snap.exists ? snap.data() : null;
     applySaisonFilterStrafen();
     renderSaisonInfo();
-    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose(); renderKasseSchuldner();
+    renderStrafen(); renderStatistiken(); renderMitglieder(); renderMemberOverview(); renderKassePrognose(); renderKasseSchuldner(); renderKasseAltschulden();
   }, () => {}));
 
   // Kegelsessions (gefiltert nach aktiver Saison)
@@ -2390,7 +2406,7 @@ let aktiverKgTab = 'kegel';
 
 function saveLiveSession() {
   if (!aktiveSession) return;
-  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], abendTeams: aktiveSession.abendTeams || null, terminId: aktiveSession.terminId || null, updatedAt: Date.now() });
+  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], abendTeams: aktiveSession.abendTeams || null, terminId: aktiveSession.terminId || null, flaschen: aktiveSession.flaschen || [], updatedAt: Date.now() });
 }
 function clearLiveSession() { db.collection('live').doc('session').set({ aktiv: false }); }
 
@@ -2408,7 +2424,8 @@ async function restoreLiveSession() {
       spieler: data.spieler || [],
       angemeldet: data.angemeldet || [],
       abendTeams: data.abendTeams || null,
-      terminId: data.terminId || null
+      terminId: data.terminId || null,
+      flaschen: data.flaschen || []
     };
     aktiverKgTab = 'kegel';
     document.getElementById('kegeln-start-screen').style.display = 'none';
@@ -2539,12 +2556,228 @@ function switchKgTab(tabId, btn) {
   aktiverKgTab = tabId;
   document.querySelectorAll('.kg-tab').forEach(t => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  const isSpiele = tabId === 'spiele';
-  document.getElementById('kg-matrix-wrap').style.display = isSpiele ? 'none' : 'block';
-  document.getElementById('kg-spiele-liste').style.display = isSpiele ? 'block' : 'none';
+  const isSpiele  = tabId === 'spiele';
+  const isSchnaps = tabId === 'schnaps';
+  document.getElementById('kg-matrix-wrap').style.display   = (isSpiele || isSchnaps) ? 'none' : 'block';
+  document.getElementById('kg-spiele-liste').style.display  = isSpiele  ? 'block' : 'none';
+  document.getElementById('kg-schnaps-liste').style.display = isSchnaps ? 'block' : 'none';
   if (isSpiele) renderKgSpieleTab();
+  else if (isSchnaps) renderKgSchnapsTab();
   else renderKgMatrix();
 }
+
+// ========== GETRÄNKEAUFTEILER ==========
+// Flaschen mit Preis und Mittrinkern. Jede Flasche wird nur unter ihren eigenen
+// Mittrinkern geteilt — bei der dritten Runde sind meist nicht mehr alle dabei.
+// Bewusst keine Kassenbuchung: das wird am Tisch bar ausgeglichen.
+
+function schnapsFlaschen() {
+  return (aktiveSession && aktiveSession.flaschen) || [];
+}
+
+// Teilt einen Betrag centgenau auf. Der Rest wird cent-weise verteilt, damit die
+// Summe der Anteile exakt dem Flaschenpreis entspricht — sonst fehlen am Tisch
+// ein paar Cent und jemand rechnet nach.
+function schnapsAnteile(preisCent, trinker) {
+  const n = trinker.length;
+  if (!n) return {};
+  const basis = Math.floor(preisCent / n);
+  let rest = preisCent - basis * n;
+  const sortiert = [...trinker].sort();   // deterministisch, nicht zufällig
+  const out = {};
+  sortiert.forEach(name => {
+    out[name] = basis + (rest > 0 ? 1 : 0);
+    if (rest > 0) rest--;
+  });
+  return out;
+}
+
+// Gesamtbilanz über alle Flaschen, in Cent
+function schnapsBilanz() {
+  const perPerson = {};
+  let summe = 0;
+  schnapsFlaschen().forEach(f => {
+    const trinker = f.trinker || [];
+    if (!trinker.length) return;   // ohne Mittrinker zahlt niemand, zählt also nicht
+    const cent = Math.round(Number(f.preis) * 100);
+    summe += cent;
+    const anteile = schnapsAnteile(cent, trinker);
+    Object.entries(anteile).forEach(([n, v]) => { perPerson[n] = (perPerson[n] || 0) + v; });
+  });
+  return { perPerson, summe };
+}
+
+const eurVonCent = cent => formatEur(cent / 100);
+
+function renderKgSchnapsTab() {
+  const container = document.getElementById('kg-schnaps-liste');
+  if (!container || !aktiveSession) return;
+  const flaschen = schnapsFlaschen();
+  const { perPerson, summe } = schnapsBilanz();
+  const spieler = (aktiveSession.spieler && aktiveSession.spieler.length)
+    ? aktiveSession.spieler
+    : (aktiveSession.angemeldet || state.mitglieder.map(m => m.name));
+  const rang = Object.entries(perPerson).sort((a,b) => b[1] - a[1]);
+
+  container.innerHTML = `
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.75rem;line-height:1.5">
+      Flaschen erfassen und unter den Mittrinkern aufteilen.
+      Wird <strong>nicht</strong> in die Kasse gebucht — nur zum Ausgleich am Tisch.
+    </div>
+
+    <!-- Neue Flasche -->
+    <div class="card" style="padding:.8rem;margin-bottom:.75rem">
+      <div style="font-size:.8rem;font-weight:700;margin-bottom:.6rem">➕ Flasche hinzufügen</div>
+      <div style="display:flex;gap:.5rem;margin-bottom:.6rem;flex-wrap:wrap">
+        <input id="schnaps-sorte" type="text" placeholder="Sorte, z.B. Jäger"
+          style="flex:2;min-width:130px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:.88rem;background:var(--bg-card);color:var(--text)">
+        <input id="schnaps-preis" type="number" step="0.01" min="0" placeholder="Preis €"
+          style="width:100px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:.88rem;background:var(--bg-card);color:var(--text)">
+      </div>
+      <div style="font-size:.75rem;font-weight:700;color:var(--text-muted);margin-bottom:.4rem">Wer hat mitgetrunken?</div>
+      <div id="schnaps-trinker-chips" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.6rem">
+        ${spieler.map(n => `<button class="kg-auswahl-chip aktiv" data-name="${n}" onclick="toggleSchnapsTrinker(this)">✓ ${n}</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem">
+        <button class="btn btn-ghost btn-sm" onclick="schnapsTrinkerAlle(true)">Alle</button>
+        <button class="btn btn-ghost btn-sm" onclick="schnapsTrinkerAlle(false)">Keiner</button>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="addSchnapsFlasche()">🥃 Flasche eintragen</button>
+    </div>
+
+    <!-- Flaschenliste -->
+    ${flaschen.length === 0
+      ? `<div style="font-size:.85rem;color:var(--text-muted);text-align:center;padding:1rem;background:var(--bg-page);border-radius:10px">Noch keine Flasche eingetragen.</div>`
+      : `<div style="font-size:.8rem;font-weight:700;margin-bottom:.5rem">🧾 Flaschen (${flaschen.length})</div>
+         ${flaschen.map(f => {
+           const cent = Math.round(Number(f.preis) * 100);
+           const n = (f.trinker || []).length;
+           return `<div class="card" style="padding:.65rem .75rem;margin-bottom:.4rem">
+             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem">
+               <strong style="font-size:.9rem">${f.sorte}</strong>
+               <span style="white-space:nowrap">
+                 <strong>${eurVonCent(cent)}</strong>
+                 <span style="font-size:.75rem;color:var(--text-muted)">${n ? ' · ' + eurVonCent(Math.floor(cent/n)) + ' p.P.' : ''}</span>
+               </span>
+             </div>
+             <div style="font-size:.75rem;color:var(--text-muted);margin-top:.25rem;line-height:1.45">
+               ${n ? (n + ' Mittrinker: ' + (f.trinker || []).join(', ')) : '⚠️ niemand ausgewählt — zählt nicht'}
+             </div>
+             <button class="btn btn-ghost btn-sm" style="color:var(--danger);margin-top:.35rem" onclick="deleteSchnapsFlasche('${f.id}')">🗑 Entfernen</button>
+           </div>`;
+         }).join('')}`}
+
+    <!-- Zwischenstand -->
+    ${rang.length ? `
+    <div class="card" style="padding:.75rem;margin-top:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.5rem">
+        <span style="font-size:.8rem;font-weight:700">💰 Zwischenstand</span>
+        <span style="font-size:.8rem;color:var(--text-muted)">gesamt ${eurVonCent(summe)}</span>
+      </div>
+      ${rang.map(([n, v]) => `
+        <div style="display:flex;justify-content:space-between;font-size:.85rem;padding:.25rem 0;border-top:1px solid var(--border)">
+          <span>${n}</span><strong>${eurVonCent(v)}</strong>
+        </div>`).join('')}
+      <button class="btn btn-primary btn-full" style="margin-top:.7rem" onclick="schnapsAuswerten()">🧮 Auswerten</button>
+    </div>` : ''}`;
+}
+
+function toggleSchnapsTrinker(chip) {
+  chip.classList.toggle('aktiv');
+  chip.textContent = (chip.classList.contains('aktiv') ? '✓ ' : '✗ ') + chip.dataset.name;
+}
+
+function schnapsTrinkerAlle(an) {
+  document.querySelectorAll('#schnaps-trinker-chips .kg-auswahl-chip').forEach(ch => {
+    ch.classList.toggle('aktiv', an);
+    ch.textContent = (an ? '✓ ' : '✗ ') + ch.dataset.name;
+  });
+}
+
+function addSchnapsFlasche() {
+  if (!aktiveSession) return;
+  const sorte = (document.getElementById('schnaps-sorte').value || '').trim() || 'Schnaps';
+  const preis = parseFloat(document.getElementById('schnaps-preis').value);
+  if (isNaN(preis) || preis <= 0) { alert('Bitte einen Preis eingeben.'); return; }
+  const trinker = [...document.querySelectorAll('#schnaps-trinker-chips .kg-auswahl-chip.aktiv')]
+    .map(ch => ch.dataset.name);
+  if (!trinker.length) { alert('Mindestens einen Mittrinker auswählen.'); return; }
+
+  aktiveSession.flaschen = [...schnapsFlaschen(),
+    { id: uid(), sorte, preis: Math.round(preis * 100) / 100, trinker, ts: Date.now() }];
+  saveLiveSession();
+  renderKgSchnapsTab();
+  showNotification(`🥃 ${sorte} für ${formatEur(preis)} auf ${trinker.length} verteilt.`, 'success');
+}
+
+function deleteSchnapsFlasche(id) {
+  if (!aktiveSession) return;
+  aktiveSession.flaschen = schnapsFlaschen().filter(f => f.id !== id);
+  saveLiveSession();
+  renderKgSchnapsTab();
+}
+
+function schnapsAuswerten() {
+  const { perPerson, summe } = schnapsBilanz();
+  const flaschen = schnapsFlaschen();
+  const rang = Object.entries(perPerson).sort((a,b) => b[1] - a[1]);
+  if (!rang.length) { alert('Noch keine Flasche mit Mittrinkern eingetragen.'); return; }
+
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:1rem;overflow:auto';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `
+    <div style="background:var(--bg-card);border-radius:14px;max-width:420px;width:100%;padding:1.1rem;margin:auto">
+      <div style="font-size:1.05rem;font-weight:800;margin-bottom:.2rem">🥃 Schnaps-Abrechnung</div>
+      <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.8rem">
+        ${flaschen.length} ${flaschen.length === 1 ? 'Flasche' : 'Flaschen'} · gesamt ${eurVonCent(summe)} · bar auszugleichen
+      </div>
+      ${rang.map(([n, v], i) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:.95rem">${i+1}. ${n}</span>
+          <strong style="font-size:1.05rem">${eurVonCent(v)}</strong>
+        </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:.6rem 0;font-weight:800">
+        <span>Summe</span><span>${eurVonCent(rang.reduce((s,[,v]) => s+v, 0))}</span>
+      </div>
+      <details style="margin-top:.3rem">
+        <summary style="cursor:pointer;font-size:.8rem;color:var(--text-muted)">Aufschlüsselung pro Flasche</summary>
+        <div style="margin-top:.5rem">
+          ${flaschen.map(f => {
+            const cent = Math.round(Number(f.preis) * 100);
+            const a = schnapsAnteile(cent, f.trinker || []);
+            return `<div style="font-size:.78rem;padding:.4rem 0;border-top:1px solid var(--border)">
+              <strong>${f.sorte}</strong> — ${eurVonCent(cent)} auf ${(f.trinker||[]).length}<br>
+              <span style="color:var(--text-muted)">${Object.entries(a).map(([n,v]) => n + ' ' + eurVonCent(v)).join(' · ')}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </details>
+      <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap">
+        <button class="btn btn-primary" style="flex:1" onclick="kopiereSchnapsAbrechnung()">📋 Für WhatsApp kopieren</button>
+        <button class="btn btn-ghost" onclick="this.closest('div[style*=fixed]').remove()">Schließen</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+function kopiereSchnapsAbrechnung() {
+  const { perPerson, summe } = schnapsBilanz();
+  const flaschen = schnapsFlaschen();
+  const rang = Object.entries(perPerson).sort((a,b) => b[1] - a[1]);
+  let txt = '🥃 *Schnaps-Abrechnung*\n';
+  txt += (aktiveSession && aktiveSession.name ? aktiveSession.name + '\n' : '') + '\n';
+  flaschen.forEach(f => {
+    txt += `• ${f.sorte} — ${formatEur(f.preis)} auf ${(f.trinker||[]).length}\n`;
+  });
+  txt += `\n*Jeder zahlt:*\n`;
+  rang.forEach(([n, v]) => { txt += `${n}: ${eurVonCent(v)}\n`; });
+  txt += `\nGesamt: ${eurVonCent(summe)}`;
+  navigator.clipboard.writeText(txt)
+    .then(() => showNotification('📋 Abrechnung kopiert.', 'success'))
+    .catch(() => alert(txt));
+}
+// ========== END GETRÄNKEAUFTEILER ==========
 
 function renderKgSpieleTab() {
   const container = document.getElementById('kg-spiele-liste');
@@ -2957,6 +3190,7 @@ function bestaetigeKegelSession() {
     eintraege: eintraegeFlach, ...saisonMeta(),
     angemeldet: aktiveSession.angemeldet || [],
     spieler: aktiveSession.spieler || [],
+    flaschen: aktiveSession.flaschen || [],
     gesamtEinnahmen,
     mitgliederAnzahl: state.mitglieder.length,
     alle9Wuerfe,
@@ -6131,6 +6365,59 @@ function renderKassenbuch() {
 
 // Tracks which schuldner accordions are currently open
 const _schuldnerOpen = new Set();
+
+// Offene Strafen, die NICHT zur aktiven Saison gehören. Der normale
+// Schuldner-Block zeigt nur die laufende Saison — ohne diesen Block würden
+// Forderungen aus abgeschlossenen Saisons unsichtbar bleiben.
+function renderKasseAltschulden() {
+  const el = document.getElementById('kasse-altschulden-liste');
+  const card = document.getElementById('kasse-altschulden-card');
+  if (!el || !card) return;
+
+  const aktiveId = state.aktiveSaison ? state.aktiveSaison.id : null;
+  const alt = (state._alleStrafen || []).filter(s =>
+    !s.bezahlt && (s.saisonId || null) !== aktiveId);
+
+  if (!alt.length) { card.style.display = 'none'; el.innerHTML = ''; return; }
+  card.style.display = 'block';
+
+  // Namen der Saisons, soweit bekannt
+  const saisonName = id => {
+    if (!id) return 'Ohne Saison';
+    const a = (state.archivSaisons || []).find(x => x.id === id);
+    return a ? a.name : 'Frühere Saison';
+  };
+
+  const perPerson = {};
+  alt.forEach(s => {
+    const n = s.mitglied || '—';
+    perPerson[n] = perPerson[n] || { total: 0, nachSaison: {} };
+    perPerson[n].total += Number(s.betrag) || 0;
+    const sn = saisonName(s.saisonId);
+    perPerson[n].nachSaison[sn] = (perPerson[n].nachSaison[sn] || 0) + (Number(s.betrag) || 0);
+  });
+  const rang = Object.entries(perPerson).sort((a, b) => b[1].total - a[1].total);
+  const gesamt = rang.reduce((s, [, v]) => s + v.total, 0);
+
+  el.innerHTML = `
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.6rem;line-height:1.5">
+      Diese Beträge stammen aus abgeschlossenen Saisons und sind noch nicht bezahlt.
+      Sie zählen nicht in die Saisonstatistik, das Geld fehlt aber trotzdem.
+    </div>
+    ${rang.map(([name, d]) => `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;padding:.45rem 0;border-top:1px solid var(--border)">
+        <div style="min-width:0">
+          <div style="font-size:.9rem;font-weight:600">${name}</div>
+          <div style="font-size:.72rem;color:var(--text-muted)">
+            ${Object.entries(d.nachSaison).map(([sn, v]) => sn + ' ' + formatEur(v)).join(' · ')}
+          </div>
+        </div>
+        <strong style="color:var(--danger);white-space:nowrap">${formatEur(d.total)}</strong>
+      </div>`).join('')}
+    <div style="display:flex;justify-content:space-between;padding:.55rem 0 0;margin-top:.3rem;border-top:2px solid var(--border);font-weight:800">
+      <span>Gesamt</span><span style="color:var(--danger)">${formatEur(gesamt)}</span>
+    </div>`;
+}
 
 function renderKasseSchuldner() {
   const el = document.getElementById('kasse-schuldner-liste');
@@ -11617,47 +11904,86 @@ function starteNeueSaison() {
 async function saisionAbschliessen() {
   const s = state.aktiveSaison;
   if (!s) return;
-  if (!confirm(`Saison "${s.name}" abschließen?\n\nAlle aktuellen Strafen und Kegel-Sessions werden dieser Saison zugeordnet und archiviert. Danach starten die Statistiken bei 0.`)) return;
-
-  // Aktuelle Daten mit saisonId stempeln
   const saisonId = s.id;
-  const batch1 = db.batch();
-  const batch2 = db.batch();
 
-  const [strafen, sessions] = await Promise.all([
-    db.collection('strafen').where('saisonId', '==', null).get().catch(() => db.collection('strafen').get()),
-    db.collection('kegelsessions').where('saisonId', '==', null).get().catch(() => db.collection('kegelsessions').get())
+  // Alles laden, was noch keiner Saison zugeordnet ist
+  const [strafenSnap, sessionsSnap] = await Promise.all([
+    db.collection('strafen').get(),
+    db.collection('kegelsessions').get()
   ]);
+  const strafenOhneId  = strafenSnap.docs.filter(d => !d.data().saisonId);
+  const sessOhneId     = sessionsSnap.docs.filter(d => !d.data().saisonId);
 
-  // Filter: nur Dokumente ohne saisonId
-  const ohneId = strafen.docs.filter(d => !d.data().saisonId);
-  const sessOhneId = sessions.docs.filter(d => !d.data().saisonId);
+  // Unbezahlte Strafen wandern in die neue Saison — Schulden sollen nicht
+  // mit dem Saisonwechsel unsichtbar werden. Bezahlte werden archiviert.
+  const offeneDocs  = strafenOhneId.filter(d => !d.data().bezahlt);
+  const bezahltDocs = strafenOhneId.filter(d => d.data().bezahlt);
 
-  ohneId.slice(0, 500).forEach(d => batch1.update(d.ref, { saisonId }));
-  sessOhneId.slice(0, 500).forEach(d => batch2.update(d.ref, { saisonId }));
+  const offenSumme = offeneDocs.reduce((sum, d) => sum + Number(d.data().betrag || 0), 0);
+  const proPerson = {};
+  offeneDocs.forEach(d => {
+    const m = d.data().mitglied || '—';
+    proPerson[m] = (proPerson[m] || 0) + Number(d.data().betrag || 0);
+  });
+  const personenListe = Object.entries(proPerson)
+    .sort((a, b) => b[1] - a[1])
+    .map(([n, v]) => `  · ${n}: ${formatEur(v)}`)
+    .join('\n');
 
-  // Saison-Archiveintrag
+  let frage = `Saison "${s.name}" abschließen?\n\n`;
+  frage += `Wird archiviert:\n`;
+  frage += `  · ${bezahltDocs.length} bezahlte Strafen\n`;
+  frage += `  · ${sessOhneId.length} Kegelabende\n\n`;
+  if (offeneDocs.length) {
+    frage += `Wird in die neue Saison MITGENOMMEN:\n`;
+    frage += `  · ${offeneDocs.length} offene Strafen über ${formatEur(offenSumme)}\n\n`;
+    frage += personenListe + `\n\n`;
+    frage += `Diese Beträge bleiben also weiter im Saldo sichtbar.`;
+  } else {
+    frage += `Es ist nichts offen — alles bezahlt. 👍`;
+  }
+  if (!confirm(frage)) return;
+
+  const neuerName = prompt('Name für die neue Saison:', `Saison ${new Date().getFullYear() + 1}`);
+  if (neuerName === null) return;   // Abbruch
+  const neueId = uid();
+
+  // Archiveintrag der alten Saison
   await db.collection('saisons').doc(saisonId).set({
     ...s,
     endDatum: today(),
-    anzahlStrafen: ohneId.length,
+    anzahlStrafen: bezahltDocs.length,
     anzahlSessions: sessOhneId.length,
+    offeneUebernommen: offeneDocs.length,
+    offeneUebernommenBetrag: Math.round(offenSumme * 100) / 100,
+    uebernommenNachSaisonId: offeneDocs.length ? neueId : null,
     archiviertAm: Date.now()
   });
 
-  await Promise.all([batch1.commit(), batch2.commit()]);
+  // In Häppchen schreiben — Firestore erlaubt 500 Operationen pro Batch
+  async function stempeln(docs, id) {
+    for (let i = 0; i < docs.length; i += 400) {
+      const b = db.batch();
+      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { saisonId: id }));
+      await b.commit();
+    }
+  }
+  await stempeln(bezahltDocs, saisonId);   // bezahlt -> alte Saison
+  await stempeln(sessOhneId,  saisonId);   // Abende  -> alte Saison
+  await stempeln(offeneDocs,  neueId);     // offen   -> neue Saison
 
-  // Neue leere Saison starten
-  const neuerName = prompt('Name für die neue Saison:', `Saison ${new Date().getFullYear() + 1}`);
-  const neueId = uid();
   await db.collection('config').doc('saison').set({
     id: neueId,
     name: neuerName || `Saison ${new Date().getFullYear() + 1}`,
     startDatum: today(),
-    aktiv: true
+    aktiv: true,
+    uebernommenAusSaisonId: saisonId,
+    uebernommeneStrafen: offeneDocs.length
   });
 
-  alert('✅ Saison abgeschlossen und archiviert! Neue Saison läuft.');
+  alert(offeneDocs.length
+    ? `✅ Saison archiviert. ${offeneDocs.length} offene Strafen über ${formatEur(offenSumme)} wurden in die neue Saison übernommen.`
+    : '✅ Saison abgeschlossen und archiviert. Neue Saison läuft.');
 }
 
 async function zeigeArchivListe() {

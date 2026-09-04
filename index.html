@@ -12038,18 +12038,25 @@ async function saisionAbschliessen() {
   if (!s) return;
   const saisonId = s.id;
 
-  // Alles laden, was noch keiner Saison zugeordnet ist
   const [strafenSnap, sessionsSnap] = await Promise.all([
     db.collection('strafen').get(),
     db.collection('kegelsessions').get()
   ]);
-  const strafenOhneId  = strafenSnap.docs.filter(d => !d.data().saisonId);
-  const sessOhneId     = sessionsSnap.docs.filter(d => !d.data().saisonId);
+
+  // Zur laufenden Saison gehört alles mit ihrer ID — plus Altdaten ohne ID,
+  // die aus der Zeit vor dem Saisonsystem stammen. Nur nach fehlender ID zu
+  // suchen wäre falsch: saisonMeta() stempelt jedes neue Dokument sofort.
+  const gehoertZurSaison = d => {
+    const sid = d.data().saisonId;
+    return !sid || sid === saisonId;
+  };
+  const strafenDerSaison = strafenSnap.docs.filter(gehoertZurSaison);
+  const sessOhneId       = sessionsSnap.docs.filter(gehoertZurSaison);
 
   // Unbezahlte Strafen wandern in die neue Saison — Schulden sollen nicht
   // mit dem Saisonwechsel unsichtbar werden. Bezahlte werden archiviert.
-  const offeneDocs  = strafenOhneId.filter(d => !d.data().bezahlt);
-  const bezahltDocs = strafenOhneId.filter(d => d.data().bezahlt);
+  const offeneDocs  = strafenDerSaison.filter(d => !d.data().bezahlt);
+  const bezahltDocs = strafenDerSaison.filter(d => d.data().bezahlt);
 
   const offenSumme = offeneDocs.reduce((sum, d) => sum + Number(d.data().betrag || 0), 0);
   const proPerson = {};
@@ -12094,11 +12101,14 @@ async function saisionAbschliessen() {
 
   // In Häppchen schreiben — Firestore erlaubt 500 Operationen pro Batch
   async function stempeln(docs, id) {
-    for (let i = 0; i < docs.length; i += 400) {
+    // Nur die anfassen, deren Saison sich tatsächlich ändert
+    const zuAendern = docs.filter(d => (d.data().saisonId || null) !== id);
+    for (let i = 0; i < zuAendern.length; i += 400) {
       const b = db.batch();
-      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { saisonId: id }));
+      zuAendern.slice(i, i + 400).forEach(d => b.update(d.ref, { saisonId: id }));
       await b.commit();
     }
+    return zuAendern.length;
   }
   await stempeln(bezahltDocs, saisonId);   // bezahlt -> alte Saison
   await stempeln(sessOhneId,  saisonId);   // Abende  -> alte Saison

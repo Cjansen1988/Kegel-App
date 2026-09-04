@@ -800,6 +800,8 @@
         <button class="btn btn-sm btn-ghost"  id="sf-3m"    onclick="setStatsFilter('zeitraum','3m')">3 Monate</button>
         <button class="btn btn-sm btn-ghost"  id="sf-1m"    onclick="setStatsFilter('zeitraum','1m')">1 Monat</button>
       </div>
+      <select id="sf-saison" onchange="setStatsFilter('saison',this.value)"
+        style="padding:5px 10px;border-radius:8px;border:1px solid var(--border);font-size:.82rem"></select>
       <select id="sf-person" onchange="setStatsFilter('person',this.value)"
         style="padding:5px 10px;border-radius:8px;border:1px solid var(--border);font-size:.82rem;margin-left:auto">
         <option value="all">👥 Alle Personen</option>
@@ -5184,7 +5186,7 @@ function renderStrafen() {
 function renderFunFacts() {
   const container = document.getElementById('quiz-funfacts-container') || document.getElementById('fun-facts-container');
   if (!container) return;
-  const sessions = state.kegelsessions || [];
+  const sessions = statsSessions();
   const alle = sessions.flatMap(s => s.eintraege || []);
   if (!alle.length || sessions.length < 2) {
     container.innerHTML = '<div class="empty-state">Noch zu wenig Daten — nach ein paar Sessions erscheinen hier Fun Facts.</div>';
@@ -5230,7 +5232,7 @@ function renderFunFacts() {
   });
 
   const strafRanking = state.mitglieder.map(m=>({
-    name:m.name, val: state.strafen.filter(s=>s.mitglied===m.name).reduce((s,x)=>s+Number(x.betrag),0)
+    name:m.name, val: statsStrafenSaison().filter(s=>s.mitglied===m.name).reduce((s,x)=>s+Number(x.betrag),0)
   })).sort((a,b)=>b.val-a.val);
 
   const facts = [];
@@ -5337,7 +5339,7 @@ function setKgStatsMode(mode) {
 function renderKgStatistiken() {
   const container = document.getElementById('kg-stats-container');
   if (!container) return;
-  const sessions = state.kegelsessions || [];
+  const sessions = statsSessions();
   if (!sessions.length) { container.innerHTML = '<div class="empty-state">Noch keine Kegel-Sessions abgeschlossen.</div>'; return; }
 
   // Alle Einträge flach sammeln
@@ -5705,10 +5707,42 @@ function renderSpielVerluste() {
 }
 
 // ── Stats Filter ─────────────────────────────────────────────
-let statsFilter = { zeitraum: 'all', person: 'all' };
+let statsFilter = { zeitraum: 'all', person: 'all', saison: 'aktiv' };
+
+// Datenquellen der Statistik-Seite. Bewusst aus den UNGEFILTERTEN Listen,
+// damit auch archivierte Saisons auswertbar sind — state.kegelsessions und
+// state.strafen enthalten immer nur die laufende Saison.
+function statsSaisonId() {
+  if (statsFilter.saison === 'alle')  return 'ALLE';
+  if (statsFilter.saison === 'aktiv') return state.aktiveSaison ? state.aktiveSaison.id : null;
+  return statsFilter.saison;
+}
+function statsSessions() {
+  const alle = state.alleKegelsessions || state.kegelsessions || [];
+  const sid = statsSaisonId();
+  if (sid === 'ALLE') return alle;
+  return sid ? alle.filter(s => s.saisonId === sid) : alle.filter(s => !s.saisonId);
+}
+function statsStrafenSaison() {
+  const alle = state._alleStrafen || state.strafen || [];
+  const sid = statsSaisonId();
+  if (sid === 'ALLE') return alle;
+  return sid ? alle.filter(s => s.saisonId === sid) : alle.filter(s => !s.saisonId);
+}
+// Beschriftung der gewählten Saison
+function statsSaisonLabel() {
+  if (statsFilter.saison === 'alle')  return 'Alle Saisons';
+  if (statsFilter.saison === 'aktiv') return (state.aktiveSaison && state.aktiveSaison.name) || 'Aktuelle Saison';
+  const a = (state.archivSaisons || []).find(x => x.id === statsFilter.saison);
+  return a ? a.name : 'Saison';
+}
 
 function setStatsFilter(key, val) {
   statsFilter[key] = val;
+  if (key === 'saison') {
+    // Karten und Fotos hängen an der Saison — Zwischenspeicher verwerfen
+    mitgliedskartenRendered = false;
+  }
   if (key === 'zeitraum') {
     ['all','year','3m','1m'].forEach(k => {
       const btn = document.getElementById('sf-' + k);
@@ -5736,9 +5770,9 @@ function statsFilterDatum() {
 function strafBilanzProMitglied() {
   const von = statsFilterDatum();
   const imZeitraum = d => !von || (d || '') >= von;
-  const sessions = (state.kegelsessions || [])
+  const sessions = (statsSessions())
     .filter(s => imZeitraum(getSessionKegeldatum(s) || s.datum));
-  const alleStrafen = (state.strafen || []).filter(s => imZeitraum(s.datum));
+  const alleStrafen = (statsStrafenSaison()).filter(s => imZeitraum(s.datum));
 
   // Sammelstrafen: pro Abend ein Dokument je Person, enthält die eigenen
   // Kegelbuch-Striche + Kegelbahn-Gebühr, bei Abwesenheit den Durchschnitt.
@@ -5860,6 +5894,19 @@ function svgMonatstrend(strafen) {
 }
 
 function renderStatistiken() {
+  // Saison-Auswahl aufbauen: laufende Saison, archivierte, plus "alle"
+  const sSel = document.getElementById('sf-saison');
+  if (sSel) {
+    const archiv = (state.archivSaisons || [])
+      .slice()
+      .sort((a, b) => (b.archiviertAm || 0) - (a.archiviertAm || 0));
+    sSel.innerHTML =
+      `<option value="aktiv">📅 ${(state.aktiveSaison && state.aktiveSaison.name) || 'Aktuelle Saison'}</option>` +
+      archiv.map(a => `<option value="${a.id}">🗄 ${a.name}</option>`).join('') +
+      `<option value="alle">🏛 Alle Saisons</option>`;
+    sSel.value = statsFilter.saison;
+  }
+
   // Filter-Dropdown aktualisieren
   const sel = document.getElementById('sf-person');
   if (sel) {
@@ -5870,9 +5917,9 @@ function renderStatistiken() {
   }
 
   const strafen = statsFilteredStrafen();
-  const alleStrafen = state.strafen;
+  const alleStrafen = statsStrafenSaison();
   const pastTermine = state.termine.filter(t => t.datum < today() && !t.ausfall);
-  const sessions = state.kegelsessions || [];
+  const sessions = statsSessions();
 
   // KPIs
   // Gebuchte Beträge (Kasse) — nur aus Straf-Dokumenten
@@ -5942,7 +5989,7 @@ function renderStatistiken() {
       </div>`;
     }).join('') +
     `<div style="font-size:.7rem;color:var(--text-muted);margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border);line-height:1.55">
-       Gesamtbetrag der Saison über alle ${(state.kegelsessions||[]).length} Abende:
+       Gesamtbetrag der Saison über alle ${(statsSessions()).length} Abende:
        ${sumSammel > 0 ? `<strong>${formatEur(sumSammel)}</strong> Sammelstrafen (inkl. Kegelbahn und Abwesenheit)` : ''}${sumSammel > 0 && sumStriche > 0 ? ' · ' : ''}${sumStriche > 0 ? `<strong>${formatEur(sumStriche)}</strong> Striche aus Abenden ohne Sammelbuchung` : ''}${sumExtra > 0 ? ` · <strong>${formatEur(sumExtra)}</strong> Sonstige` : ''}.
        Die Klammer zeigt die Anzahl Einzelstriche im Kegelbuch.
      </div></div>`;
@@ -5997,9 +6044,9 @@ function spielverlusteZuruecksetzen() {
 function renderMitgliedStats() {
   const name = document.getElementById('stats-mitglied-sel')?.value;
   if (!name) return;
-  const mStrafen = state.strafen.filter(s=>s.mitglied===name).slice().sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
+  const mStrafen = statsStrafenSaison().filter(s=>s.mitglied===name).slice().sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
   const pastTermine = state.termine.filter(t=>t.datum<today()&&!t.ausfall);
-  const alleAbendeM = (state.kegelsessions||[]).map(s => ({ anwesend: s.angemeldet||[] }));
+  const alleAbendeM = (statsSessions()).map(s => ({ anwesend: s.angemeldet||[] }));
   const anwesend = alleAbendeM.filter(a => a.anwesend.includes(name)).length;
   const offen = mStrafen.filter(s=>!s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0);
   const bezahlt = mStrafen.filter(s=>s.bezahlt).reduce((sum,s)=>sum+Number(s.betrag),0);
@@ -6012,7 +6059,7 @@ function renderMitgliedStats() {
   const topSpiel = Object.entries(spielCounts).sort((a,b)=>b[1]-a[1])[0];
 
   // Kegelbuch-Sessions dieser Person
-  const kSessions = (state.kegelsessions||[]).filter(s=>(s.angemeldet||[]).includes(name));
+  const kSessions = (statsSessions()).filter(s=>(s.angemeldet||[]).includes(name));
   const kgesamtBetrag = kSessions.reduce((sum,s) => {
     const eintraege = (s.eintraege||[]).filter(e=>e.mitglied===name);
     return sum + eintraege.reduce((a,e)=>a+Number(e.betrag),0);
@@ -12766,8 +12813,8 @@ function renderMitgliedskarten(force) {
   }
   container.innerHTML = '';
 
-  const sessions = state.kegelsessions || [];
-  const saisonLabel = (state.aktiveSaison?.name || 'Aktuelle Saison').toUpperCase();
+  const sessions = statsSessions();
+  const saisonLabel = statsSaisonLabel().toUpperCase();
   const nAbende = sessions.length;
 
   // ── Statistiken pro Mitglied ────────────────────────────────────
@@ -13271,7 +13318,7 @@ function renderSchnapsStats() {
   const card = document.getElementById('schnaps-stats-card');
   if (!el || !card) return;
 
-  const sessions = (state.kegelsessions || []).filter(s => (s.flaschen || []).length);
+  const sessions = (statsSessions()).filter(s => (s.flaschen || []).length);
   if (!sessions.length) { card.style.display = 'none'; el.innerHTML = ''; return; }
   card.style.display = 'block';
 
@@ -13480,7 +13527,7 @@ function renderFotoGalerie() {
   const empty = document.getElementById('foto-galerie-empty');
   if (!grid) return;
 
-  const mitFoto = state.kegelsessions
+  const mitFoto = statsSessions()
     .filter(s => s.fotoUrl)
     .sort((a, b) => {
       const da = a.kegeldatum || a.datum || '';

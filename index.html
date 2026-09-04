@@ -872,6 +872,18 @@
     <div id="foto-galerie-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px"></div>
   </div>
 
+  <!-- Schnaps-Statistik -->
+  <div class="card" style="display:none" id="schnaps-stats-card">
+    <div class="card-title">🥃 Schnaps der Saison</div>
+    <div id="schnaps-stats"></div>
+  </div>
+
+  <!-- Hall of Fame -->
+  <div class="card">
+    <div class="card-title">🏛 Hall of Fame <span style="font-size:.7rem;font-weight:400;color:var(--text-muted)">alle Saisons</span></div>
+    <div id="hall-of-fame"></div>
+  </div>
+
 </div>
 
 <!-- KASSENBUCH -->
@@ -1060,6 +1072,10 @@
       <hr class="divider">
       <div id="saison-settings"></div>
       <hr class="divider">
+      <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">💾 Datensicherung</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportiereAlleDaten()">💾 Alle Daten als JSON exportieren</button>
+      <div style="font-size:.72rem;color:var(--text-muted);margin-top:.35rem;line-height:1.45">Lädt Mitglieder, Kegelabende, Strafen, Kasse und Termine als Datei. Am besten vor jedem Saisonabschluss.</div>
+      <hr class="divider">
       <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">🧹 Daten bereinigen</div>
       <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--danger)" onclick="duplikateStrafen()">🗑 Doppelte Kegelbuch-Strafen entfernen</button>
     </div>
@@ -1182,6 +1198,119 @@ function resetConfig() {
   location.reload();
 }
 
+// ========== VERBINDUNGSANZEIGE ==========
+// Die Offline-Persistenz ist aktiv, aber ohne Anzeige weiß niemand, ob gerade
+// wirklich gespeichert wurde. Am Kegelabend im Keller ist das die Frage, die
+// zählt. Deshalb ein Hinweis, sobald die App aus dem Cache arbeitet.
+let _offlineBadge = null;
+let _warOffline = false;
+
+function zeigeOfflineBadge(an, ausCache) {
+  if (an) {
+    if (!_offlineBadge) {
+      _offlineBadge = document.createElement('div');
+      _offlineBadge.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#78350f;color:#fef3c7;'
+        + 'padding:.55rem .9rem;font-size:.8rem;font-weight:600;z-index:8000;text-align:center;line-height:1.4;'
+        + 'box-shadow:0 -2px 8px rgba(0,0,0,.25)';
+      document.body.appendChild(_offlineBadge);
+    }
+    _offlineBadge.innerHTML = '📴 <strong>Offline</strong> — Eintragungen werden gespeichert und übertragen, sobald wieder Netz da ist.';
+    _warOffline = true;
+  } else {
+    if (_offlineBadge) { _offlineBadge.remove(); _offlineBadge = null; }
+    if (_warOffline) {
+      _warOffline = false;
+      showNotification('✅ Wieder online — alles synchronisiert.', 'success');
+    }
+  }
+}
+
+function initVerbindungsanzeige() {
+  const pruefe = () => zeigeOfflineBadge(!navigator.onLine);
+  window.addEventListener('online', pruefe);
+  window.addEventListener('offline', pruefe);
+  pruefe();
+
+  // Zusätzlich Firestore selbst fragen: fromCache heißt, die Daten kommen aus
+  // dem lokalen Cache und nicht vom Server. Erkennt auch den Fall, dass WLAN
+  // verbunden ist aber kein Internet dahinter hängt.
+  try {
+    db.collection('config').doc('saison').onSnapshot({ includeMetadataChanges: true }, snap => {
+      const ausCache = snap.metadata.fromCache;
+      if (ausCache && navigator.onLine) {
+        zeigeOfflineBadge(true, true);
+      } else if (!ausCache) {
+        zeigeOfflineBadge(false);
+      }
+    }, () => {});
+  } catch (e) { /* Metadaten nicht verfügbar, dann reicht navigator.onLine */ }
+}
+// ========== END VERBINDUNGSANZEIGE ==========
+
+// ========== DATENSICHERUNG ==========
+// Zieht alle Sammlungen als JSON. Ohne das gibt es keinen Weg zurück, wenn
+// jemand versehentlich löscht oder das Firebase-Projekt Ärger macht.
+const BACKUP_SAMMLUNGEN = ['mitglieder','termine','serien','strafen','strafkategorien',
+                           'kassenbuch','kegelsessions','tipps','saisons',
+                           'spielverluste','spielergebnisse','zahlungsanfragen',
+                           'settings'];
+const BACKUP_DOKUMENTE = [['config','saison'],['config','settings'],
+                          ['config','istBestand'],['live','session'],['quiz','aktiv']];
+
+async function exportiereAlleDaten() {
+  const btn = document.querySelector('[onclick="exportiereAlleDaten()"]');
+  const alterText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Wird geladen…'; }
+
+  try {
+    const daten = {
+      _info: {
+        erstellt: new Date().toISOString(),
+        clubName: state.clubName || 'Kegelclub',
+        aktiveSaison: state.aktiveSaison || null,
+        hinweis: 'Backup der Kegelclub-App. Sammlungen als Arrays, Dokumente als Objekte.'
+      }
+    };
+    let anzahl = 0;
+
+    for (const name of BACKUP_SAMMLUNGEN) {
+      try {
+        const snap = await db.collection(name).get();
+        daten[name] = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+        anzahl += snap.docs.length;
+      } catch (e) {
+        daten[name] = { _fehler: e.message };
+      }
+    }
+    for (const [coll, docId] of BACKUP_DOKUMENTE) {
+      try {
+        const snap = await db.collection(coll).doc(docId).get();
+        daten[coll + '/' + docId] = snap.exists ? snap.data() : null;
+      } catch (e) {
+        daten[coll + '/' + docId] = { _fehler: e.message };
+      }
+    }
+    daten._info.anzahlDokumente = anzahl;
+
+    const json = JSON.stringify(daten, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kegelclub-backup-' + today() + '.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+    const mb = (json.length / 1048576).toFixed(2);
+    showNotification(`💾 Backup erstellt: ${anzahl} Dokumente, ${mb} MB.`, 'success');
+  } catch (e) {
+    alert('Backup fehlgeschlagen: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = alterText; }
+  }
+}
+// ========== END DATENSICHERUNG ==========
+
 function initFirebase() {
   document.getElementById('loading-overlay').style.display = 'flex';
   try {
@@ -1198,6 +1327,7 @@ function initFirebase() {
       }
     });
     subscribeAll();
+    initVerbindungsanzeige();
   } catch(e) {
     document.getElementById('loading-overlay').style.display = 'none';
     alert('Firebase-Fehler: ' + e.message + '\n\nBitte Konfiguration prüfen.');
@@ -5839,6 +5969,8 @@ function renderStatistiken() {
   // Monatstrend
   document.getElementById('stats-trend-chart').innerHTML = svgMonatstrend(alleStrafen);
 
+  renderSchnapsStats();
+  renderHallOfFame();
   renderMitgliedStats();
   renderKgStatistiken();
   renderSpielVerluste();
@@ -13120,6 +13252,217 @@ function downloadMitgliedsKarte(canvas, name) {
   a.click();
 }
 // ========== END MITGLIEDSKARTEN ==========
+
+// ========== SCHNAPS-STATISTIK ==========
+// Rechnet aus den in den Session-Dokumenten gespeicherten Flaschen.
+// Nutzt dieselbe centgenaue Aufteilung wie der Aufteiler am Abend.
+function renderSchnapsStats() {
+  const el = document.getElementById('schnaps-stats');
+  const card = document.getElementById('schnaps-stats-card');
+  if (!el || !card) return;
+
+  const sessions = (state.kegelsessions || []).filter(s => (s.flaschen || []).length);
+  if (!sessions.length) { card.style.display = 'none'; el.innerHTML = ''; return; }
+  card.style.display = 'block';
+
+  let summeCent = 0, flaschenAnz = 0, teuerste = null;
+  const gezahlt = {};     // Cent, die jede Person getragen hat
+  const mitgetrunken = {}; // an wie vielen Flaschen jemand beteiligt war
+  const proAbend = [];
+
+  sessions.forEach(s => {
+    let abendCent = 0;
+    (s.flaschen || []).forEach(f => {
+      const trinker = f.trinker || [];
+      if (!trinker.length) return;
+      const cent = Math.round(Number(f.preis) * 100);
+      summeCent += cent; abendCent += cent; flaschenAnz++;
+      if (!teuerste || cent > teuerste.cent) {
+        teuerste = { cent, sorte: f.sorte, anzahl: trinker.length, abend: s.name };
+      }
+      const anteile = schnapsAnteile(cent, trinker);
+      Object.entries(anteile).forEach(([n, v]) => { gezahlt[n] = (gezahlt[n] || 0) + v; });
+      trinker.forEach(n => { mitgetrunken[n] = (mitgetrunken[n] || 0) + 1; });
+    });
+    if (abendCent > 0) proAbend.push({ name: s.name, cent: abendCent, flaschen: (s.flaschen||[]).length });
+  });
+
+  const rang = Object.entries(gezahlt).sort((a, b) => b[1] - a[1]);
+  const durstigster = Object.entries(mitgetrunken).sort((a, b) => b[1] - a[1])[0];
+  const teuersterAbend = [...proAbend].sort((a, b) => b.cent - a.cent)[0];
+  const schnittAbend = proAbend.length ? Math.round(summeCent / proAbend.length) : 0;
+
+  const box = (label, wert) => `
+    <div style="background:var(--bg-page);border-radius:8px;padding:.6rem;text-align:center">
+      <div style="font-size:.68rem;color:var(--text-muted)">${label}</div>
+      <div style="font-size:1.05rem;font-weight:800">${wert}</div>
+    </div>`;
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem;margin-bottom:.75rem">
+      ${box('Ausgegeben', eurVonCent(summeCent))}
+      ${box('Flaschen', flaschenAnz)}
+      ${box('Ø pro Abend', eurVonCent(schnittAbend))}
+      ${box('Abende mit Schnaps', proAbend.length)}
+    </div>
+
+    <div style="font-size:.8rem;font-weight:700;margin-bottom:.4rem">Wer hat wie viel gezahlt?</div>
+    ${rang.map(([n, v], i) => {
+      const anteil = summeCent ? Math.round(v / summeCent * 100) : 0;
+      const max = rang[0][1] || 1;
+      return `<div style="padding:.3rem 0;border-top:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;font-size:.85rem;align-items:baseline">
+          <span>${i+1}. ${n} <span style="font-size:.72rem;color:var(--text-muted)">${mitgetrunken[n] || 0}× dabei</span></span>
+          <span><strong>${eurVonCent(v)}</strong> <span style="font-size:.7rem;color:var(--text-muted)">${anteil}%</span></span>
+        </div>
+        <div style="height:4px;background:var(--border);border-radius:2px;margin-top:.2rem">
+          <div style="height:4px;width:${Math.round(v / max * 100)}%;background:${i===0?'var(--danger)':'var(--primary)'};border-radius:2px"></div>
+        </div>
+      </div>`;
+    }).join('')}
+
+    <div style="margin-top:.8rem;padding-top:.6rem;border-top:1px solid var(--border);font-size:.8rem;line-height:1.7;color:var(--text-muted)">
+      ${durstigster ? `🥃 Am häufigsten mitgetrunken: <strong style="color:var(--text)">${durstigster[0]}</strong> (${durstigster[1]} Flaschen)<br>` : ''}
+      ${teuerste ? `💸 Teuerste Flasche: <strong style="color:var(--text)">${teuerste.sorte}</strong> für ${eurVonCent(teuerste.cent)} auf ${teuerste.anzahl} — ${teuerste.abend}<br>` : ''}
+      ${teuersterAbend ? `📅 Durstigster Abend: <strong style="color:var(--text)">${teuersterAbend.name}</strong> mit ${eurVonCent(teuersterAbend.cent)} (${teuersterAbend.flaschen} Flaschen)` : ''}
+    </div>`;
+}
+// ========== END SCHNAPS-STATISTIK ==========
+
+// ========== HALL OF FAME ==========
+// Bewusst aus alleKegelsessions und _alleStrafen: die sind NICHT nach Saison
+// gefiltert. Rekorde sollen den Saisonwechsel überleben.
+function renderHallOfFame() {
+  const el = document.getElementById('hall-of-fame');
+  if (!el) return;
+  const sessions = state.alleKegelsessions || state.kegelsessions || [];
+  const strafen  = state._alleStrafen || state.strafen || [];
+  if (!sessions.length) { el.innerHTML = '<div class="empty-state">Noch keine Kegelabende.</div>'; return; }
+
+  const datumVon = s => getSessionKegeldatum(s) || s.datum || '';
+  const anwesendeIn = s => (s.angemeldet && s.angemeldet.length) ? s.angemeldet : (s.spieler || []);
+
+  // Höchster Einzelwert einer Person an einem Abend
+  function rekordKat(kat) {
+    let best = null;
+    sessions.forEach(s => {
+      const pro = {};
+      (s.eintraege || []).filter(e => e.kategorie === kat).forEach(e => {
+        pro[e.mitglied] = (pro[e.mitglied] || 0) + (e.anzahl || 1);
+      });
+      Object.entries(pro).forEach(([n, v]) => {
+        if (!best || v > best.wert) best = { name: n, wert: v, abend: s.name, datum: datumVon(s) };
+      });
+    });
+    return best;
+  }
+
+  // Längste Serie aufeinanderfolgender Abende, an denen jemand dabei war
+  function laengsteSerie() {
+    const chrono = [...sessions].sort((a,b) => (datumVon(a) || '').localeCompare(datumVon(b) || ''));
+    const namen = state.mitglieder.map(m => m.name);
+    let best = null;
+    namen.forEach(n => {
+      let lauf = 0, max = 0, bis = '';
+      chrono.forEach(s => {
+        const dabei = anwesendeIn(s).includes(n) || (s.eintraege || []).some(e => e.mitglied === n);
+        if (dabei) { lauf++; if (lauf > max) { max = lauf; bis = s.name; } }
+        else lauf = 0;
+      });
+      if (max > 0 && (!best || max > best.wert)) best = { name: n, wert: max, abend: bis };
+    });
+    return best;
+  }
+
+  // Teuerster Abend nach Kegelbuch-Strichen
+  let teuersterAbend = null;
+  sessions.forEach(s => {
+    const cent = (s.eintraege || [])
+      .filter(e => e.kategorie !== 'Alle 9 (geworfen)')
+      .reduce((sum, e) => sum + Math.round((Number(e.betrag) || 0) * 100), 0);
+    if (cent > 0 && (!teuersterAbend || cent > teuersterAbend.cent)) {
+      teuersterAbend = { cent, abend: s.name, datum: datumVon(s) };
+    }
+  });
+
+  // Höchste einzelne Strafe
+  const hoechsteStrafe = strafen.reduce((m, s) =>
+    (!m || Number(s.betrag) > Number(m.betrag)) ? s : m, null);
+
+  // Teuerste Schnapsflasche allzeit
+  let teuersteFlasche = null;
+  sessions.forEach(s => (s.flaschen || []).forEach(f => {
+    const cent = Math.round(Number(f.preis) * 100);
+    if (!teuersteFlasche || cent > teuersteFlasche.cent)
+      teuersteFlasche = { cent, sorte: f.sorte, abend: s.name };
+  }));
+
+  // Club-Gesamtzahlen
+  const alle = sessions.flatMap(s => s.eintraege || []);
+  const zaehl = kat => alle.filter(e => e.kategorie === kat).reduce((s,e) => s + (e.anzahl||1), 0);
+  const stricheGesamt = alle.filter(e => e.kategorie !== 'Alle 9 (geworfen)')
+                            .reduce((s,e) => s + (e.anzahl||1), 0);
+  const euroGesamt = alle.filter(e => e.kategorie !== 'Alle 9 (geworfen)')
+                         .reduce((s,e) => s + Math.round((Number(e.betrag)||0)*100), 0);
+
+  const rekorde = [
+    { icon:'🎳', titel:'Meiste Pumpen an einem Abend',        d: rekordKat('Pumpe'),        einheit:'Pumpen' },
+    { icon:'🔔', titel:'Meiste Klingeln an einem Abend',      d: rekordKat('Klingel'),      einheit:'Klingeln' },
+    { icon:'🚧', titel:'Meiste Behinderungen an einem Abend', d: rekordKat('Behinderung'),  einheit:'Behinderungen' },
+    { icon:'💀', titel:'Meiste verlorene Spiele an einem Abend', d: rekordKat('Verl. Spiel'), einheit:'Spiele' },
+    { icon:'🍺', titel:'Meiste Stinas an einem Abend',        d: rekordKat('Stina'),        einheit:'Stinas' },
+  ].filter(r => r.d);
+
+  const serie = laengsteSerie();
+
+  const zeile = (icon, titel, wert, detail) => `
+    <div style="display:flex;gap:.6rem;align-items:flex-start;padding:.55rem 0;border-top:1px solid var(--border)">
+      <span style="font-size:1.1rem;line-height:1.2">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.72rem;color:var(--text-muted)">${titel}</div>
+        <div style="font-size:.92rem;font-weight:700">${wert}</div>
+        ${detail ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">${detail}</div>` : ''}
+      </div>
+    </div>`;
+
+  const box = (label, wert) => `
+    <div style="background:var(--bg-page);border-radius:8px;padding:.6rem;text-align:center">
+      <div style="font-size:.68rem;color:var(--text-muted)">${label}</div>
+      <div style="font-size:1.05rem;font-weight:800">${wert}</div>
+    </div>`;
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem;margin-bottom:.5rem">
+      ${box('Kegelabende', sessions.length)}
+      ${box('Striche gesamt', stricheGesamt)}
+      ${box('Pumpen gesamt', zaehl('Pumpe'))}
+      ${box('Kegelbuch gesamt', eurVonCent(euroGesamt))}
+    </div>
+
+    ${rekorde.map(r => zeile(r.icon, r.titel,
+        `${r.d.name} — ${r.d.wert} ${r.einheit}`,
+        `${r.d.abend}${r.d.datum ? ' · ' + formatDate(r.d.datum) : ''}`)).join('')}
+
+    ${serie ? zeile('🔥', 'Längste Anwesenheitsserie',
+        `${serie.name} — ${serie.wert} Abende in Folge`, `bis ${serie.abend}`) : ''}
+
+    ${teuersterAbend ? zeile('💸', 'Teuerster Abend',
+        eurVonCent(teuersterAbend.cent),
+        `${teuersterAbend.abend}${teuersterAbend.datum ? ' · ' + formatDate(teuersterAbend.datum) : ''}`) : ''}
+
+    ${hoechsteStrafe ? zeile('⚡', 'Höchste einzelne Strafe',
+        `${hoechsteStrafe.mitglied} — ${formatEur(hoechsteStrafe.betrag)}`,
+        `${hoechsteStrafe.kategorie}${hoechsteStrafe.datum ? ' · ' + formatDate(hoechsteStrafe.datum) : ''}`) : ''}
+
+    ${teuersteFlasche ? zeile('🥃', 'Teuerste Flasche',
+        `${teuersteFlasche.sorte} — ${eurVonCent(teuersteFlasche.cent)}`,
+        teuersteFlasche.abend) : ''}
+
+    <div style="font-size:.7rem;color:var(--text-muted);margin-top:.6rem;padding-top:.4rem;border-top:1px solid var(--border)">
+      Zählt über alle Saisons, auch archivierte.
+    </div>`;
+}
+// ========== END HALL OF FAME ==========
 
 // ========== FOTO GALERIE ==========
 function renderFotoGalerie() {

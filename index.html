@@ -371,6 +371,7 @@
   .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,.8); display: flex; align-items: center; justify-content: center; z-index: 500; flex-direction: column; gap: 1rem; }
   .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes rbAuf { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:none } }
 </style>
 </head>
 <body>
@@ -620,7 +621,9 @@
           <input type="date" id="kg-kegeldatum">
         </div>
         <label style="font-size:.8rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:.5rem">Wer ist dabei?</label>
-        <div id="kg-spieler-auswahl" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem"></div>
+        <div id="kg-spieler-auswahl" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem"></div>
+        <div id="kg-gast-chips" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem"></div>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:.6rem" onclick="gastHinzufuegen(true)">👋 Gast hinzufügen</button>
         <button class="btn btn-ghost btn-full" onclick="startKegelSession(null)">🎳 Starten</button>
       </div>
     </details>
@@ -654,6 +657,10 @@
     </div>
     <!-- Spiele-Liste -->
     <div id="kg-spiele-liste" style="display:none;padding:.75rem 1rem"></div>
+    <!-- Gast nachtragen -->
+    <div id="kg-gast-leiste" style="padding:.5rem 1rem 0">
+      <button class="btn btn-ghost btn-sm" style="width:100%" onclick="gastHinzufuegen(false)">👋 Gast nachtragen</button>
+    </div>
     <!-- Getränkeaufteiler -->
     <div id="kg-schnaps-liste" style="display:none;padding:.75rem 1rem"></div>
     <!-- Gesamt-Leiste -->
@@ -874,6 +881,17 @@
     <div id="foto-galerie-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px"></div>
   </div>
 
+  <!-- Jahresrückblick -->
+  <div class="card" style="background:linear-gradient(135deg,#1e1b4b,#312e81);border:none">
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:150px">
+        <div style="font-size:1rem;font-weight:800;color:#fff">🎁 Wrapped</div>
+        <div style="font-size:.8rem;color:rgba(255,255,255,.7);margin-top:.2rem">Eure Saison in Zahlen — zum Durchblättern</div>
+      </div>
+      <button class="btn" style="background:#fff;color:#1e1b4b;font-weight:800" onclick="zeigeRueckblick()">▶ Abspielen</button>
+    </div>
+  </div>
+
   <!-- Schnaps-Statistik -->
   <div class="card" style="display:none" id="schnaps-stats-card">
     <div class="card-title">🥃 Schnaps der Saison</div>
@@ -1077,6 +1095,7 @@
       <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">💾 Datensicherung</div>
       <button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportiereAlleDaten()">💾 Alle Daten als JSON exportieren</button>
       <div style="font-size:.72rem;color:var(--text-muted);margin-top:.35rem;line-height:1.45">Lädt Mitglieder, Kegelabende, Strafen, Kasse und Termine als Datei. Am besten vor jedem Saisonabschluss.</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.5rem" onclick="waehleBackupDatei()">📂 Backup wiederherstellen</button>
       <hr class="divider">
       <div style="font-size:.8rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem">🧹 Daten bereinigen</div>
       <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--danger)" onclick="duplikateStrafen()">🗑 Doppelte Kegelbuch-Strafen entfernen</button>
@@ -1311,6 +1330,195 @@ async function exportiereAlleDaten() {
     if (btn) { btn.disabled = false; btn.textContent = alterText; }
   }
 }
+// ── BACKUP WIEDERHERSTELLEN ──────────────────────────────────────
+// Der gefährlichste Knopf der App. Deshalb: Datei prüfen, Vorschau mit
+// Vergleich zeigen, Modus bewusst wählen lassen, und beim Ersetzen eine
+// Tippbestätigung verlangen.
+let _backupDaten = null;
+
+function waehleBackupDatei() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'application/json,.json';
+  inp.onchange = () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onerror = () => alert('Datei konnte nicht gelesen werden.');
+    reader.onload = async () => {
+      let daten;
+      try { daten = JSON.parse(reader.result); }
+      catch (e) { alert('Das ist keine gültige JSON-Datei.'); return; }
+
+      // Plausibilitätsprüfung: sieht das nach unserem Backup aus?
+      const bekannt = BACKUP_SAMMLUNGEN.filter(k => Array.isArray(daten[k]));
+      if (!bekannt.length) {
+        alert('In der Datei ist keine bekannte Sammlung enthalten.\n\nIst das wirklich ein Backup dieser App?');
+        return;
+      }
+      _backupDaten = daten;
+      await zeigeBackupVorschau(daten, file.name);
+    };
+    reader.readAsText(file);
+  };
+  inp.click();
+}
+
+async function zeigeBackupVorschau(daten, dateiname) {
+  // Aktuellen Stand zum Vergleich holen
+  const jetzt = {};
+  await Promise.all(BACKUP_SAMMLUNGEN.map(async k => {
+    try { jetzt[k] = (await db.collection(k).get()).size; }
+    catch (e) { jetzt[k] = null; }
+  }));
+
+  const zeilen = BACKUP_SAMMLUNGEN.map(k => {
+    const inDatei = Array.isArray(daten[k]) ? daten[k].length : null;
+    const inDb = jetzt[k];
+    if (inDatei === null && !inDb) return null;
+    const diff = (inDatei || 0) - (inDb || 0);
+    const farbe = diff > 0 ? 'var(--success)' : diff < 0 ? 'var(--danger)' : 'var(--text-muted)';
+    return `<div style="display:flex;justify-content:space-between;gap:.5rem;font-size:.8rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+      <span>${k}</span>
+      <span style="white-space:nowrap">
+        <span style="color:var(--text-muted)">${inDb === null ? '?' : inDb}</span>
+        <span style="color:var(--text-muted)"> → </span>
+        <strong>${inDatei === null ? '—' : inDatei}</strong>
+        <span style="color:${farbe};font-size:.72rem"> ${diff > 0 ? '+' + diff : diff < 0 ? diff : '±0'}</span>
+      </span>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  const info = daten._info || {};
+  const gesamtDatei = BACKUP_SAMMLUNGEN.reduce((s,k) => s + (Array.isArray(daten[k]) ? daten[k].length : 0), 0);
+
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9200;display:flex;'
+    + 'align-items:flex-start;justify-content:center;padding:1rem;overflow:auto';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `
+    <div style="background:var(--bg-card);border-radius:14px;max-width:460px;width:100%;padding:1.2rem;margin:auto">
+      <div style="font-size:1.05rem;font-weight:800;margin-bottom:.2rem">📂 Backup wiederherstellen</div>
+      <div style="font-size:.76rem;color:var(--text-muted);line-height:1.5;margin-bottom:.8rem">
+        ${dateiname}<br>
+        ${info.erstellt ? 'Erstellt am ' + formatDate(String(info.erstellt).slice(0,10)) : 'Kein Erstelldatum in der Datei'}
+        ${info.clubName ? ' · ' + info.clubName : ''}
+        ${info.aktiveSaison && info.aktiveSaison.name ? ' · ' + info.aktiveSaison.name : ''}
+      </div>
+
+      <div style="font-size:.75rem;font-weight:700;color:var(--text-muted);margin-bottom:.3rem">
+        JETZT → IN DER DATEI
+      </div>
+      <div style="max-height:200px;overflow-y:auto;margin-bottom:.9rem">${zeilen}</div>
+
+      <div style="font-size:.8rem;font-weight:700;margin-bottom:.4rem">Was soll passieren?</div>
+      <button class="btn btn-ghost" style="width:100%;text-align:left;margin-bottom:.4rem;padding:.6rem .75rem"
+        onclick="starteWiederherstellung('ergaenzen', this)">
+        <div style="font-weight:700;font-size:.88rem">➕ Nur Fehlendes ergänzen</div>
+        <div style="font-size:.74rem;color:var(--text-muted);line-height:1.4;margin-top:.15rem;white-space:normal">
+          Vorhandene Einträge bleiben unangetastet. Sicher, aber Änderungen an bestehenden Daten werden nicht zurückgesetzt.
+        </div>
+      </button>
+      <button class="btn btn-ghost" style="width:100%;text-align:left;padding:.6rem .75rem;border-color:var(--danger)"
+        onclick="starteWiederherstellung('ersetzen', this)">
+        <div style="font-weight:700;font-size:.88rem;color:var(--danger)">⚠️ Sammlungen ersetzen</div>
+        <div style="font-size:.74rem;color:var(--text-muted);line-height:1.4;margin-top:.15rem;white-space:normal">
+          Stellt den Stand der Datei exakt her. Alles, was seit dem Backup dazukam, wird gelöscht.
+        </div>
+      </button>
+
+      <div style="font-size:.72rem;color:var(--text-muted);margin-top:.8rem;line-height:1.5;background:var(--bg-page);border-radius:8px;padding:.5rem .7rem">
+        💡 Tipp: Zieh vorher ein frisches Backup vom aktuellen Stand. Dann kommst du auch hierher zurück.
+      </div>
+      <div id="backup-fortschritt" style="font-size:.8rem;margin-top:.7rem"></div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.6rem"
+        onclick="this.closest('div[style*=fixed]').remove()">Abbrechen</button>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+async function starteWiederherstellung(modus, btn) {
+  const daten = _backupDaten;
+  if (!daten) return;
+
+  if (modus === 'ersetzen') {
+    const wort = prompt('Beim Ersetzen wird alles gelöscht, was nicht in der Datei steht.\n\n'
+      + 'Zum Bestätigen bitte ERSETZEN eintippen:');
+    if (wort !== 'ERSETZEN') { alert('Abgebrochen — es wurde nichts geändert.'); return; }
+  } else {
+    if (!confirm('Fehlende Einträge aus dem Backup ergänzen?\n\nVorhandene Daten bleiben unverändert.')) return;
+  }
+
+  const fortschritt = document.getElementById('backup-fortschritt');
+  const melde = t => { if (fortschritt) fortschritt.innerHTML = '⏳ ' + t; };
+  if (btn) btn.disabled = true;
+
+  let geschrieben = 0, geloescht = 0;
+  try {
+    for (const name of BACKUP_SAMMLUNGEN) {
+      const liste = daten[name];
+      if (!Array.isArray(liste)) continue;
+      melde('Sammlung „' + name + '" …');
+
+      const vorhanden = await db.collection(name).get();
+      const vorhandenIds = new Set(vorhanden.docs.map(d => d.id));
+      const dateiIds = new Set(liste.map(o => o._id).filter(Boolean));
+
+      // Ersetzen: alles löschen, was die Datei nicht kennt
+      if (modus === 'ersetzen') {
+        const weg = vorhanden.docs.filter(d => !dateiIds.has(d.id));
+        for (let i = 0; i < weg.length; i += 400) {
+          const b = db.batch();
+          weg.slice(i, i + 400).forEach(d => b.delete(d.ref));
+          await b.commit();
+          geloescht += Math.min(400, weg.length - i);
+        }
+      }
+
+      // Schreiben
+      const zuSchreiben = modus === 'ersetzen'
+        ? liste
+        : liste.filter(o => !o._id || !vorhandenIds.has(o._id));
+      for (let i = 0; i < zuSchreiben.length; i += 400) {
+        const b = db.batch();
+        zuSchreiben.slice(i, i + 400).forEach(o => {
+          const kopie = { ...o };
+          delete kopie._id;
+          const ref = o._id ? db.collection(name).doc(o._id) : db.collection(name).doc();
+          b.set(ref, kopie);
+        });
+        await b.commit();
+        geschrieben += Math.min(400, zuSchreiben.length - i);
+      }
+    }
+
+    // Einzeldokumente
+    for (const [coll, docId] of BACKUP_DOKUMENTE) {
+      const key = coll + '/' + docId;
+      const wert = daten[key];
+      if (!wert || wert._fehler) continue;
+      if (modus === 'ergaenzen') {
+        const vorh = await db.collection(coll).doc(docId).get();
+        if (vorh.exists) continue;
+      }
+      await db.collection(coll).doc(docId).set(wert);
+      geschrieben++;
+    }
+
+    if (fortschritt) fortschritt.innerHTML =
+      `<span style="color:var(--success)">✅ Fertig: ${geschrieben} Einträge geschrieben`
+      + (geloescht ? `, ${geloescht} gelöscht` : '') + '.</span>';
+    showNotification(`✅ Backup wiederhergestellt: ${geschrieben} Einträge.`, 'success');
+    setTimeout(() => location.reload(), 1800);
+  } catch (e) {
+    if (fortschritt) fortschritt.innerHTML = `<span style="color:var(--danger)">❌ ${e.message}</span>`;
+    alert('Wiederherstellung fehlgeschlagen: ' + e.message
+      + '\n\nEs kann sein, dass ein Teil schon geschrieben wurde.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ========== END DATENSICHERUNG ==========
 
 function initFirebase() {
@@ -2538,7 +2746,7 @@ let aktiverKgTab = 'kegel';
 
 function saveLiveSession() {
   if (!aktiveSession) return;
-  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], abendTeams: aktiveSession.abendTeams || null, terminId: aktiveSession.terminId || null, flaschen: aktiveSession.flaschen || [], updatedAt: Date.now() });
+  db.collection('live').doc('session').set({ aktiv: true, name: aktiveSession.name, counts: aktiveSession.counts, spieler: aktiveSession.spieler || [], angemeldet: aktiveSession.angemeldet || [], abendTeams: aktiveSession.abendTeams || null, terminId: aktiveSession.terminId || null, flaschen: aktiveSession.flaschen || [], gaeste: aktiveSession.gaeste || [], updatedAt: Date.now() });
 }
 function clearLiveSession() { db.collection('live').doc('session').set({ aktiv: false }); }
 
@@ -2557,7 +2765,8 @@ async function restoreLiveSession() {
       angemeldet: data.angemeldet || [],
       abendTeams: data.abendTeams || null,
       terminId: data.terminId || null,
-      flaschen: data.flaschen || []
+      flaschen: data.flaschen || [],
+      gaeste: data.gaeste || []
     };
     aktiverKgTab = 'kegel';
     document.getElementById('kegeln-start-screen').style.display = 'none';
@@ -2568,6 +2777,89 @@ async function restoreLiveSession() {
     showNotification(`🔄 Laufendes Kegeln "${aktiveSession.name}" wiederhergestellt.`, 'info');
   } catch(e) {}
 }
+
+// ========== GASTKEGLER ==========
+// Gäste leben nur im Kegelabend: sie tauchen in Matrix, Auswertung, Strafen und
+// Getränkeaufteiler auf, aber NICHT in Rangliste, Statistik, Sammelkarten oder
+// Abzeichen. Das ergibt sich automatisch, weil all das über state.mitglieder
+// iteriert — Gäste stehen bewusst in einer eigenen Liste.
+function kgGaeste() { return (aktiveSession && aktiveSession.gaeste) || []; }
+
+// Gast eines gespeicherten Abends. Wird von Statistik, Rekorden und Quiz
+// gebraucht, damit Gäste keine Rekorde halten oder Titel gewinnen.
+function istSessionGast(sess, name) {
+  return ((sess && sess.gaeste) || []).includes(name);
+}
+// Einträge eines Abends ohne die der Gäste
+function eintraegeOhneGaeste(sess) {
+  return (sess.eintraege || []).filter(e => !istSessionGast(sess, e.mitglied));
+}
+function kgIstGast(name) { return kgGaeste().includes(name); }
+
+// Teilnehmer des Abends als Objekte, Gäste markiert
+function kgTeilnehmer() {
+  return [...state.mitglieder, ...kgGaeste().map(n => ({ name: n, gast: true }))];
+}
+
+// Gäste für den Startbildschirm (noch keine Session aktiv)
+let _startGaeste = [];
+
+function gastHinzufuegen(imStart) {
+  const name = (prompt('Name des Gastes:') || '').trim();
+  if (!name) return;
+  const schonMitglied = state.mitglieder.some(m => m.name.toLowerCase() === name.toLowerCase());
+  if (schonMitglied) { alert(name + ' ist bereits Mitglied — einfach oben auswählen.'); return; }
+
+  if (imStart) {
+    if (_startGaeste.some(g => g.toLowerCase() === name.toLowerCase())) { alert('Gast steht schon auf der Liste.'); return; }
+    _startGaeste.push(name);
+    renderKgGastChips();
+    return;
+  }
+  // Mitten in der Session
+  if (!aktiveSession) return;
+  if (kgIstGast(name)) { alert('Gast ist schon dabei.'); return; }
+  aktiveSession.gaeste = [...kgGaeste(), name];
+  aktiveSession.spieler = [...(aktiveSession.spieler || []), name];
+  aktiveSession.angemeldet = [...(aktiveSession.angemeldet || []), name];
+  aktiveSession.counts[name] = {};
+  saveLiveSession();
+  renderKgMatrix();
+  showNotification('👋 ' + name + ' ist als Gast dabei.', 'success');
+}
+
+function gastEntfernen(name) {
+  if (aktiveSession) {
+    const total = kgSpielerTotal(name);
+    if (total > 0 && !confirm(name + ' hat schon Einträge über ' + formatEur(total) + '.\n\nWirklich entfernen?')) return;
+    aktiveSession.gaeste = kgGaeste().filter(g => g !== name);
+    aktiveSession.spieler = (aktiveSession.spieler || []).filter(g => g !== name);
+    aktiveSession.angemeldet = (aktiveSession.angemeldet || []).filter(g => g !== name);
+    delete aktiveSession.counts[name];
+    // Auch aus den Schnaps-Flaschen werfen
+    (aktiveSession.flaschen || []).forEach(f => {
+      f.trinker = (f.trinker || []).filter(t => t !== name);
+    });
+    saveLiveSession();
+    renderKgMatrix();
+  } else {
+    _startGaeste = _startGaeste.filter(g => g !== name);
+    renderKgGastChips();
+  }
+}
+
+function renderKgGastChips() {
+  const el = document.getElementById('kg-gast-chips');
+  if (!el) return;
+  el.innerHTML = _startGaeste.length
+    ? _startGaeste.map(g => `<span style="display:inline-flex;align-items:center;gap:.3rem;background:#f0f9ff;
+        border:1px solid #7dd3fc;color:#0369a1;border-radius:99px;padding:3px 6px 3px 10px;font-size:.82rem;font-weight:600">
+        👋 ${g}
+        <button onclick="gastEntfernen('${g.replace(/'/g, "\\'")}')" style="background:none;border:none;color:#0369a1;cursor:pointer;font-size:.9rem;padding:0 2px">✕</button>
+      </span>`).join('')
+    : '';
+}
+// ========== END GASTKEGLER ==========
 
 function renderKgSpielerAuswahl() {
   const container = document.getElementById('kg-spieler-auswahl');
@@ -2672,9 +2964,17 @@ function startKegelSession(terminId) {
     document.getElementById('kg-kegeldatum').value = '';
   }
 
+  // Gäste vom Startbildschirm übernehmen. Bei Terminstart gibt es keine.
+  const gaeste = terminId ? [] : _startGaeste.slice();
   const counts = {};
   spieler.forEach(m => { counts[m.name] = {}; });
-  aktiveSession = { id: uid(), name, counts, spieler: spieler.map(m => m.name), angemeldet, kegeldatum, terminId: terminId || null };
+  gaeste.forEach(g => { counts[g] = {}; });
+  aktiveSession = { id: uid(), name, counts,
+    spieler: [...spieler.map(m => m.name), ...gaeste],
+    angemeldet: [...angemeldet, ...gaeste],
+    gaeste, kegeldatum, terminId: terminId || null };
+  _startGaeste = [];
+  renderKgGastChips();
   aktiverKgTab = 'kegel';
   document.getElementById('kegeln-start-screen').style.display = 'none';
   document.getElementById('kegeln-aktiv-screen').style.display = 'block';
@@ -2693,6 +2993,8 @@ function switchKgTab(tabId, btn) {
   document.getElementById('kg-matrix-wrap').style.display   = (isSpiele || isSchnaps) ? 'none' : 'block';
   document.getElementById('kg-spiele-liste').style.display  = isSpiele  ? 'block' : 'none';
   document.getElementById('kg-schnaps-liste').style.display = isSchnaps ? 'block' : 'none';
+  const gastLeiste = document.getElementById('kg-gast-leiste');
+  if (gastLeiste) gastLeiste.style.display = (isSpiele || isSchnaps) ? 'none' : 'block';
   if (isSpiele) renderKgSpieleTab();
   else if (isSchnaps) renderKgSchnapsTab();
   else renderKgMatrix();
@@ -2748,7 +3050,7 @@ function renderKgSchnapsTab() {
   const { perPerson, summe } = schnapsBilanz();
   const spieler = (aktiveSession.spieler && aktiveSession.spieler.length)
     ? aktiveSession.spieler
-    : (aktiveSession.angemeldet || state.mitglieder.map(m => m.name));
+    : (aktiveSession.angemeldet || state.mitglieder.map(m => m.name));   // enthält Gäste
   const rang = Object.entries(perPerson).sort((a,b) => b[1] - a[1]);
 
   container.innerHTML = `
@@ -2975,7 +3277,10 @@ function renderKgMatrix() {
   const strafen = gruppe.strafen;
   // Reihenfolge aus aktiveSession.spieler beibehalten (angemeldet zuerst)
   const spielerRaw = aktiveSession.spieler || state.mitglieder.map(m=>m.name);
-  const spieler = spielerRaw.map(name => state.mitglieder.find(m => m.name === name)).filter(Boolean);
+  const spieler = spielerRaw
+    .map(name => state.mitglieder.find(m => m.name === name)
+                 || (kgIstGast(name) ? { name, gast: true } : null))
+    .filter(Boolean);
   const gesamtTotal = spieler.reduce((s,m) => s + kgSpielerTotal(m.name), 0);
 
   const hatAlle9 = strafen.some(s => s.invertiert);
@@ -3007,7 +3312,7 @@ function renderKgMatrix() {
     const istPumpenkönig = maxPumpen > 0 && (aktiveSession.counts[m.name]?.['Pumpe'] || 0) === maxPumpen;
     tbody += `<tr style="${rowStyle}">
       <td class="name-col">
-        ${istPumpenkönig ? '<span title="Pumpenkönig 👑" style="margin-right:3px">👑</span>' : ''}${m.name}
+        ${istPumpenkönig ? '<span title="Pumpenkönig 👑" style="margin-right:3px">👑</span>' : ''}${m.name}${m.gast ? '<span title="Gast — zählt nicht in Statistik und Sammelkarten" style="margin-left:4px;font-size:.68rem;background:#e0f2fe;color:#0369a1;border-radius:99px;padding:1px 5px;font-weight:700">Gast</span>' : ''}
       </td>`;
     strafen.forEach(s => {
       const n = counts[s.name] || 0;
@@ -3182,9 +3487,11 @@ function setupLongPress() {
 function kgBerechneAuswertung() {
   // Aktive = angemeldet, Abwesende = alle anderen Mitglieder
   const angemeldet = aktiveSession.angemeldet || [];
+  const teilnehmer = kgTeilnehmer();
   const aktive = angemeldet.length > 0
-    ? state.mitglieder.filter(m => angemeldet.includes(m.name))
-    : state.mitglieder.filter(m => (aktiveSession.counts[m.name] && kgSpielerTotal(m.name) > 0));
+    ? teilnehmer.filter(m => angemeldet.includes(m.name))
+    : teilnehmer.filter(m => (aktiveSession.counts[m.name] && kgSpielerTotal(m.name) > 0));
+  // Gäste können nicht abwesend sein — nur Mitglieder zahlen den Durchschnitt
   const abwesende = state.mitglieder.filter(m => !aktive.find(a => a.name === m.name));
 
   // Kegelbuch-Strafen der Aktiven
@@ -3323,6 +3630,7 @@ function bestaetigeKegelSession() {
     angemeldet: aktiveSession.angemeldet || [],
     spieler: aktiveSession.spieler || [],
     flaschen: aktiveSession.flaschen || [],
+    gaeste: aktiveSession.gaeste || [],
     gesamtEinnahmen,
     mitgliederAnzahl: state.mitglieder.length,
     alle9Wuerfe,
@@ -9933,7 +10241,7 @@ function generiereQuizFragen(anzahl = 60) {
     let best = 0;
     sessions.forEach(sess => {
       const pro = {};
-      (sess.eintraege||[]).filter(e=>e.kategorie===kat).forEach(e => {
+      eintraegeOhneGaeste(sess).filter(e=>e.kategorie===kat).forEach(e => {
         pro[e.mitglied] = (pro[e.mitglied]||0) + (e.anzahl||1);
       });
       Object.values(pro).forEach(v => { if (v > best) best = v; });
@@ -12838,7 +13146,8 @@ function renderMitgliedskarten(force) {
       if (!st) return;
       const feld = KAT_FELD[e.kategorie];
       if (feld) st[feld] += (e.anzahl || 1);
-      if (e.kategorie === 'Pumpe') pumpenHier[e.mitglied] = (pumpenHier[e.mitglied]||0) + (e.anzahl||1);
+      if (e.kategorie === 'Pumpe' && !istSessionGast(s, e.mitglied))
+        pumpenHier[e.mitglied] = (pumpenHier[e.mitglied]||0) + (e.anzahl||1);
     });
     // Neuner auch aus dem separaten Feld, falls vorhanden
     Object.entries(s.alle9Wuerfe || {}).forEach(([name, n]) => {
@@ -12917,6 +13226,82 @@ function renderMitgliedskarten(force) {
   let rr_ = 0;
   rangListe.forEach((r, i) => { if (i > 0 && r.v !== rangListe[i-1].v) rr_ = i; rangVon[r.name] = rr_ + 1; });
 
+  // ── ABZEICHEN ───────────────────────────────────────────────────
+  // Cash Cow rechnet mit der Geldsicht: Sammelstrafen enthalten auch den
+  // Abwesenheitsanteil und die Kegelbahn. Wer nie da war, zahlt trotzdem —
+  // und soll dafür auch das Abzeichen kriegen können.
+  const bezahltProPerson = {};
+  {
+    const sammel = statsStrafenSaison().filter(x => x.kategorie === 'Kegelbuch');
+    const abgedeckt = new Set(sammel.map(x => x.sessionId).filter(Boolean));
+    sammel.forEach(x => {
+      bezahltProPerson[x.mitglied] = (bezahltProPerson[x.mitglied] || 0) + (Number(x.betrag) || 0);
+    });
+    // Abende ohne Sammelbuchung: Striche direkt zählen
+    sessions.forEach(sess => {
+      if (sess.id && abgedeckt.has(sess.id)) return;
+      (sess.eintraege || []).forEach(e => {
+        if (e.kategorie === 'Alle 9 (geworfen)') return;
+        bezahltProPerson[e.mitglied] = (bezahltProPerson[e.mitglied] || 0) + (Number(e.betrag) || 0);
+      });
+    });
+    // Sonstige Strafen (Tippspiel, Ausfall, manuell)
+    statsStrafenSaison().forEach(x => {
+      if (x.kategorie === 'Kegelbuch') return;
+      bezahltProPerson[x.mitglied] = (bezahltProPerson[x.mitglied] || 0) + (Number(x.betrag) || 0);
+    });
+  }
+
+  // Bestwert-Halter. Bei Gleichstand bekommen alle das Abzeichen — sonst
+  // bliebe es oft unvergeben, gerade bei der Anwesenheit haben regelmäßig
+  // mehrere Leute dieselbe Zahl.
+  const bestenBei = (werte, richtung) => {
+    const eintraege = state.mitglieder
+      .map(m => ({ name: m.name, v: werte[m.name] || 0 }))
+      .filter(x => x.v > 0);
+    if (!eintraege.length) return [];
+    const ziel = richtung === 'max'
+      ? Math.max(...eintraege.map(x => x.v))
+      : Math.min(...eintraege.map(x => x.v));
+    return eintraege.filter(x => x.v === ziel).map(x => x.name);
+  };
+
+  const neunerWerte = {}, verlWerte = {}, abendWerte = {}, geldWerte = {};
+  state.mitglieder.forEach(m => {
+    neunerWerte[m.name] = stats[m.name].neuner;
+    verlWerte[m.name]   = stats[m.name].verlSpiele;
+    abendWerte[m.name]  = stats[m.name].abende;
+    geldWerte[m.name]   = Math.round((bezahltProPerson[m.name] || 0) * 100) / 100;
+  });
+
+  const neunerMeister = bestenBei(neunerWerte, 'max');
+  const loser         = bestenBei(verlWerte,   'max');
+  const cashCow       = bestenBei(geldWerte,   'max');
+
+  // "Immer da" ist eine Leistung, kein Rang: bei JEDEM Abend dabei gewesen.
+  // Dadurch kann es mehrere geben, ohne dass es beliebig wird.
+  const immerDa = nAbende > 0
+    ? state.mitglieder.filter(m => stats[m.name].abende === nAbende).map(m => m.name)
+    : [];
+
+  // "Wo bist du?" nur wenn wirklich selten da — sonst trifft es bei kleinen
+  // Unterschieden jemanden, der eigentlich zuverlässig ist.
+  const wenigste = bestenBei(abendWerte, 'min');
+  const woBistDu = (nAbende >= 3)
+    ? wenigste.filter(n => stats[n].abende / nAbende < 0.5)
+    : [];
+
+  function abzeichenVon(name, st) {
+    const b = [];
+    if (st.pk > 0)                     b.push({ typ:'pk', anzahl: st.pk });
+    if (neunerMeister.includes(name))  b.push({ typ:'neuner' });
+    if (loser.includes(name))          b.push({ typ:'loser' });
+    if (cashCow.includes(name))        b.push({ typ:'cash' });
+    if (immerDa.includes(name))        b.push({ typ:'immerda' });
+    if (woBistDu.includes(name) && !immerDa.includes(name)) b.push({ typ:'wobist' });
+    return b;
+  }
+
   // Seltenheitsstufe — nach Ø Pumpen pro Abend, relativ zum Höchstwert.
   // Der Schnitt statt der Gesamtzahl, damit wer selten da war nicht benachteiligt wird.
   const stufeVon = st => {
@@ -12977,6 +13362,7 @@ function renderMitgliedskarten(force) {
       kugelZT: st.kugelZT, stinas: st.stinas,
       pk: st.pk, rekord: st.rekord, abende: st.abende, abendeGesamt: nAbende,
       quote: st.quote, spieleVerloren: st.spieleVerloren,
+      abzeichen: abzeichenVon(m.name, st),
       strafen: st.strafen.toFixed(2).replace('.', ','),
       max
     });
@@ -13093,6 +13479,16 @@ function zeichneAutogramm(ctx, name, cx, baseY, maxW, hoehe, farbe) {
   ctx.restore();
 }
 
+// Abzeichen-Optik. Symbol, Kreisfarbe, Ringfarbe.
+const KARTEN_ABZEICHEN = {
+  pk:      { sym:'👑', bg:'#78350f', ring:'#fbbf24', titel:'Pumpenkönig' },
+  neuner:  { sym:'9',  bg:'#14532d', ring:'#4ade80', titel:'Neuner-Meister' },
+  loser:   { sym:'💀', bg:'#7f1d1d', ring:'#fca5a5', titel:'Loser' },
+  cash:    { sym:'🐄', bg:'#1e3a8a', ring:'#93c5fd', titel:'Cash Cow' },
+  immerda: { sym:'🔥', bg:'#7c2d12', ring:'#fdba74', titel:'Immer da' },
+  wobist:  { sym:'❓', bg:'#334155', ring:'#94a3b8', titel:'Wo bist du?' }
+};
+
 const KARTEN_STUFEN = {
   legendaer: { t:'LEGENDÄR',      a:'#fbbf24', b:'#78350f' },
   episch:    { t:'EPISCH',        a:'#c084fc', b:'#4c1d95' },
@@ -13101,7 +13497,7 @@ const KARTEN_STUFEN = {
 };
 
 function drawMitgliedsKarte(canvas, m) {
-  const S = 3, W = 280, H = 486;
+  const S = 3, W = 280, H = 508;
   canvas.width = W * S; canvas.height = H * S;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   const ctx = canvas.getContext('2d');
@@ -13217,9 +13613,42 @@ function drawMitgliedsKarte(canvas, m) {
   fit(m.title, W-30, 9.5, '', 'italic');
   ctx.fillStyle = col + 'd0'; ctx.fillText(m.title, W/2, 205);
 
+  // ── Abzeichenreihe ──
+  const abz = m.abzeichen || [];
+  if (abz.length) {
+    const r = 10.5, luecke = 3.5;
+    const breite = abz.length * (r*2) + (abz.length - 1) * luecke;
+    let bx = W/2 - breite/2 + r;
+    abz.forEach(a => {
+      const def = KARTEN_ABZEICHEN[a.typ];
+      if (!def) return;
+      ctx.beginPath(); ctx.arc(bx, 224, r, 0, Math.PI*2);
+      ctx.fillStyle = def.bg; ctx.fill();
+      ctx.strokeStyle = def.ring; ctx.lineWidth = 1.4; ctx.stroke();
+      // Die "9" ist Text, der Rest Emoji — Emoji sitzt etwas tiefer
+      ctx.font = (a.typ === 'neuner' ? 'bold ' : '') + (r*1.15).toFixed(1) + 'px -apple-system,sans-serif';
+      ctx.fillStyle = a.typ === 'neuner' ? def.ring : '#ffffff';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(def.sym, bx, 224 + (a.typ === 'neuner' ? 0.5 : 0.8));
+      // Zähler für mehrfach errungene Abzeichen
+      if (a.anzahl && a.anzahl > 1) {
+        ctx.font = 'bold 8.5px -apple-system,sans-serif';
+        const txt = '×' + a.anzahl;
+        const tw = ctx.measureText(txt).width;
+        ctx.beginPath();
+        rr(bx + r - 3, 224 + r - 12, tw + 7, 11.5, 5.75);
+        ctx.fillStyle = def.ring; ctx.fill();
+        ctx.fillStyle = def.bg;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(txt, bx + r - 3 + (tw + 7)/2, 224 + r - 6);
+      }
+      bx += r*2 + luecke;
+    });
+  }
+
   const line = y => { ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(16,y); ctx.lineTo(W-16,y); ctx.stroke(); };
-  line(214);
+  line(236);
 
   // Drei Hauptwerte
   const hero = [
@@ -13231,15 +13660,15 @@ function drawMitgliedsKarte(canvas, m) {
     const x = W/6 + (W/3) * i;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     fit(s.v, W/3 - 14, 22, 'bold');
-    ctx.fillStyle = '#f8fafc'; ctx.fillText(s.v, x, 242);
+    ctx.fillStyle = '#f8fafc'; ctx.fillText(s.v, x, 264);
     ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
-    ctx.fillText(s.l, x, 254);
+    ctx.fillText(s.l, x, 276);
     if (i < 2) {
       ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(W/3*(i+1), 222); ctx.lineTo(W/3*(i+1), 258); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(W/3*(i+1), 244); ctx.lineTo(W/3*(i+1), 280); ctx.stroke();
     }
   });
-  line(266);
+  line(288);
 
   // Balken im Vergleich zum Teambesten
   const mx = m.max || {};
@@ -13251,7 +13680,7 @@ function drawMitgliedsKarte(canvas, m) {
     { l:'Kugel zum Tisch',  v: String(m.kugelZT),        f: m.kugelZT / (mx.kugelZT || 1) }
   ];
   bars.forEach((b, i) => {
-    const y = 280 + i * 22;
+    const y = 302 + i * 22;
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.font = '8.5px -apple-system,sans-serif'; ctx.fillStyle = '#94a3b8';
     ctx.fillText(b.l, 17, y);
@@ -13269,25 +13698,25 @@ function drawMitgliedsKarte(canvas, m) {
     }
   });
 
-  line(392);
+  line(414);
   // Fußzeile
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
-  ctx.fillText('PUMPENKÖNIG', 17, 404);
+  ctx.fillText('PUMPENKÖNIG', 17, 426);
   ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = m.pk > 0 ? '#fbbf24' : '#475569';
-  ctx.fillText(m.pk + '×', 17, 419);
+  ctx.fillText(m.pk + '×', 17, 441);
   ctx.textAlign = 'right';
   ctx.font = '7px -apple-system,sans-serif'; ctx.fillStyle = '#64748b';
-  ctx.fillText('REKORD / ABEND', W-17, 404);
+  ctx.fillText('REKORD / ABEND', W-17, 426);
   const rekTxt = m.rekord + ' Pumpen';
   fit(rekTxt, W/2 - 26, 15, 'bold');
   ctx.fillStyle = '#e2e8f0';
-  ctx.fillText(rekTxt, W-17, 419);
+  ctx.fillText(rekTxt, W-17, 441);
 
   // Autogramm-Feld
   ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(30, 432); ctx.lineTo(W-30, 432); ctx.stroke();
-  zeichneAutogramm(ctx, m.name, W/2, 462, W - 56, 16, 'rgba(248,250,252,0.9)');
+  ctx.beginPath(); ctx.moveTo(30, 454); ctx.lineTo(W-30, 454); ctx.stroke();
+  zeichneAutogramm(ctx, m.name, W/2, 484, W - 56, 16, 'rgba(248,250,252,0.9)');
 
   // Rahmen
   rr(1.25,1.25,W-2.5,H-2.5,15); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.stroke();
@@ -13309,6 +13738,375 @@ function downloadMitgliedsKarte(canvas, name) {
   a.click();
 }
 // ========== END MITGLIEDSKARTEN ==========
+
+// ========== JAHRESRÜCKBLICK ==========
+// Sammelt die Kennzahlen der gewählten Saison. Nutzt bewusst dieselben
+// Quellen wie die Statistiken, damit Rückblick und Statistikseite nie
+// unterschiedliche Zahlen zeigen.
+function rueckblickDaten() {
+  const sessions = statsSessions();
+  const strafen  = statsStrafenSaison();
+  const alle     = sessions.flatMap(s => s.eintraege || []);
+  const namen    = state.mitglieder.map(m => m.name);
+  const nAbende  = sessions.length;
+
+  const anwesendeIn = s => (s.angemeldet && s.angemeldet.length) ? s.angemeldet : (s.spieler || []);
+  const abendeVon = n => sessions.filter(s =>
+    anwesendeIn(s).includes(n) || (s.eintraege || []).some(e => e.mitglied === n)).length;
+  const katTotal = k => alle.filter(e => e.kategorie === k).reduce((a,e) => a + (e.anzahl||1), 0);
+  const katVon = (k,n) => alle.filter(e => e.kategorie===k && e.mitglied===n).reduce((a,e)=>a+(e.anzahl||1),0);
+  const bester = (werte) => {
+    const r = namen.map(n => ({ n, v: werte(n) })).filter(x => x.v > 0).sort((a,b) => b.v - a.v);
+    return r.length ? r[0] : null;
+  };
+
+  // Clubzahlen
+  const striche = alle.filter(e => e.kategorie !== 'Alle 9 (geworfen)')
+                      .reduce((a,e) => a + (e.anzahl||1), 0);
+  const euroKegelbuch = alle.filter(e => e.kategorie !== 'Alle 9 (geworfen)')
+                            .reduce((a,e) => a + Math.round((Number(e.betrag)||0)*100), 0);
+
+  // Schnaps
+  let schnapsCent = 0, flaschen = 0;
+  const schnapsProPerson = {};
+  sessions.forEach(s => (s.flaschen || []).forEach(f => {
+    const t = f.trinker || [];
+    if (!t.length) return;
+    const cent = Math.round(Number(f.preis)*100);
+    schnapsCent += cent; flaschen++;
+    Object.entries(schnapsAnteile(cent, t)).forEach(([n,v]) => {
+      schnapsProPerson[n] = (schnapsProPerson[n]||0) + v;
+    });
+  }));
+
+  // Rekord an einem Abend
+  const abendRekord = (kat) => {
+    let best = null;
+    sessions.forEach(s => {
+      const pro = {};
+      (s.eintraege||[]).filter(e => e.kategorie===kat).forEach(e => {
+        pro[e.mitglied] = (pro[e.mitglied]||0) + (e.anzahl||1);
+      });
+      Object.entries(pro).forEach(([n,v]) => {
+        if (!best || v > best.v) best = { n, v, abend: s.name };
+      });
+    });
+    return best;
+  };
+
+  // Pumpenkönig-Nächte
+  const pkNaechte = {};
+  sessions.forEach(s => {
+    const pro = {};
+    (s.eintraege||[]).filter(e => e.kategorie==='Pumpe').forEach(e => {
+      pro[e.mitglied] = (pro[e.mitglied]||0) + (e.anzahl||1);
+    });
+    const max = Math.max(...Object.values(pro), 0);
+    if (max > 0) Object.entries(pro).forEach(([n,v]) => {
+      if (v === max) pkNaechte[n] = (pkNaechte[n]||0) + 1;
+    });
+  });
+
+  // Geld pro Person inkl. Abwesenheitsanteil
+  const geld = {};
+  const sammel = strafen.filter(x => x.kategorie === 'Kegelbuch');
+  const abgedeckt = new Set(sammel.map(x => x.sessionId).filter(Boolean));
+  sammel.forEach(x => { geld[x.mitglied] = (geld[x.mitglied]||0) + (Number(x.betrag)||0); });
+  sessions.forEach(s => {
+    if (s.id && abgedeckt.has(s.id)) return;
+    (s.eintraege||[]).forEach(e => {
+      if (e.kategorie === 'Alle 9 (geworfen)') return;
+      geld[e.mitglied] = (geld[e.mitglied]||0) + (Number(e.betrag)||0);
+    });
+  });
+  strafen.forEach(x => {
+    if (x.kategorie === 'Kegelbuch') return;
+    geld[x.mitglied] = (geld[x.mitglied]||0) + (Number(x.betrag)||0);
+  });
+
+  const fotos = sessions.filter(s => s.fotoUrl);
+
+  return {
+    saison: statsSaisonLabel(),
+    nAbende, striche, euroKegelbuch,
+    pumpen: katTotal('Pumpe'), klingeln: katTotal('Klingel'),
+    stinas: katTotal('Stina'), behinderungen: katTotal('Behinderung'),
+    verlSpiele: katTotal('Verl. Spiel'),
+    pumpenkoenig: bester(n => katVon('Pumpe', n)),
+    klingelmeister: bester(n => katVon('Klingel', n)),
+    fleissigster: bester(n => abendeVon(n)),
+    teuerster: bester(n => Math.round((geld[n]||0)*100)),
+    pkTop: bester(n => pkNaechte[n] || 0),
+    schnapsTop: bester(n => schnapsProPerson[n] || 0),
+    schnapsCent, flaschen,
+    rekordPumpen: abendRekord('Pumpe'),
+    rekordKlingeln: abendRekord('Klingel'),
+    fotos,
+    mitglieder: namen.length,
+    abendeVon, geld
+  };
+}
+// ── Folien aufbauen ───────────────────────────────────────────────
+let _rbFolien = [], _rbIndex = 0, _rbDaten = null;
+
+function rueckblickFolien(d) {
+  const eur = ct => formatEur(ct/100);
+  const f = [];
+
+  f.push({ bg:'#1e1b4b', akzent:'#a5b4fc',
+    klein: ((state.clubName || 'Blackout Boys') + ' Wrapped').toUpperCase(),
+    gross: d.saison, unten: `${d.nAbende} Kegelabende · ${d.mitglieder} Mitglieder`,
+    emoji:'🎁' });
+
+  f.push({ bg:'#0f172a', akzent:'#60a5fa', klein:'IHR HABT GEKEGELT',
+    gross: d.nAbende + ' Abende',
+    unten: `${d.striche} Striche im Kegelbuch · ${eur(d.euroKegelbuch)} zusammen`,
+    emoji:'📖' });
+
+  f.push({ bg:'#450a0a', akzent:'#fca5a5', klein:'PUMPEN GESAMT',
+    gross: String(d.pumpen),
+    unten: d.nAbende ? `Das sind Ø ${Math.round(d.pumpen/d.nAbende*10)/10} pro Abend` : '',
+    emoji:'🎳' });
+
+  if (d.pumpenkoenig) f.push({ bg:'#78350f', akzent:'#fbbf24', klein:'PUMPENKÖNIG DER SAISON',
+    gross: d.pumpenkoenig.n, unten: `${d.pumpenkoenig.v} Pumpen`,
+    emoji:'👑', person: d.pumpenkoenig.n });
+
+  if (d.rekordPumpen) f.push({ bg:'#3f1d0a', akzent:'#fdba74', klein:'REKORD AN EINEM ABEND',
+    gross: d.rekordPumpen.v + ' Pumpen', unten: `${d.rekordPumpen.n} beim ${d.rekordPumpen.abend}`,
+    emoji:'🔥', person: d.rekordPumpen.n });
+
+  if (d.klingeln > 0) f.push({ bg:'#14532d', akzent:'#4ade80', klein:'KLINGELN GESAMT',
+    gross: String(d.klingeln),
+    unten: d.klingelmeister ? `Meister: ${d.klingelmeister.n} mit ${d.klingelmeister.v}` : '',
+    emoji:'🔔', person: d.klingelmeister ? d.klingelmeister.n : null });
+
+  if (d.fleissigster) f.push({ bg:'#0c4a6e', akzent:'#7dd3fc', klein:'AM HÄUFIGSTEN DABEI',
+    gross: d.fleissigster.n, unten: `${d.fleissigster.v} von ${d.nAbende} Abenden`,
+    emoji:'🔥', person: d.fleissigster.n });
+
+  if (d.pkTop && d.pkTop.v > 1) f.push({ bg:'#581c87', akzent:'#d8b4fe', klein:'MEISTE KRONEN',
+    gross: d.pkTop.v + '× Pumpenkönig', unten: d.pkTop.n,
+    emoji:'👑', person: d.pkTop.n });
+
+  if (d.verlSpiele > 0) f.push({ bg:'#3f0f0f', akzent:'#f87171', klein:'VERLORENE SPIELE',
+    gross: String(d.verlSpiele), unten: 'Irgendwer muss ja zahlen', emoji:'💀' });
+
+  if (d.flaschen > 0) f.push({ bg:'#422006', akzent:'#fcd34d', klein:'SCHNAPS DER SAISON',
+    gross: eur(d.schnapsCent),
+    unten: `${d.flaschen} ${d.flaschen===1?'Flasche':'Flaschen'}${d.schnapsTop ? ' · Spitzenreiter: ' + d.schnapsTop.n : ''}`,
+    emoji:'🥃', person: d.schnapsTop ? d.schnapsTop.n : null });
+
+  if (d.teuerster) f.push({ bg:'#1e3a8a', akzent:'#93c5fd', klein:'TEUERSTE SAISON',
+    gross: d.teuerster.n, unten: eur(d.teuerster.v) + ' an Strafen',
+    emoji:'🐄', person: d.teuerster.n });
+
+  f.push({ bg:'#0f172a', akzent:'#a5b4fc', klein:'BIS ZUR NÄCHSTEN SAISON',
+    gross: 'Prost! 🍻',
+    unten: `${d.stinas} Stinas · ${d.behinderungen} Behinderungen · ${d.fotos.length} Fotos`,
+    emoji:'🎳', abschluss: true });
+
+  return f;
+}
+
+function zeigeRueckblick() {
+  _rbDaten = rueckblickDaten();
+  if (!_rbDaten.nAbende) { alert('Für diese Saison gibt es noch keine Kegelabende — nichts zu wrappen.'); return; }
+  _rbFolien = rueckblickFolien(_rbDaten);
+  _rbIndex = 0;
+
+  const ov = document.createElement('div');
+  ov.id = 'rueckblick-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9500;display:flex;flex-direction:column;'
+    + 'align-items:center;justify-content:center;transition:background .35s';
+  ov.innerHTML = `
+    <div id="rb-fortschritt" style="position:absolute;top:0;left:0;right:0;display:flex;gap:3px;padding:.6rem .8rem"></div>
+    <button onclick="schliesseRueckblick()" style="position:absolute;top:2.2rem;right:.9rem;background:rgba(255,255,255,.15);
+      border:none;color:#fff;width:34px;height:34px;border-radius:50%;font-size:1rem;cursor:pointer;z-index:2">✕</button>
+    <div id="rb-inhalt" style="text-align:center;padding:2rem 1.5rem;max-width:520px"></div>
+    <div style="position:absolute;bottom:1.2rem;left:0;right:0;display:flex;gap:.6rem;justify-content:center;padding:0 1rem">
+      <button onclick="rueckblickBlatt(-1)" id="rb-zurueck" style="background:rgba(255,255,255,.15);border:none;color:#fff;
+        padding:.6rem 1.1rem;border-radius:99px;font-size:.9rem;font-weight:700;cursor:pointer">←</button>
+      <button onclick="exportiereRueckblick()" style="background:rgba(255,255,255,.15);border:none;color:#fff;
+        padding:.6rem 1.1rem;border-radius:99px;font-size:.85rem;font-weight:700;cursor:pointer">📷 Als Bild</button>
+      <button onclick="rueckblickBlatt(1)" id="rb-vor" style="background:#fff;border:none;color:#0f172a;
+        padding:.6rem 1.4rem;border-radius:99px;font-size:.9rem;font-weight:800;cursor:pointer">Weiter →</button>
+    </div>`;
+  document.body.appendChild(ov);
+
+  // Wischen auf dem Handy
+  let startX = null;
+  ov.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, { passive: true });
+  ov.addEventListener('touchend', e => {
+    if (startX === null) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    if (Math.abs(dx) > 60) rueckblickBlatt(dx < 0 ? 1 : -1);
+    startX = null;
+  }, { passive: true });
+  // Pfeiltasten für den Beamer
+  ov._tasten = e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') rueckblickBlatt(1);
+    if (e.key === 'ArrowLeft') rueckblickBlatt(-1);
+    if (e.key === 'Escape') schliesseRueckblick();
+  };
+  window.addEventListener('keydown', ov._tasten);
+
+  rueckblickZeichne();
+}
+
+function rueckblickZeichne() {
+  const ov = document.getElementById('rueckblick-overlay');
+  if (!ov) return;
+  const f = _rbFolien[_rbIndex];
+  ov.style.background = f.bg;
+
+  document.getElementById('rb-fortschritt').innerHTML = _rbFolien.map((_, i) =>
+    `<div style="flex:1;height:3px;border-radius:2px;background:${i <= _rbIndex ? f.akzent : 'rgba(255,255,255,.22)'}"></div>`
+  ).join('');
+
+  const fotoHtml = f.person ? quizGewinnerFotos([f.person], 72).replace(/🎁/g, f.emoji) : '';
+
+  document.getElementById('rb-inhalt').innerHTML = `
+    <div style="animation:rbAuf .45s ease">
+      ${f.person ? fotoHtml : `<div style="font-size:3.4rem;line-height:1">${f.emoji}</div>`}
+      <div style="font-size:.72rem;font-weight:800;letter-spacing:.14em;color:${f.akzent};margin-top:.8rem">${f.klein}</div>
+      <div style="font-size:2.1rem;font-weight:800;color:#fff;line-height:1.15;margin:.5rem 0">${f.gross}</div>
+      ${f.unten ? `<div style="font-size:.95rem;color:rgba(255,255,255,.75);line-height:1.5">${f.unten}</div>` : ''}
+      ${f.abschluss && _rbDaten.fotos.length ? `
+        <div style="display:flex;gap:.35rem;justify-content:center;flex-wrap:wrap;margin-top:1.2rem">
+          ${_rbDaten.fotos.slice(0,6).map(s =>
+            `<img src="${s.fotoUrl}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:2px solid ${f.akzent}44">`
+          ).join('')}
+        </div>` : ''}
+    </div>`;
+
+  document.getElementById('rb-zurueck').style.visibility = _rbIndex === 0 ? 'hidden' : 'visible';
+  document.getElementById('rb-vor').textContent = _rbIndex === _rbFolien.length - 1 ? 'Fertig ✓' : 'Weiter →';
+}
+
+function rueckblickBlatt(richtung) {
+  const neu = _rbIndex + richtung;
+  if (neu < 0) return;
+  if (neu >= _rbFolien.length) { schliesseRueckblick(); return; }
+  _rbIndex = neu;
+  rueckblickZeichne();
+}
+
+function schliesseRueckblick() {
+  const ov = document.getElementById('rueckblick-overlay');
+  if (!ov) return;
+  if (ov._tasten) window.removeEventListener('keydown', ov._tasten);
+  ov.remove();
+}
+
+// ── Bildexport: alle Zahlen auf einer hohen Grafik ────────────────
+function exportiereRueckblick() {
+  const d = _rbDaten || rueckblickDaten();
+  const S = 2, W = 560;
+  const eur = ct => formatEur(ct/100);
+
+  // Zeilen vorbereiten, Höhe daraus ableiten
+  const zeilen = [];
+  const Z = (label, wert, person) => zeilen.push({ label, wert: String(wert), person });
+  Z('Kegelabende', d.nAbende);
+  Z('Striche im Kegelbuch', d.striche);
+  Z('Kegelbuch gesamt', eur(d.euroKegelbuch));
+  Z('Pumpen', d.pumpen);
+  if (d.klingeln)      Z('Klingeln', d.klingeln);
+  if (d.stinas)        Z('Stinas', d.stinas);
+  if (d.behinderungen) Z('Behinderungen', d.behinderungen);
+  if (d.verlSpiele)    Z('Verlorene Spiele', d.verlSpiele);
+  if (d.flaschen)      Z('Schnaps', eur(d.schnapsCent) + ' · ' + d.flaschen + ' Flaschen');
+
+  const helden = [];
+  const H = (titel, name, detail) => { if (name) helden.push({ titel, name, detail }); };
+  if (d.pumpenkoenig)   H('👑 Pumpenkönig',    d.pumpenkoenig.n,   d.pumpenkoenig.v + ' Pumpen');
+  if (d.pkTop && d.pkTop.v > 0) H('🏆 Meiste Kronen', d.pkTop.n, d.pkTop.v + '× Pumpenkönig');
+  if (d.klingelmeister) H('🔔 Klingelmeister', d.klingelmeister.n, d.klingelmeister.v + ' Klingeln');
+  if (d.fleissigster)   H('🔥 Immer da',       d.fleissigster.n,   d.fleissigster.v + ' von ' + d.nAbende + ' Abenden');
+  if (d.teuerster)      H('🐄 Cash Cow',       d.teuerster.n,      eur(d.teuerster.v));
+  if (d.schnapsTop)     H('🥃 Durstigster',    d.schnapsTop.n,     eur(d.schnapsTop.v));
+  if (d.rekordPumpen)   H('💥 Abend-Rekord',   d.rekordPumpen.n,   d.rekordPumpen.v + ' Pumpen an einem Abend');
+
+  const kopfH = 150, zeileH = 30, heldH = 40;
+  const H_GES = kopfH + 44 + zeilen.length * zeileH + 54 + helden.length * heldH + 60;
+
+  const cv = document.createElement('canvas');
+  cv.width = W * S; cv.height = H_GES * S;
+  const ctx = cv.getContext('2d');
+  ctx.scale(S, S);
+
+  // Hintergrund
+  const bg = ctx.createLinearGradient(0, 0, W, H_GES);
+  bg.addColorStop(0, '#1e1b4b'); bg.addColorStop(.5, '#0f172a'); bg.addColorStop(1, '#1e1b4b');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H_GES);
+  ctx.globalAlpha = .04; ctx.strokeStyle = '#a5b4fc'; ctx.lineWidth = 16;
+  for (let i = -H_GES; i < W + H_GES; i += 42) {
+    ctx.beginPath(); ctx.moveTo(i, H_GES + 20); ctx.lineTo(i + H_GES + 20, -20); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Wappen als Wasserzeichen
+  if (clubLogoBereit && clubLogoImg.naturalWidth) {
+    const lh = 300, lw = lh * (clubLogoImg.naturalWidth / clubLogoImg.naturalHeight);
+    ctx.globalAlpha = .05;
+    ctx.drawImage(clubLogoImg, (W - lw)/2, H_GES/2 - lh/2, lw, lh);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.font = 'bold 13px -apple-system,sans-serif'; ctx.fillStyle = '#a5b4fc';
+  ctx.fillText('B L A C K O U T   B O Y S', W/2, 46);
+  ctx.font = 'bold 34px -apple-system,sans-serif'; ctx.fillStyle = '#fff';
+  ctx.fillText('Wrapped', W/2, 86);
+  ctx.font = '17px -apple-system,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.8)';
+  ctx.fillText(d.saison, W/2, 112);
+  ctx.strokeStyle = 'rgba(165,180,252,.35)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(60, 130); ctx.lineTo(W-60, 130); ctx.stroke();
+
+  let y = kopfH + 20;
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 11px -apple-system,sans-serif'; ctx.fillStyle = '#a5b4fc';
+  ctx.fillText('DIE ZAHLEN', 44, y);
+  y += 24;
+  zeilen.forEach(z => {
+    ctx.font = '14px -apple-system,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.72)';
+    ctx.textAlign = 'left'; ctx.fillText(z.label, 44, y);
+    ctx.font = 'bold 15px -apple-system,sans-serif'; ctx.fillStyle = '#fff';
+    ctx.textAlign = 'right'; ctx.fillText(z.wert, W - 44, y);
+    ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(44, y + 9); ctx.lineTo(W - 44, y + 9); ctx.stroke();
+    y += zeileH;
+  });
+
+  y += 26;
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 11px -apple-system,sans-serif'; ctx.fillStyle = '#fbbf24';
+  ctx.fillText('DIE HELDEN DER SAISON', 44, y);
+  y += 26;
+  helden.forEach(h => {
+    ctx.font = '13px -apple-system,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.62)';
+    ctx.fillText(h.titel, 44, y);
+    ctx.font = 'bold 17px -apple-system,sans-serif'; ctx.fillStyle = '#fff';
+    ctx.fillText(h.name, 44, y + 18);
+    ctx.font = '12px -apple-system,sans-serif'; ctx.fillStyle = '#fbbf24';
+    ctx.textAlign = 'right'; ctx.fillText(h.detail, W - 44, y + 18);
+    ctx.textAlign = 'left';
+    y += heldH;
+  });
+
+  ctx.textAlign = 'center';
+  ctx.font = '11px -apple-system,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.35)';
+  ctx.fillText('Blackout Boys Kegelclub · ' + d.saison, W/2, H_GES - 24);
+
+  const a = document.createElement('a');
+  a.download = ((state.clubName || 'BlackoutBoys').replace(/[^\w]+/g,'') + '-Wrapped-' + d.saison.replace(/[^\w]+/g,'-')) + '.png';
+  a.href = cv.toDataURL('image/png');
+  a.click();
+  showNotification('📷 Wrapped als Bild gespeichert.', 'success');
+}
+
+// ========== END JAHRESRÜCKBLICK ==========
 
 // ========== SCHNAPS-STATISTIK ==========
 // Rechnet aus den in den Session-Dokumenten gespeicherten Flaschen.
@@ -13404,7 +14202,7 @@ function renderHallOfFame() {
     let best = null;
     sessions.forEach(s => {
       const pro = {};
-      (s.eintraege || []).filter(e => e.kategorie === kat).forEach(e => {
+      eintraegeOhneGaeste(s).filter(e => e.kategorie === kat).forEach(e => {
         pro[e.mitglied] = (pro[e.mitglied] || 0) + (e.anzahl || 1);
       });
       Object.entries(pro).forEach(([n, v]) => {
